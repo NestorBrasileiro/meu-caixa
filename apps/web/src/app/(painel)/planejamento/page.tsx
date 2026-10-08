@@ -47,7 +47,7 @@ export default async function Page() {
   const categoryName = new Map(planning.categories.map((category) => [category.id, category.name]))
   const commitments = sortCommitments(planning.commitments).map((commitment) => ({
     ...commitment,
-    categoryName: categoryName.get(commitment.categoryId) ?? null,
+    categoryName: (commitment.categoryId && categoryName.get(commitment.categoryId)) || null,
   }))
   const committed = commitmentsTotal(planning.commitments)
 

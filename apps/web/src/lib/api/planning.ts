@@ -1,9 +1,6 @@
 import type { Cents, IsoDate, PaymentMethod } from "./types"
 
-/**
- * Planejamento — ainda sem API (entra no marco de 75%). Os tipos já
- * descrevem o que o módulo `planning` do backend vai expor.
- */
+/** Planejamento: contratos de `GET /api/planning` (módulo `planning` da API). */
 
 /** Como a categoria entra no orçamento. */
 export type CategoryKind = "ESSENTIAL" | "DISCRETIONARY"
@@ -25,7 +22,8 @@ export interface Commitment {
   dayOfMonth: number
   /** Como é pago. "CARD" = cai na fatura do cartão (não somar de novo ao pagar a fatura). */
   paymentMethod: PaymentMethod
-  categoryId: string
+  /** null = sem categoria de orçamento (ou a categoria foi apagada). */
+  categoryId: string | null
   startsOn: IsoDate
   /** null = sem data para acabar. */
   endsOn: IsoDate | null

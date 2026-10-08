@@ -13,6 +13,12 @@ const source = process.env.DATA_SOURCE === "mock" ? mockSource : apiSource
 
 export const DATA_SOURCE: "api" | "mock" = process.env.DATA_SOURCE === "mock" ? "mock" : "api"
 
+/**
+ * Só a fonte real salva alterações. Com `mock`, as telas desabilitam as ações
+ * de escrita e explicam o porquê (`READ_ONLY_HINT`, em `./mode`).
+ */
+export const CAN_WRITE = DATA_SOURCE === "api"
+
 export const getToday = source.getToday
 export const getNow = source.getNow
 export const getCurrentUser = source.getCurrentUser
