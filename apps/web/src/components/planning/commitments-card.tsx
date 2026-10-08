@@ -8,7 +8,6 @@ import type { Commitment } from "@/lib/api/planning"
 import type { Cents } from "@/lib/api/types"
 import { formatMonthShort } from "@/lib/format/date"
 import { formatMoney } from "@/lib/format/money"
-import { cn } from "@/lib/utils"
 import { InstallmentMeter } from "./meters"
 import { plural } from "./model"
 
@@ -17,10 +16,20 @@ export interface CommitmentRow extends Commitment {
   categoryName: string | null
 }
 
-/** "No cartão · Loteadora Exemplo": como é pago + observação. */
+/** Como é pago ("Outro" não diz nada e fica de fora). */
+function methodOf(row: CommitmentRow): string | null {
+  if (row.paymentMethod === "OTHER") return null
+  return row.paymentMethod === "CARD" ? "No cartão" : PAYMENT_METHOD_LABEL[row.paymentMethod]
+}
+
+/** "No cartão · Loteadora Exemplo": como é pago + observação ("" se nenhum). */
 function detailOf(row: CommitmentRow): string {
-  const method = row.paymentMethod === "CARD" ? "No cartão" : PAYMENT_METHOD_LABEL[row.paymentMethod]
-  return [method, row.notes].filter(Boolean).join(" · ")
+  return [methodOf(row), row.notes].filter(Boolean).join(" · ")
+}
+
+/** Linha da lista empilhada: "Dia 10 · Moradia e contas · Boleto · Loteadora Exemplo". */
+function stackedDetailOf(row: CommitmentRow): string {
+  return [`Dia ${row.dayOfMonth}`, row.categoryName ?? "Sem categoria", detailOf(row)].filter(Boolean).join(" · ")
 }
 
 function Term({ row }: { row: CommitmentRow }) {
@@ -36,7 +45,7 @@ function Term({ row }: { row: CommitmentRow }) {
   }
   return (
     <span className="text-muted-foreground text-sm">
-      {row.endsOn ? `Até ${formatMonthShort(row.endsOn.slice(0, 7), true)}` : "Recorrente"}
+      {row.endsOn ? `Até ${formatMonthShort(row.endsOn.slice(0, 7), true)}` : "Sem prazo"}
     </span>
   )
 }
@@ -54,7 +63,9 @@ export function CommitmentsCard({
   return (
     <Card className={className}>
       <CardHeader>
-        <CardTitle>Compromissos fixos</CardTitle>
+        <CardTitle className="text-balance">
+          <h3>Compromissos fixos</h3>
+        </CardTitle>
         <CardDescription>Contas que se repetem todo mês, da maior para a menor.</CardDescription>
       </CardHeader>
       <CardContent className="@container flex-1">
@@ -89,7 +100,7 @@ export function CommitmentsCard({
                     <TableRow key={row.id} className="hover:bg-transparent">
                       <TableCell className="py-3 pl-0 whitespace-normal">
                         <p className="font-medium">{row.name}</p>
-                        <p className="text-muted-foreground text-xs">{detailOf(row)}</p>
+                        {detailOf(row) && <p className="text-muted-foreground text-xs">{detailOf(row)}</p>}
                       </TableCell>
                       <TableCell className="tabular-nums">Dia {row.dayOfMonth}</TableCell>
                       <TableCell className="text-muted-foreground">{row.categoryName ?? "Sem categoria"}</TableCell>
@@ -111,10 +122,7 @@ export function CommitmentsCard({
                   <div className="flex items-start justify-between gap-3">
                     <div className="min-w-0 space-y-0.5">
                       <p className="text-sm font-medium">{row.name}</p>
-                      <p className="text-muted-foreground text-xs">
-                        Dia {row.dayOfMonth} · {row.categoryName ?? "Sem categoria"}
- · {detailOf(row)}
-                      </p>
+                      <p className="text-muted-foreground text-xs">{stackedDetailOf(row)}</p>
                     </div>
                     <Money cents={row.amount} className="shrink-0 text-sm font-medium tabular-nums" />
                   </div>
@@ -134,7 +142,7 @@ export function CommitmentsCard({
         )}
       </CardContent>
       {rows.length > 0 && (
-        <CardFooter className={cn("justify-between gap-4 border-t text-sm [.border-t]:pt-4")}>
+        <CardFooter className="justify-between gap-4 border-t text-sm [.border-t]:pt-4">
           <span className="text-muted-foreground">
             Total por mês · {plural(rows.length, "compromisso", "compromissos")}
           </span>

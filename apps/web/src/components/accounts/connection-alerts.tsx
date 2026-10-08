@@ -58,7 +58,7 @@ export function ConnectionAlerts({ connections, accounts }: { connections: Conne
         return (
           <Alert key={connection.id} className={iconClass}>
             <Icon aria-hidden />
-            <div className="col-start-2 flex flex-col gap-1.5 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
+            <div className="col-start-2 flex flex-col gap-1.5 @2xl/page:flex-row @2xl/page:items-center @2xl/page:justify-between @2xl/page:gap-4">
               <p>
                 <span className="font-medium">
                   {connection.institutionName} {headline}

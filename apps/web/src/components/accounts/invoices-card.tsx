@@ -1,6 +1,7 @@
 "use client"
 
 import { Receipt } from "lucide-react"
+import { useCallback, useMemo, useState } from "react"
 import { Bar, BarChart, CartesianGrid, Rectangle, ReferenceLine, XAxis, YAxis, type BarShapeProps } from "recharts"
 import { Card, CardAction, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { ChartContainer, ChartTooltip, ChartTooltipContent, type ChartConfig } from "@/components/ui/chart"
@@ -13,39 +14,81 @@ import { niceAxis, periodLabel, type InvoiceHistory, type InvoicePoint } from ".
 
 const chartConfig = {
   total: { label: "Valor" },
-  open: { label: "Fatura aberta", color: "var(--chart-1)" },
+  open: { label: "Fatura em aberto", color: "var(--chart-1)" },
   closed: { label: "Fatura fechada", color: "var(--chart-muted)" },
   average: { label: "Média das fechadas", color: "var(--chart-axis)" },
 } satisfies ChartConfig
 
 type InvoiceDatum = InvoicePoint & { fill: string }
 
-/** Rótulo do eixo: mês curto, com o ano na primeira coluna e em janeiro. */
-function monthTick(month: string, index: number): string {
-  return formatMonthShort(month, index === 0 || month.endsWith("-01"))
+const Y_AXIS_WIDTH = 52
+const CHART_MARGIN = { top: 8, right: 4, left: 0, bottom: 0 }
+
+/**
+ * De quantos em quantos meses vai um rótulo no eixo. Em vez de deixar o Recharts descartar rótulos (e com
+ * eles a virada do ano), escolhemos: todos se couberem; senão um a cada 2 (ou 3, 4…).
+ */
+function tickStep(plotWidth: number | null, count: number): number {
+  if (plotWidth === null || count === 0) return 1
+  const slot = plotWidth / count
+  // "dez" ≈ 20 px e "jan/26" ≈ 36 px a 12 px; dois rótulos com ano só ficam vizinhos com passo ≥ 2.
+  return slot >= 36 ? 1 : ([2, 3, 4, 6].find((step) => slot * step >= 42) ?? 12)
 }
 
-/** Barra com a cor da própria fatura (aberta em destaque, fechadas em cinza). */
+/**
+ * Rótulos contados a partir da última fatura (a em aberto), que sempre aparece. O ano vai no primeiro
+ * rótulo visível e no primeiro de cada ano novo.
+ */
+function monthTicks(
+  points: Pick<InvoicePoint, "month">[],
+  step: number,
+): { ticks: string[]; labels: Map<string, string> } {
+  const last = points.length - 1
+  const ticks = points.filter((_, index) => (last - index) % step === 0).map((point) => point.month)
+  const labels = new Map<string, string>()
+  let previousYear: string | null = null
+  for (const month of ticks) {
+    const year = month.slice(0, 4)
+    labels.set(month, formatMonthShort(month, year !== previousYear))
+    previousYear = year
+  }
+  return { ticks, labels }
+}
+
+/** Largura do elemento, acompanhando redimensionamentos (null até a primeira medida). */
+function useElementWidth(): [(element: HTMLDivElement | null) => () => void, number | null] {
+  const [width, setWidth] = useState<number | null>(null)
+  const ref = useCallback((element: HTMLDivElement | null) => {
+    if (!element) return () => {}
+    const observer = new ResizeObserver(([entry]) => setWidth(entry.contentRect.width))
+    observer.observe(element)
+    return () => observer.disconnect()
+  }, [])
+  return [ref, width]
+}
+
+/** Barra com a cor da própria fatura (em aberto em destaque, fechadas em cinza). */
 function InvoiceBar(props: BarShapeProps) {
   const datum = props.payload as InvoiceDatum | undefined
   return <Rectangle {...props} fill={datum?.fill ?? "var(--color-closed)"} />
 }
 
-/** Histórico das últimas faturas de um cartão: gráfico de colunas com a aberta em destaque, ou tabela. */
+/** Histórico das últimas faturas de um cartão: gráfico de colunas com a em aberto em destaque, ou tabela. */
 export function InvoicesCard({ history }: { history: InvoiceHistory }) {
   const data: InvoiceDatum[] = history.points.map((point) => ({
     ...point,
     fill: point.open ? "var(--color-open)" : "var(--color-closed)",
   }))
   const newestFirst = [...history.points].reverse()
-  const axis = niceAxis(Math.max(0, ...history.points.map((point) => point.total)))
   const period = periodLabel(history.points, (month) => formatMonthShort(month, true))
 
   return (
-    <Tabs defaultValue="chart" className="h-full gap-0">
-      <Card className="h-full">
+    <Tabs defaultValue="chart" className="gap-0">
+      <Card>
         <CardHeader>
-          <CardTitle className="col-start-1">Faturas do cartão</CardTitle>
+          <CardTitle className="col-start-1">
+            <h3>Faturas do cartão</h3>
+          </CardTitle>
           <CardDescription className="col-start-1">
             {/* Quebra depois do "·", nunca antes, e o período fica inteiro. */}
             {history.cardName}
@@ -66,7 +109,7 @@ export function InvoicesCard({ history }: { history: InvoiceHistory }) {
             </CardAction>
           )}
         </CardHeader>
-        <CardContent className="flex flex-1 flex-col gap-5">
+        <CardContent className="flex flex-col gap-5">
           {data.length === 0 ? (
             <Empty className="border">
               <EmptyHeader>
@@ -83,62 +126,7 @@ export function InvoicesCard({ history }: { history: InvoiceHistory }) {
             <>
               <InvoiceFigures history={history} />
               <TabsContent value="chart" className="space-y-3">
-                <ChartContainer config={chartConfig} className="aspect-auto h-[240px] w-full">
-                  <BarChart data={data} margin={{ top: 8, right: 4, left: 0, bottom: 0 }}>
-                    <CartesianGrid vertical={false} stroke="var(--chart-grid)" />
-                    <XAxis
-                      dataKey="month"
-                      axisLine={false}
-                      tickLine={false}
-                      tickMargin={8}
-                      tick={{ fill: "var(--chart-axis)" }}
-                      tickFormatter={monthTick}
-                    />
-                    <YAxis
-                      axisLine={false}
-                      tickLine={false}
-                      width={52}
-                      domain={axis.domain}
-                      ticks={axis.ticks}
-                      interval={0}
-                      tick={{ fill: "var(--chart-axis)" }}
-                      tickFormatter={(value: number) => formatAxisMoney(value)}
-                    />
-                    <ChartTooltip
-                      cursor={{ fill: "var(--muted)" }}
-                      content={
-                        <ChartTooltipContent
-                          labelFormatter={(_, payload) => {
-                            const datum = payload?.[0]?.payload as InvoiceDatum | undefined
-                            return datum ? `Fatura de ${formatMonth(datum.month)}` : null
-                          }}
-                          formatter={(value, _name, item) => {
-                            const datum = item.payload as InvoiceDatum
-                            return (
-                              <div className="flex w-full items-center gap-2">
-                                <span
-                                  className="size-2.5 shrink-0 rounded-[2px]"
-                                  style={{ backgroundColor: datum.fill }}
-                                  aria-hidden
-                                />
-                                <span className="text-muted-foreground">
-                                  {datum.open ? "Aberta" : "Fechada"} · vence {formatDateShort(datum.dueDate)}
-                                </span>
-                                <span className="text-foreground ml-auto pl-3 font-mono font-medium tabular-nums">
-                                  {formatMoney(Number(value))}
-                                </span>
-                              </div>
-                            )
-                          }}
-                        />
-                      }
-                    />
-                    {history.averageClosed !== null && (
-                      <ReferenceLine y={history.averageClosed} stroke="var(--color-average)" strokeWidth={1.5} />
-                    )}
-                    <Bar dataKey="total" maxBarSize={24} radius={[4, 4, 0, 0]} shape={InvoiceBar} />
-                  </BarChart>
-                </ChartContainer>
+                <InvoiceChart data={data} averageClosed={history.averageClosed} />
                 <InvoiceLegend history={history} />
               </TabsContent>
               <TabsContent value="table">
@@ -152,13 +140,83 @@ export function InvoicesCard({ history }: { history: InvoiceHistory }) {
   )
 }
 
-/** Os dois números que o gráfico compara: a fatura aberta e a média das fechadas. */
+/** Colunas das faturas: a em aberto em destaque (chart-1), as fechadas em cinza, a média como linha. */
+function InvoiceChart({ data, averageClosed }: { data: InvoiceDatum[]; averageClosed: number | null }) {
+  const [ref, width] = useElementWidth()
+  const plotWidth = width === null ? null : width - Y_AXIS_WIDTH - CHART_MARGIN.left - CHART_MARGIN.right
+  const step = tickStep(plotWidth, data.length)
+  // Memorizados: o gráfico só recalcula os eixos quando os dados ou o passo dos rótulos mudam.
+  const axis = useMemo(() => niceAxis(Math.max(0, ...data.map((point) => point.total))), [data])
+  const axisTicks = useMemo(() => monthTicks(data, step), [data, step])
+
+  return (
+    <ChartContainer ref={ref} config={chartConfig} className="aspect-auto h-[240px] w-full">
+      <BarChart data={data} margin={CHART_MARGIN}>
+        <CartesianGrid vertical={false} stroke="var(--chart-grid)" />
+        <XAxis
+          dataKey="month"
+          axisLine={false}
+          tickLine={false}
+          tickMargin={8}
+          tick={{ fill: "var(--chart-axis)" }}
+          ticks={axisTicks.ticks}
+          interval={0}
+          tickFormatter={(month: string) => axisTicks.labels.get(month) ?? formatMonthShort(month)}
+        />
+        <YAxis
+          axisLine={false}
+          tickLine={false}
+          width={Y_AXIS_WIDTH}
+          domain={axis.domain}
+          ticks={axis.ticks}
+          interval={0}
+          tick={{ fill: "var(--chart-axis)" }}
+          tickFormatter={(value: number) => formatAxisMoney(value)}
+        />
+        <ChartTooltip
+          cursor={{ fill: "var(--muted)" }}
+          content={
+            <ChartTooltipContent
+              labelFormatter={(_, payload) => {
+                const datum = payload?.[0]?.payload as InvoiceDatum | undefined
+                return datum ? `Fatura de ${formatMonth(datum.month)}` : null
+              }}
+              formatter={(value, _name, item) => {
+                const datum = item.payload as InvoiceDatum
+                return (
+                  <div className="flex w-full items-center gap-2">
+                    <span
+                      className="size-2.5 shrink-0 rounded-[2px]"
+                      style={{ backgroundColor: datum.fill }}
+                      aria-hidden
+                    />
+                    <span className="text-muted-foreground">
+                      {datum.open ? "Em aberto" : "Fechada"} · vence {formatDateShort(datum.dueDate)}
+                    </span>
+                    <span className="text-foreground ml-auto pl-3 font-mono font-medium tabular-nums">
+                      {formatMoney(Number(value))}
+                    </span>
+                  </div>
+                )
+              }}
+            />
+          }
+        />
+        {averageClosed !== null && <ReferenceLine y={averageClosed} stroke="var(--color-average)" strokeWidth={1.5} />}
+        {/* Sem animação: as colunas aparecem prontas (e não somem quando o navegador recalcula o layout). */}
+        <Bar dataKey="total" maxBarSize={24} radius={[4, 4, 0, 0]} shape={InvoiceBar} isAnimationActive={false} />
+      </BarChart>
+    </ChartContainer>
+  )
+}
+
+/** Os dois números que o gráfico compara: a fatura em aberto e a média das fechadas. */
 function InvoiceFigures({ history }: { history: InvoiceHistory }) {
   const closed = history.closedCount
   return (
     <dl className="grid grid-cols-2 gap-4 sm:flex sm:gap-x-12">
       <div className="min-w-0 space-y-0.5">
-        <dt className="text-muted-foreground text-xs">Fatura aberta</dt>
+        <dt className="text-muted-foreground text-xs">Fatura em aberto</dt>
         <dd className="text-xl font-semibold tracking-tight">
           {history.open ? formatMoney(history.open.total) : "Nenhuma"}
         </dd>
@@ -179,14 +237,14 @@ function InvoiceFigures({ history }: { history: InvoiceHistory }) {
   )
 }
 
-/** Explica o destaque: a cor marca a fatura aberta; a linha, a média. */
+/** Explica o destaque: a cor marca a fatura em aberto; a linha, a média. */
 function InvoiceLegend({ history }: { history: InvoiceHistory }) {
   return (
     <ul className="text-muted-foreground flex flex-wrap gap-x-4 gap-y-1.5 text-xs">
       {history.open && (
         <li className="flex items-center gap-1.5">
           <span className="bg-chart-1 size-2.5 shrink-0 rounded-[2px]" aria-hidden />
-          Fatura aberta
+          Fatura em aberto
           {history.open.closingDate && `, ainda recebe compras até ${formatDateShort(history.open.closingDate)}`}
         </li>
       )}
@@ -225,7 +283,7 @@ function InvoiceTable({ points, averageClosed }: { points: InvoicePoint[]; avera
             </TableCell>
             <TableCell className="text-muted-foreground">{formatDateShort(point.dueDate)}</TableCell>
             <TableCell className={point.open ? "font-medium" : "text-muted-foreground"}>
-              {point.open ? "Aberta" : "Fechada"}
+              {point.open ? "Em aberto" : "Fechada"}
             </TableCell>
             <TableCell className="text-right tabular-nums">{formatMoney(point.total)}</TableCell>
           </TableRow>

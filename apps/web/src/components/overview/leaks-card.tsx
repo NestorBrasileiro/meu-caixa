@@ -17,7 +17,7 @@ export function LeaksCard({
   className,
 }: {
   items: LeakItem[]
-  /** "jul–set" */
+  /** "jul a set" */
   periodLabel: string
   className?: string
 }) {
@@ -26,7 +26,9 @@ export function LeaksCard({
   return (
     <Card className={className}>
       <CardHeader>
-        <CardTitle>Maiores vazamentos</CardTitle>
+        <CardTitle>
+          <h3>Maiores vazamentos</h3>
+        </CardTitle>
         <CardDescription>
           {total > 0 ? (
             <>
@@ -63,7 +65,7 @@ export function LeaksCard({
                   </div>
                   <div className="min-w-0 flex-1 space-y-1">
                     <p className="text-sm leading-snug font-medium">{item.title}</p>
-                    <p className="text-muted-foreground line-clamp-2 text-sm">{item.reason}</p>
+                    <p className="text-muted-foreground text-sm">{item.reason}</p>
                     <p className="text-muted-foreground text-xs">
                       {label}
                       {item.monthlySavings !== null && (

@@ -1,6 +1,6 @@
 "use client"
 
-import { Clock } from "lucide-react"
+import { Clock, EyeOff } from "lucide-react"
 import { createElement } from "react"
 import { ACCOUNT_TYPE } from "@/components/finance/account-type"
 import { Money } from "@/components/finance/money"
@@ -11,7 +11,14 @@ import { cn } from "@/lib/utils"
 import { CategoryMenu } from "./category-menu"
 import { dayHeading } from "./format"
 import { transactionIcon } from "./icons"
-import { normalizeText, type AccountOption, type CategoryOption, type DayGroup } from "./model"
+import {
+  categoryOptionsFor,
+  normalizeText,
+  type AccountOption,
+  type CategoryOption,
+  type DayGroup,
+  type OutOfFilterReason,
+} from "./model"
 
 /**
  * Lista agrupada por dia. Cada linha é uma grade com áreas nomeadas:
@@ -23,12 +30,24 @@ const ROW_GRID = cn(
   "@3xl/list:grid-cols-[2rem_minmax(0,1fr)_13rem_13rem_8.5rem] @3xl/list:[grid-template-areas:'icon_main_account_tags_amount']",
 )
 
+/** id do elemento da linha, para devolver o foco depois do "Mostrar mais". */
+export function rowDomId(transactionId: string): string {
+  return `lancamento-${transactionId}`
+}
+
+const OUT_OF_FILTER_NOTE: Record<OutOfFilterReason, string> = {
+  internal: "Agora é movimentação interna: some da lista quando os filtros mudarem",
+  category: "Fora da categoria filtrada: some da lista quando os filtros mudarem",
+}
+
 export function TransactionList({
   groups,
   today,
   accountsById,
   originals,
   categories,
+  outOfFilter,
+  focusTarget,
   onCategoryChange,
 }: {
   groups: DayGroup[]
@@ -36,6 +55,9 @@ export function TransactionList({
   accountsById: Map<string, AccountOption>
   originals: Map<string, string | null>
   categories: CategoryOption[]
+  /** Linhas editadas que só continuam na lista por terem sido editadas com os filtros atuais. */
+  outOfFilter: Map<string, OutOfFilterReason>
+  focusTarget: string | null
   onCategoryChange: (transactionId: string, category: string | null) => void
 }) {
   return (
@@ -57,12 +79,13 @@ export function TransactionList({
         const headingId = `day-${group.date}`
         return (
           <section key={group.date} aria-labelledby={headingId}>
-            <div className="bg-muted sticky top-14 z-[1] flex items-center justify-between gap-4 border-b px-4 py-2 text-sm">
+            {/* Faixa opaca (fica por cima das linhas ao rolar), mais clara que bg-muted para o texto passar de 4,5:1. */}
+            <div className="sticky top-14 z-[1] flex items-center justify-between gap-4 border-b bg-[color-mix(in_oklab,var(--muted)_50%,var(--card))] px-4 py-2 text-sm">
               <h3 id={headingId} className="flex items-baseline gap-1.5">
                 <span className="font-medium">{heading.title}</span>
                 <span className="text-muted-foreground text-xs">{heading.date}</span>
               </h3>
-              <p className="text-muted-foreground text-xs tabular-nums">
+              <p className="text-foreground text-xs font-medium tabular-nums">
                 <span className="sr-only">Saldo do dia: </span>
                 <Money cents={group.net} tone="flow" />
               </p>
@@ -75,6 +98,8 @@ export function TransactionList({
                   account={accountsById.get(tx.accountId)}
                   original={originals.get(tx.id) ?? null}
                   categories={categories}
+                  outOfFilter={outOfFilter.get(tx.id) ?? null}
+                  focusable={tx.id === focusTarget}
                   onCategoryChange={onCategoryChange}
                 />
               ))}
@@ -91,12 +116,17 @@ function TransactionRow({
   account,
   original,
   categories,
+  outOfFilter,
+  focusable,
   onCategoryChange,
 }: {
   tx: Transaction
   account: AccountOption | undefined
   original: string | null
   categories: CategoryOption[]
+  outOfFilter: OutOfFilterReason | null
+  /** Alvo do foco programático (primeira linha revelada pelo "Mostrar mais"). */
+  focusable: boolean
   onCategoryChange: (transactionId: string, category: string | null) => void
 }) {
   const counterparty =
@@ -112,7 +142,14 @@ function TransactionRow({
   const wideMeta = [counterparty, method].filter(Boolean).join(" · ")
 
   return (
-    <li className={cn(ROW_GRID, "gap-y-1.5 px-4 py-3 @3xl/list:items-center")}>
+    <li
+      id={rowDomId(tx.id)}
+      tabIndex={focusable ? -1 : undefined}
+      className={cn(
+        ROW_GRID,
+        "focus-visible:ring-ring/50 gap-y-1.5 px-4 py-3 outline-none focus-visible:ring-[3px] focus-visible:ring-inset @3xl/list:items-center",
+      )}
+    >
       <span
         aria-hidden
         className="bg-muted text-muted-foreground flex size-8 items-center justify-center self-start rounded-full [grid-area:icon] @3xl/list:self-center"
@@ -127,6 +164,12 @@ function TransactionRow({
         </div>
         {narrowMeta && <p className="text-muted-foreground truncate text-xs @3xl/list:hidden">{narrowMeta}</p>}
         {wideMeta && <p className="text-muted-foreground hidden truncate text-xs @3xl/list:block">{wideMeta}</p>}
+        {outOfFilter && (
+          <p className="text-muted-foreground mt-1 flex items-start gap-1.5 text-xs">
+            <EyeOff className="mt-px size-3.5 shrink-0" aria-hidden />
+            {OUT_OF_FILTER_NOTE[outOfFilter]}
+          </p>
+        )}
       </div>
 
       {account && (
@@ -140,7 +183,7 @@ function TransactionRow({
         <CategoryMenu
           category={tx.category}
           original={original}
-          options={categories}
+          options={categoryOptionsFor(categories, tx, original, account)}
           description={tx.description}
           onChange={(category) => onCategoryChange(tx.id, category)}
         />

@@ -12,30 +12,29 @@ import {
   commitmentsTotal,
   goalProgress,
   groupBudget,
+  monthName,
   plural,
   projectionCallout,
-  shiftMonth,
   sortCommitments,
   staleSyncNote,
+  thinMarginNote,
   unbudgetedSpending,
   type ProjectionRow,
 } from "@/components/planning/model"
 import { ProjectionCard } from "@/components/planning/projection-card"
+import { TIGHT_MARGIN } from "@/components/planning/styles"
 import { Card } from "@/components/ui/card"
 import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from "@/components/ui/empty"
 import { getAccounts, getAllTransactions, getPlanning, getToday } from "@/lib/data"
-import { monthRange, spendingByCategory } from "@/lib/finance/aggregate"
+import { lastMonths, monthRange, spendingByCategory } from "@/lib/finance/aggregate"
 import { formatDateShort, formatMonth, formatMonthShort } from "@/lib/format/date"
 import { formatMoney } from "@/lib/format/money"
 
 export const metadata: Metadata = { title: "Planejamento" }
 
-/** "novembro" a partir de "2026-11". */
-const monthName = (month: string) => formatMonth(month).split(" de ")[0]
-
 export default async function Page() {
   const today = getToday()
-  const lastClosedMonth = shiftMonth(today.slice(0, 7), -1)
+  const lastClosedMonth = lastMonths(today.slice(0, 7), 2)[0]
   const closedRange = monthRange(lastClosedMonth)
 
   const [planning, transactions, accounts] = await Promise.all([
@@ -96,7 +95,10 @@ export default async function Page() {
 
       <div className="grid grid-cols-1 gap-4 xl:grid-cols-[minmax(0,1fr)_26rem]">
         <CommitmentsCard rows={commitments} total={committed} />
-        <section aria-label="Metas" className="grid content-start gap-4 lg:grid-cols-2 xl:grid-cols-1">
+        <section aria-labelledby="metas-title" className="grid content-start gap-4 lg:grid-cols-2 xl:grid-cols-1">
+          <h3 id="metas-title" className="sr-only">
+            Metas
+          </h3>
           {goals.length === 0 ? (
             <Card className="lg:col-span-2 xl:col-span-1">
               <Empty className="p-6 md:p-8">
@@ -121,6 +123,7 @@ export default async function Page() {
         groups={groupBudget(budget)}
         scaleMax={budgetScaleMax(budget)}
         monthLabel={formatMonth(lastClosedMonth)}
+        monthName={monthName(lastClosedMonth)}
         unbudgeted={{
           total: unbudgeted.reduce((sum, row) => sum + row.total, 0),
           labels: unbudgeted.map((row) => row.label),
@@ -128,7 +131,11 @@ export default async function Page() {
         staleNote={staleNote}
       />
 
-      <ProjectionCard rows={projections} callout={projectionCallout(planning.projections, monthName, formatMoney)} />
+      <ProjectionCard
+        rows={projections}
+        callout={projectionCallout(planning.projections, monthName, formatMoney)}
+        thinMarginNote={thinMarginNote(projections, TIGHT_MARGIN, formatMoney)}
+      />
     </div>
   )
 }

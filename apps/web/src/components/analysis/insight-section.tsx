@@ -16,7 +16,8 @@ function InsightCard({ insight, period }: { insight: Insight; period: Period }) 
           {insight.title}
         </h4>
         {insight.monthlySavings !== null && (
-          <p className="bg-muted text-muted-foreground w-fit shrink-0 rounded-md px-2 py-1 text-xs whitespace-nowrap">
+          // Contorno em vez de fundo bg-muted: o texto muted sobre o cartão mantém contraste AA.
+          <p className="text-muted-foreground w-fit shrink-0 rounded-md border px-2 py-0.5 text-xs leading-5 whitespace-nowrap">
             Economia de <span className="text-foreground font-semibold">{formatMoney(insight.monthlySavings)}</span>
             /mês
           </p>

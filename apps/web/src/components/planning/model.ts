@@ -17,7 +17,19 @@ export function capitalize(value: string): string {
   return value.charAt(0).toLocaleUpperCase("pt-BR") + value.slice(1)
 }
 
-/** `YYYY-MM` deslocado `offset` meses. */
+const monthNameFormat = new Intl.DateTimeFormat("pt-BR", { month: "long", timeZone: "UTC" })
+
+/** `YYYY-MM` → "novembro". */
+export function monthName(month: string): string {
+  return monthNameFormat.format(new Date(`${month}-01T12:00:00Z`))
+}
+
+/** "nov, fev, mar e abr". */
+export function listJoin(items: string[]): string {
+  return items.length <= 1 ? items.join("") : `${items.slice(0, -1).join(", ")} e ${items[items.length - 1]}`
+}
+
+/** `YYYY-MM` deslocado `offset` meses para a frente (conclusão prevista das metas). */
 export function shiftMonth(month: string, offset: number): string {
   const [year, m] = month.split("-").map(Number)
   const index = year * 12 + (m - 1) + offset
@@ -244,4 +256,23 @@ export function projectionCallout(
     sentence += `; guardar ${formatMoney(deficit)} da sobra de ${formatMonthName(previous.month)}${bonus} cobre a diferença`
   }
   return `${sentence}.`
+}
+
+/**
+ * Nota sobre os meses de sobra positiva mas abaixo da margem (no gráfico as
+ * barras deles quase somem). null se há menos de dois meses assim.
+ */
+export function thinMarginNote(
+  rows: ProjectionRow[],
+  margin: Cents,
+  formatMoney: (cents: Cents) => string,
+): string | null {
+  const thin = rows.filter((row) => row.projectedBalance >= 0 && row.projectedBalance < margin)
+  if (thin.length < 2) return null
+  const months = listJoin(thin.map((row) => monthName(row.month)))
+  const values = thin.map((row) => row.projectedBalance)
+  const min = Math.min(...values)
+  const max = Math.max(...values)
+  const amount = min === max ? `é de só ${formatMoney(min)} por mês` : `fica entre ${formatMoney(min)} e ${formatMoney(max)}`
+  return `Em ${months} a sobra prevista ${amount}, margem apertada para imprevistos.`
 }

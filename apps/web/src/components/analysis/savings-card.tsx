@@ -1,6 +1,7 @@
 "use client"
 
 import { PiggyBank } from "lucide-react"
+import type { CSSProperties } from "react"
 import { Bar, BarChart, LabelList, XAxis, YAxis, type LabelProps } from "recharts"
 import { Card, CardAction, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card"
 import { ChartContainer, ChartTooltip, ChartTooltipContent, type ChartConfig } from "@/components/ui/chart"
@@ -75,19 +76,29 @@ function RowLabel(props: LabelProps) {
   )
 }
 
-/** De onde vem a economia: barras horizontais da economia mensal de cada sugestão. */
+/** De onde vem a economia: barras horizontais da economia mensal de cada oportunidade. */
 export function SavingsCard({ rows, className }: { rows: SavingsRow[]; className?: string }) {
   const total: Cents = rows.reduce((sum, row) => sum + row.savings, 0)
   const stacked = useIsMobile()
-  const { rowHeight, barSize } = stacked ? LAYOUT.stacked : LAYOUT.axis
+  const { barSize } = stacked ? LAYOUT.stacked : LAYOUT.axis
   const axisWidth = labelAxisWidth(rows)
+  /*
+   * A altura vem do CSS (mesmo ponto de quebra de useIsMobile), não do JS: o
+   * HTML do servidor já sai com a altura certa no celular e nada pula na hidratação.
+   */
+  const heights = {
+    "--chart-h-stacked": `${rows.length * LAYOUT.stacked.rowHeight}px`,
+    "--chart-h-axis": `${rows.length * LAYOUT.axis.rowHeight}px`,
+  } as CSSProperties
 
   return (
     <Card className={className}>
       <Tabs defaultValue="chart" className="gap-6">
         <CardHeader>
-          <CardTitle>De onde vem a economia</CardTitle>
-          <CardDescription>Quanto cada sugestão libera por mês.</CardDescription>
+          <CardTitle role="heading" aria-level={3}>
+            De onde vem a economia
+          </CardTitle>
+          <CardDescription>Quanto cada oportunidade libera por mês.</CardDescription>
           {rows.length > 0 && (
             <CardAction>
               <ViewToggle />
@@ -102,16 +113,23 @@ export function SavingsCard({ rows, className }: { rows: SavingsRow[]; className
                   <PiggyBank aria-hidden />
                 </EmptyMedia>
                 <EmptyTitle className="text-base">Nenhuma economia estimada</EmptyTitle>
-                <EmptyDescription>As sugestões deste período não trazem valor de economia por mês.</EmptyDescription>
+                <EmptyDescription>Nenhum item desta análise traz valor de economia por mês.</EmptyDescription>
               </EmptyHeader>
             </Empty>
           ) : (
             <>
-              <TabsContent value="chart">
+              {/* O painel do gráfico não é parada de Tab: o foco vai direto ao gráfico (navegável com as setas). */}
+              <TabsContent value="chart" tabIndex={-1}>
                 <ChartContainer
                   config={chartConfig}
-                  className="aspect-auto w-full [&_.recharts-label-list_text]:fill-foreground"
-                  style={{ height: rows.length * rowHeight }}
+                  className={cn(
+                    "aspect-auto h-(--chart-h-stacked) w-full rounded-md md:h-(--chart-h-axis)",
+                    // Celular: a barra fica no meio da faixa, com o nome em cima; a sobra abaixo da última barra some.
+                    "max-md:-mb-3",
+                    "has-[.recharts-surface:focus-visible]:ring-ring/50 has-[.recharts-surface:focus-visible]:ring-[3px]",
+                    "[&_.recharts-label-list_text]:fill-foreground",
+                  )}
+                  style={heights}
                 >
                   <BarChart
                     data={rows}
@@ -119,6 +137,7 @@ export function SavingsCard({ rows, className }: { rows: SavingsRow[]; className
                     margin={{ top: 0, right: VALUE_GUTTER, bottom: 0, left: 0 }}
                     barCategoryGap={stacked ? 0 : 8}
                     accessibilityLayer
+                    aria-label="Economia mensal por oportunidade. Use as setas para percorrer as barras."
                   >
                     <XAxis type="number" hide domain={[0, "dataMax"]} />
                     {stacked ? (
@@ -181,11 +200,14 @@ export function SavingsCard({ rows, className }: { rows: SavingsRow[]; className
                   </BarChart>
                 </ChartContainer>
               </TabsContent>
-              <TabsContent value="table">
+              <TabsContent
+                value="table"
+                className="rounded-md focus-visible:ring-[3px] focus-visible:ring-ring/50"
+              >
                 <Table>
                   <TableHeader>
                     <TableRow>
-                      <TableHead>Sugestão</TableHead>
+                      <TableHead>Oportunidade</TableHead>
                       <TableHead className="text-right">Por mês</TableHead>
                     </TableRow>
                   </TableHeader>

@@ -1,8 +1,8 @@
 "use client"
 
-import { PencilLine, SearchX, TriangleAlert } from "lucide-react"
+import { EyeOff, PencilLine, SearchX, TriangleAlert } from "lucide-react"
 import Link from "next/link"
-import { useDeferredValue, useMemo, useState } from "react"
+import { useDeferredValue, useEffect, useMemo, useState } from "react"
 import { Button } from "@/components/ui/button"
 import { Card } from "@/components/ui/card"
 import { Empty, EmptyContent, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from "@/components/ui/empty"
@@ -21,11 +21,12 @@ import {
   periodRange,
   staleAccounts,
   summarize,
+  visibleCount,
   type AccountOption,
   type Filters,
 } from "./model"
 import { SummaryStrip } from "./summary-strip"
-import { TransactionList } from "./transaction-list"
+import { rowDomId, TransactionList } from "./transaction-list"
 
 /**
  * Tela de transações: dona de todo o estado de filtro (no cliente, sem URL),
@@ -44,6 +45,14 @@ export function TransactionsView({
   const [limit, setLimit] = useState(PAGE_SIZE)
   /** id do lançamento → categoria escolhida pelo usuário (só nesta sessão). */
   const [edits, setEdits] = useState<Record<string, string | null>>({})
+  /**
+   * Lançamentos recategorizados desde a última mudança de filtro. Ficam na
+   * lista mesmo que a nova categoria não passe nos filtros: a linha não some
+   * debaixo do clique, e os totais não mudam sem explicação.
+   */
+  const [pinned, setPinned] = useState<ReadonlySet<string>>(() => new Set())
+  /** Primeira linha revelada pelo "Mostrar mais": recebe o foco, já que o botão pode sumir. */
+  const [focusTarget, setFocusTarget] = useState<string | null>(null)
   const search = useDeferredValue(filters.search)
 
   const accountsById = useMemo(() => new Map(accounts.map((account) => [account.id, account])), [accounts])
@@ -56,28 +65,43 @@ export function TransactionsView({
     [transactions, edits],
   )
   const range = useMemo(() => periodRange(filters.period, today), [filters.period, today])
-  const { rows, hiddenInternal } = useMemo(
-    () => applyFilters(effective, { ...filters, search }, range, searchIndex),
-    [effective, filters, search, range, searchIndex],
+  const { rows, hiddenInternal, outOfFilter } = useMemo(
+    () => applyFilters(effective, { ...filters, search }, range, searchIndex, pinned),
+    [effective, filters, search, range, searchIndex, pinned],
   )
   const summary = useMemo(() => summarize(rows), [rows])
-  const groups = useMemo(() => groupByDay(rows, limit), [rows, limit])
+  const shown = visibleCount(rows, limit)
+  const groups = useMemo(() => groupByDay(rows.slice(0, shown)), [rows, shown])
   const stale = staleAccounts(accounts, filters.accountId, range)
   const editedCount = Object.keys(edits).length
   const active = hasActiveFilters(filters)
-  const shown = Math.min(limit, rows.length)
+
+  useEffect(() => {
+    if (focusTarget) document.getElementById(rowDomId(focusTarget))?.focus()
+  }, [focusTarget])
+
+  function startOver(next: Filters | ((current: Filters) => Filters)) {
+    setFilters(next)
+    setLimit(PAGE_SIZE)
+    setPinned(new Set())
+    setFocusTarget(null)
+  }
 
   function updateFilters(patch: Partial<Filters>) {
-    setFilters((current) => ({ ...current, ...patch }))
-    setLimit(PAGE_SIZE)
+    startOver((current) => ({ ...current, ...patch }))
   }
 
   function resetFilters() {
-    setFilters(DEFAULT_FILTERS)
-    setLimit(PAGE_SIZE)
+    startOver(DEFAULT_FILTERS)
+  }
+
+  function showMore() {
+    setFocusTarget(rows[shown]?.id ?? null)
+    setLimit(shown + PAGE_SIZE)
   }
 
   function changeCategory(transactionId: string, category: string | null) {
+    setPinned((current) => (current.has(transactionId) ? current : new Set(current).add(transactionId)))
     setEdits((current) => {
       const next = { ...current }
       if (category === originals.get(transactionId)) delete next[transactionId]
@@ -133,7 +157,32 @@ export function TransactionsView({
         </div>
       )}
 
-      {rows.length === 0 ? (
+      {rows.length === 0 && hiddenInternal > 0 ? (
+        <Empty className="border">
+          <EmptyHeader>
+            <EmptyMedia variant="icon">
+              <EyeOff aria-hidden />
+            </EmptyMedia>
+            <EmptyTitle>
+              {hiddenInternal === 1
+                ? "1 lançamento oculto"
+                : `${formatCount(hiddenInternal)} lançamentos ocultos`}
+            </EmptyTitle>
+            <EmptyDescription>
+              {hiddenInternal === 1 ? "O lançamento que corresponde" : "Os lançamentos que correspondem"}{" "}
+              {search.trim() ? "à busca e aos filtros" : "aos filtros"}{" "}
+              {hiddenInternal === 1 ? "é uma movimentação interna" : "são movimentações internas"}{" "}
+              (pagamento de fatura ou transferência entre suas contas), e a opção “Ocultar movimentações internas”
+              está ligada.
+            </EmptyDescription>
+          </EmptyHeader>
+          <EmptyContent>
+            <Button variant="outline" size="sm" onClick={() => updateFilters({ hideInternal: false })}>
+              Mostrar movimentações internas
+            </Button>
+          </EmptyContent>
+        </Empty>
+      ) : rows.length === 0 ? (
         <Empty className="border">
           <EmptyHeader>
             <EmptyMedia variant="icon">
@@ -162,6 +211,8 @@ export function TransactionsView({
             accountsById={accountsById}
             originals={originals}
             categories={categories}
+            outOfFilter={outOfFilter}
+            focusTarget={focusTarget}
             onCategoryChange={changeCategory}
           />
           <div className="flex flex-wrap items-center justify-between gap-3 px-4 py-3">
@@ -171,7 +222,7 @@ export function TransactionsView({
                 : `Mostrando ${formatCount(shown)} de ${formatCount(rows.length)}`}
             </p>
             {shown < rows.length && (
-              <Button variant="outline" size="sm" onClick={() => setLimit((current) => current + PAGE_SIZE)}>
+              <Button variant="outline" size="sm" onClick={showMore}>
                 Mostrar mais
               </Button>
             )}

@@ -11,11 +11,12 @@ import {
   EmptyMedia,
   EmptyTitle,
 } from "@/components/ui/empty"
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
+import { Table, TableBody, TableCaption, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Tabs, TabsContent } from "@/components/ui/tabs"
 import type { Cents } from "@/lib/api/types"
+import { formatMonth } from "@/lib/format/date"
 import { formatMoney, formatPercent } from "@/lib/format/money"
-import type { CategoryBar } from "./model"
+import { monthNameOf, type CategoryBar } from "./model"
 import { HEADER_ACTION_CLASS, HEADER_DESCRIPTION_CLASS } from "./styles"
 import { ViewToggle } from "./view-toggle"
 
@@ -51,21 +52,26 @@ function groupedHint(row: CategoryBar): string | null {
 export function SpendingCard({
   rows,
   total,
-  monthLabel,
+  month,
   className,
 }: {
   rows: CategoryBar[]
   total: Cents
-  /** "setembro de 2026" */
-  monthLabel: string
+  /** Mês fechado, `YYYY-MM`. */
+  month: string
   className?: string
 }) {
+  const monthLabel = formatMonth(month)
   return (
     <Card className={className}>
       <Tabs defaultValue="chart" className="flex-1 gap-6">
         <CardHeader>
-          <CardTitle>Gastos por categoria</CardTitle>
-          <CardDescription className={HEADER_DESCRIPTION_CLASS}>Em {monthLabel}, o último mês fechado. Cartão e contas, sem pagamento de fatura.</CardDescription>
+          <CardTitle>
+            <h3>Gastos por categoria</h3>
+          </CardTitle>
+          <CardDescription className={HEADER_DESCRIPTION_CLASS}>
+            Em {monthLabel}, o último mês fechado. Cartão e contas, sem pagamento de fatura.
+          </CardDescription>
           {rows.length > 0 && (
             <CardAction className={HEADER_ACTION_CLASS}>
               <ViewToggle />
@@ -163,6 +169,7 @@ export function SpendingCard({
               </TabsContent>
               <TabsContent value="table">
                 <Table>
+                  <TableCaption className="sr-only">Gastos por categoria em {monthLabel}</TableCaption>
                   <TableHeader>
                     <TableRow>
                       <TableHead>Categoria</TableHead>
@@ -177,7 +184,7 @@ export function SpendingCard({
                         <TableRow key={row.key}>
                           <TableCell>
                             {row.label}
-                            {hint && <span className="text-muted-foreground"> · {hint}</span>}
+                            {hint && <span className="text-muted-foreground block text-xs">{hint}</span>}
                           </TableCell>
                           <TableCell className="text-right tabular-nums">{formatMoney(row.total)}</TableCell>
                           <TableCell className="text-right tabular-nums">{formatPercent(row.share)}</TableCell>
@@ -192,7 +199,7 @@ export function SpendingCard({
         </CardContent>
         {rows.length > 0 && (
           <CardFooter className="justify-between border-t pt-4 text-sm [.border-t]:pt-4">
-            <span className="text-muted-foreground">Total em {monthLabel.split(" de ")[0]}</span>
+            <span className="text-muted-foreground">Total em {monthNameOf(month)}</span>
             <span className="font-semibold tabular-nums">{formatMoney(total)}</span>
           </CardFooter>
         )}

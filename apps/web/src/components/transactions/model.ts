@@ -1,6 +1,6 @@
 import type { Account, Cents, IsoDate, Transaction, TransactionStatus } from "@/lib/api/types"
 import { lastMonths, monthRange } from "@/lib/finance/aggregate"
-import { isCardPayment, isOwnTransfer } from "@/lib/finance/classify"
+import { isCardPayment, isCashAccount, isOwnTransfer } from "@/lib/finance/classify"
 import { categoryLabel } from "@/lib/format/category"
 
 /**
@@ -91,20 +91,39 @@ export function isInternal(tx: Transaction): boolean {
   return isOwnTransfer(tx) || isCardPayment(tx)
 }
 
+export type InternalKind = "card-payment" | "own-transfer"
+
+function internalKind(tx: Transaction): InternalKind | null {
+  return isCardPayment(tx) ? "card-payment" : isOwnTransfer(tx) ? "own-transfer" : null
+}
+
+/** Por que um lançamento editado nesta tela só continua na lista por estar fixado. */
+export type OutOfFilterReason = "internal" | "category"
+
 export interface FilterResult {
   rows: Transaction[]
   /** Quantos lançamentos o "ocultar movimentações internas" está escondendo. */
   hiddenInternal: number
+  /** Lançamentos fixados (editados com os filtros atuais) que, pelos filtros, já teriam saído da lista. */
+  outOfFilter: Map<string, OutOfFilterReason>
 }
 
+/**
+ * Aplica os filtros. Duas exceções ao "ocultar movimentações internas":
+ * - escolher uma categoria é pedir por ela; se a categoria é interna, ela aparece;
+ * - lançamentos em `pinned` (recategorizados desde a última mudança de filtro)
+ *   continuam onde o usuário os viu, em vez de sumir no clique.
+ */
 export function applyFilters(
   transactions: Transaction[],
   filters: Filters,
   range: DateRange,
   searchIndex: Map<string, string>,
+  pinned: ReadonlySet<string> = new Set(),
 ): FilterResult {
   const query = normalizeText(filters.search)
   const rows: Transaction[] = []
+  const outOfFilter = new Map<string, OutOfFilterReason>()
   let hiddenInternal = 0
   for (const tx of transactions) {
     if (tx.date < range.from || tx.date > range.to) continue
@@ -112,17 +131,23 @@ export function applyFilters(
     if (filters.flow === "in" && tx.amount <= 0) continue
     if (filters.flow === "out" && tx.amount >= 0) continue
     if (filters.status !== "all" && tx.status !== filters.status) continue
-    if (filters.category !== ALL && (tx.category ?? NO_CATEGORY) !== filters.category) continue
     if (query && !searchIndex.get(tx.id)?.includes(query)) continue
-    if (filters.hideInternal && isInternal(tx)) {
+    const reason: OutOfFilterReason | null =
+      filters.category !== ALL && (tx.category ?? NO_CATEGORY) !== filters.category
+        ? "category"
+        : filters.hideInternal && filters.category === ALL && isInternal(tx)
+          ? "internal"
+          : null
+    if (reason && pinned.has(tx.id)) outOfFilter.set(tx.id, reason)
+    else if (reason === "internal") {
       hiddenInternal += 1
       continue
-    }
+    } else if (reason) continue
     rows.push(tx)
   }
   // A API já devolve do mais novo para o mais antigo; o sort estável só garante.
   rows.sort((a, b) => (a.date === b.date ? 0 : a.date < b.date ? 1 : -1))
-  return { rows, hiddenInternal }
+  return { rows, hiddenInternal, outOfFilter }
 }
 
 /** Texto pesquisável de cada lançamento (descrição + favorecido), já normalizado. */
@@ -163,26 +188,31 @@ export function summarize(rows: Transaction[]): Summary {
 
 export interface DayGroup {
   date: IsoDate
-  /** Saldo do dia considerando todos os lançamentos filtrados do dia (não só os visíveis). */
+  /** Saldo do dia: os dias nunca são cortados na paginação, então bate com as linhas mostradas. */
   net: Cents
-  count: number
   items: Transaction[]
 }
 
-/** Agrupa por dia os `limit` primeiros lançamentos; o total do dia usa o conjunto filtrado inteiro. */
-export function groupByDay(rows: Transaction[], limit: number): DayGroup[] {
-  const totals = new Map<IsoDate, { net: Cents; count: number }>()
-  for (const tx of rows) {
-    const day = totals.get(tx.date) ?? { net: 0, count: 0 }
-    day.net += tx.amount
-    day.count += 1
-    totals.set(tx.date, day)
-  }
+/**
+ * Quantas linhas mostrar: `limit`, estendido até o fim do último dia, para
+ * que nenhum dia fique pela metade (e o total do dia some o que está na tela).
+ */
+export function visibleCount(rows: Transaction[], limit: number): number {
+  if (limit >= rows.length) return rows.length
+  let end = Math.max(limit, 1)
+  while (end < rows.length && rows[end].date === rows[end - 1].date) end += 1
+  return end
+}
+
+/** Agrupa por dia (as linhas já vêm do mais novo para o mais antigo). */
+export function groupByDay(rows: Transaction[]): DayGroup[] {
   const groups: DayGroup[] = []
-  for (const tx of rows.slice(0, limit)) {
+  for (const tx of rows) {
     const last = groups.at(-1)
-    if (last && last.date === tx.date) last.items.push(tx)
-    else groups.push({ date: tx.date, ...totals.get(tx.date)!, items: [tx] })
+    if (last && last.date === tx.date) {
+      last.items.push(tx)
+      last.net += tx.amount
+    } else groups.push({ date: tx.date, net: tx.amount, items: [tx] })
   }
   return groups
 }
@@ -192,14 +222,39 @@ export function groupByDay(rows: Transaction[], limit: number): DayGroup[] {
 export interface CategoryOption {
   value: string
   label: string
+  /** Pagamento de fatura ou transferência entre contas próprias (regras de `@/lib/finance/classify`). */
+  internal: InternalKind | null
 }
 
 /** Categorias presentes nos dados, em ordem alfabética do rótulo em português. */
 export function categoryOptions(transactions: Transaction[]): CategoryOption[] {
-  const values = new Set(transactions.map((tx) => tx.category ?? NO_CATEGORY))
-  return [...values]
-    .map((value) => ({ value, label: categoryLabel(value === NO_CATEGORY ? null : value) }))
-    .sort((a, b) => a.label.localeCompare(b.label, "pt-BR"))
+  const byValue = new Map<string, CategoryOption>()
+  for (const tx of transactions) {
+    const value = tx.category ?? NO_CATEGORY
+    if (!byValue.has(value)) byValue.set(value, { value, label: categoryLabel(tx.category), internal: internalKind(tx) })
+  }
+  return [...byValue.values()].sort((a, b) => a.label.localeCompare(b.label, "pt-BR"))
+}
+
+/**
+ * Categorias que fazem sentido para um lançamento. As internas só onde podem
+ * ocorrer: pagamento de fatura sai da conta (ou entra como crédito no cartão);
+ * transferência para poupança só entre contas de dinheiro. A categoria atual
+ * e a original sempre ficam na lista.
+ */
+export function categoryOptionsFor(
+  options: CategoryOption[],
+  tx: Transaction,
+  original: string | null,
+  account: Pick<Account, "type"> | undefined,
+): CategoryOption[] {
+  const cash = account ? isCashAccount(account) : true
+  return options.filter((option) => {
+    const value = option.value === NO_CATEGORY ? null : option.value
+    if (option.internal === null || value === tx.category || value === original) return true
+    if (option.internal === "card-payment") return cash ? tx.amount < 0 : tx.amount > 0
+    return cash
+  })
 }
 
 // ------------------------------------------------------------------- contas

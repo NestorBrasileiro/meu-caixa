@@ -6,8 +6,10 @@ import { LeaksCard } from "@/components/overview/leaks-card"
 import {
   addDays,
   capitalize,
-  monthName,
+  monthNameOf,
+  monthSpanLabel,
   nextOpenInvoice,
+  plural,
   topCategories,
   topLeaks,
   upcomingDue,
@@ -33,7 +35,7 @@ import {
   totalCash,
 } from "@/lib/finance/aggregate"
 import { isCashAccount } from "@/lib/finance/classify"
-import { formatDateShort, formatMonth, formatMonthShort, formatWeekday } from "@/lib/format/date"
+import { formatDateShort, formatWeekday } from "@/lib/format/date"
 
 const UPCOMING_DAYS = 10
 const TOP_CATEGORIES = 7
@@ -60,7 +62,6 @@ export default async function Page() {
   const openInvoice = nextOpenInvoice(invoices, today)
   const creditLimit = cards.reduce((sum, card) => sum + (card.creditLimit ?? 0), 0)
   const creditAvailable = cards.reduce((sum, card) => sum + (card.availableCredit ?? 0), 0)
-  const currentMonthName = monthName(formatMonth(currentMonth))
   const dayOfMonth = Number(today.slice(8, 10))
 
   // Fluxo de caixa: o mês corrente é parcial.
@@ -70,7 +71,7 @@ export default async function Page() {
   }))
   const pendingInvoice = openInvoice && openInvoice.dueDate.slice(0, 7) === currentMonth ? openInvoice : null
   const partial = {
-    month: currentMonthName,
+    month: monthNameOf(currentMonth),
     day: dayOfMonth,
     pendingInvoiceDue: pendingInvoice ? formatDateShort(pendingInvoice.dueDate) : null,
   }
@@ -80,6 +81,7 @@ export default async function Page() {
   const categoryTotal = categoryRows.reduce((sum, row) => sum + row.total, 0)
 
   // Próximos vencimentos.
+  const upcomingUntil = addDays(today, UPCOMING_DAYS)
   const upcoming = upcomingDue({
     commitments: planning.commitments,
     invoices,
@@ -88,14 +90,14 @@ export default async function Page() {
     horizonDays: UPCOMING_DAYS,
   })
 
-  const analysisPeriod = `${formatMonthShort(analysis.period.from.slice(0, 7))}–${formatMonthShort(analysis.period.to.slice(0, 7))}`
+  const description = [
+    capitalize(formatWeekday(today)),
+    `${plural(accounts.length, "conta", "contas")} em ${plural(connections.length, "banco", "bancos")}`,
+  ].join(" · ")
 
   return (
     <div className="space-y-6">
-      <PageHeader
-        title="Visão geral"
-        description={`${capitalize(formatWeekday(today))} · ${accounts.length} contas em ${connections.length} instituições`}
-      />
+      <PageHeader title="Visão geral" description={description} />
 
       <KpiRow
         data={{
@@ -108,23 +110,30 @@ export default async function Page() {
           credit: cards.length > 0 ? { available: creditAvailable, limit: creditLimit } : null,
           month: {
             totals: periodTotals(transactions, { from: `${currentMonth}-01`, to: today }),
-            label: `${capitalize(currentMonthName)}, até dia ${dayOfMonth}`,
+            day: dayOfMonth,
           },
         }}
       />
 
-      <div className="grid grid-cols-1 gap-4 xl:grid-cols-[minmax(0,1fr)_22rem]">
-        <CashFlowCard rows={cashFlow} partial={partial} />
-        <UpcomingCard items={upcoming} until={addDays(today, UPCOMING_DAYS)} horizonDays={UPCOMING_DAYS} />
-      </div>
-
-      <div className="grid grid-cols-1 gap-4 xl:grid-cols-[minmax(0,1fr)_22rem]">
+      {/*
+        xl: gráficos à esquerda, listas na coluna de 22rem à direita.
+        lg: as duas listas lado a lado, com os gráficos em largura cheia
+        acima e abaixo (gráfico de 12 meses em meia coluna fica apertado).
+      */}
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-2 xl:grid-cols-[minmax(0,1fr)_22rem]">
+        <CashFlowCard rows={cashFlow} partial={partial} className="lg:col-span-2 xl:col-span-1" />
+        <UpcomingCard items={upcoming} until={upcomingUntil} horizonDays={UPCOMING_DAYS} />
         <SpendingCard
           rows={topCategories(categoryRows, TOP_CATEGORIES)}
           total={categoryTotal}
-          monthLabel={formatMonth(lastClosedMonth)}
+          month={lastClosedMonth}
+          className="lg:col-span-2 lg:row-start-3 xl:col-span-1 xl:col-start-1 xl:row-start-2"
         />
-        <LeaksCard items={topLeaks(analysis.insights, TOP_LEAKS)} periodLabel={analysisPeriod} />
+        <LeaksCard
+          items={topLeaks(analysis.insights, TOP_LEAKS)}
+          periodLabel={monthSpanLabel(analysis.period.from, analysis.period.to)}
+          className="lg:col-start-2 lg:row-start-2"
+        />
       </div>
 
       <AccountsCard accounts={accounts} today={today} />

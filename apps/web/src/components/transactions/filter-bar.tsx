@@ -56,6 +56,9 @@ export function FilterBar({
   hiddenInternal: number
 }) {
   const selectedAccount = accounts.find((account) => account.id === filters.accountId)
+  const selectedCategory = categories.find((category) => category.value === filters.category)
+  // Escolher uma categoria interna já é pedir para vê-la: o "ocultar" não se aplica.
+  const internalCategory = selectedCategory?.internal != null
 
   return (
     <section aria-label="Filtros" className="@container/filters space-y-2">
@@ -135,12 +138,11 @@ export function FilterBar({
           ))}
         </ToggleGroup>
 
+        {/* No celular, categoria e status ocupam a linha toda: os rótulos de categoria são os mais longos. */}
         <Select value={filters.category} onValueChange={(category) => onChange({ category })}>
-          <SelectTrigger aria-label="Categoria" className="w-full min-w-0 @2xl/filters:w-52">
+          <SelectTrigger aria-label="Categoria" className="col-span-2 w-full min-w-0 @2xl/filters:w-52">
             <SelectValue>
-              <span className="truncate">
-                {categories.find((category) => category.value === filters.category)?.label ?? "Todas as categorias"}
-              </span>
+              <span className="truncate">{selectedCategory?.label ?? "Todas as categorias"}</span>
             </SelectValue>
           </SelectTrigger>
           <SelectContent>
@@ -155,7 +157,7 @@ export function FilterBar({
         </Select>
 
         <Select value={filters.status} onValueChange={(status) => onChange({ status: status as StatusFilter })}>
-          <SelectTrigger aria-label="Status" className="w-full min-w-0 @2xl/filters:w-40">
+          <SelectTrigger aria-label="Status" className="col-span-2 w-full min-w-0 @2xl/filters:w-40">
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
@@ -167,20 +169,30 @@ export function FilterBar({
           </SelectContent>
         </Select>
 
-        <div className="col-span-2 flex min-h-9 flex-wrap items-center gap-x-2 gap-y-1 @2xl/filters:ml-2">
+        <div className="col-span-2 flex min-h-9 flex-wrap items-center gap-x-2 gap-y-1">
           <Switch
             id="hide-internal"
-            checked={filters.hideInternal}
+            checked={filters.hideInternal && !internalCategory}
+            disabled={internalCategory}
+            aria-describedby={internalCategory ? "hide-internal-note" : undefined}
             onCheckedChange={(hideInternal) => onChange({ hideInternal })}
           />
           <Label htmlFor="hide-internal" className="font-normal">
             Ocultar movimentações internas
           </Label>
           <InternalInfo />
-          {filters.hideInternal && hiddenInternal > 0 && (
-            <span className="text-muted-foreground text-xs">
-              {hiddenInternal === 1 ? "1 oculta" : `${formatCount(hiddenInternal)} ocultas`}
+          {internalCategory ? (
+            <span id="hide-internal-note" className="text-muted-foreground text-xs">
+              Categoria interna
+              <span className="sr-only">: a categoria escolhida é uma movimentação interna e aparece na lista</span>
             </span>
+          ) : (
+            filters.hideInternal &&
+            hiddenInternal > 0 && (
+              <span className="text-muted-foreground text-xs">
+                {hiddenInternal === 1 ? "1 oculta" : `${formatCount(hiddenInternal)} ocultas`}
+              </span>
+            )
           )}
         </div>
 
@@ -217,7 +229,7 @@ function InternalInfo() {
           <Info aria-hidden />
         </Button>
       </PopoverTrigger>
-      <PopoverContent side="top" className="w-80 text-sm">
+      <PopoverContent side="top" collisionPadding={16} className="w-[min(20rem,calc(100vw-2rem))] text-sm">
         <p className="font-medium">Por que ocultar?</p>
         <p className="text-muted-foreground mt-1">
           Pagamento de fatura e transferência entre suas contas não são gasto novo: as compras já aparecem no cartão,

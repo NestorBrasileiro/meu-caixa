@@ -34,11 +34,17 @@ export function GoalCard({ goal, className }: { goal: GoalProgress; className?: 
   const StatusIcon = status.icon
 
   return (
-    <Card className={cn("gap-4", className)}>
-      <CardHeader>
-        <CardTitle>{goal.name}</CardTitle>
+    <Card className={cn("@container/goal gap-4", className)}>
+      {/*
+        Cartão estreito: o selo desce para baixo da descrição em vez de espremer o título.
+        O "!" vence o has-[card-action]:grid-cols-[1fr_auto] do CardHeader (o :has() pesa mais).
+      */}
+      <CardHeader className="@max-[25rem]/goal:grid-cols-1!">
+        <CardTitle className="text-balance">
+          <h4>{goal.name}</h4>
+        </CardTitle>
         <CardDescription>{goal.accountName ? `Guardada em ${goal.accountName}` : "Meta de economia"}</CardDescription>
-        <CardAction>
+        <CardAction className="@max-[25rem]/goal:col-start-1 @max-[25rem]/goal:row-span-1 @max-[25rem]/goal:row-start-3 @max-[25rem]/goal:justify-self-start">
           <Badge variant="outline" className="gap-1 font-normal">
             <StatusIcon className={cn("size-3", status.className)} aria-hidden />
             {status.label}

@@ -23,7 +23,9 @@ export function AccountsCard({ accounts, today }: { accounts: Account[]; today: 
   return (
     <Card>
       <CardHeader>
-        <CardTitle>Contas</CardTitle>
+        <CardTitle>
+          <h3>Contas</h3>
+        </CardTitle>
         <CardDescription className={HEADER_DESCRIPTION_CLASS}>
           Saldo de cada conta conectada. No cartão, o valor da fatura em aberto.
         </CardDescription>
@@ -36,7 +38,7 @@ export function AccountsCard({ accounts, today }: { accounts: Account[]; today: 
           </Button>
         </CardAction>
       </CardHeader>
-      <CardContent>
+      <CardContent className="@container">
         {accounts.length === 0 ? (
           <Empty className="border p-6 md:p-8">
             <EmptyHeader>
@@ -48,36 +50,36 @@ export function AccountsCard({ accounts, today }: { accounts: Account[]; today: 
             </EmptyHeader>
           </Empty>
         ) : (
-          <ul className="divide-y sm:grid sm:grid-cols-2 sm:gap-3 sm:divide-y-0 xl:grid-cols-4">
+          <ul className="divide-y @md:grid @md:grid-cols-2 @md:gap-3 @md:divide-y-0 @5xl:grid-cols-4">
             {accounts.map((account) => {
               const { label, icon: Icon } = ACCOUNT_TYPE[account.type]
               const stale = account.connectionStatus !== "ACTIVE"
               return (
                 <li
                   key={account.id}
-                  className="flex items-center gap-3 py-3 first:pt-0 last:pb-0 sm:flex-col sm:items-stretch sm:rounded-lg sm:border sm:p-4 sm:first:pt-4 sm:last:pb-4"
+                  className="flex items-center gap-3 py-3 first:pt-0 last:pb-0 @md:flex-col @md:items-stretch @md:rounded-lg @md:border @md:p-4 @md:first:pt-4 @md:last:pb-4"
                 >
-                  <div className="flex min-w-0 flex-1 items-center gap-3 sm:items-start">
+                  <div className="flex min-w-0 flex-1 items-center gap-3 @md:items-start">
                     <div className="bg-muted flex size-8 shrink-0 items-center justify-center rounded-md">
                       <Icon className="text-muted-foreground size-4" aria-hidden />
                       <span className="sr-only">{label}</span>
                     </div>
                     <div className="min-w-0 flex-1">
                       <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
-                        <p className="max-w-full truncate text-sm font-medium">{account.name}</p>
+                        <p className="line-clamp-2 text-sm font-medium break-words">{account.name}</p>
                         {stale && <ConnectionStatusBadge status={account.connectionStatus} />}
                       </div>
-                      <p className="text-muted-foreground truncate text-xs">
+                      <p className="text-muted-foreground text-xs break-words">
                         {account.institutionName}
                         {account.number ? ` · ${account.number}` : ""}
                       </p>
                     </div>
                   </div>
-                  <div className="flex shrink-0 flex-col items-end sm:mt-auto sm:items-start">
-                    <p className="text-muted-foreground order-last text-xs sm:order-first">
+                  <div className="flex shrink-0 flex-col items-end @md:mt-auto @md:items-start">
+                    <p className="text-muted-foreground order-last text-xs @md:order-first">
                       {balanceCaption(account, today)}
                     </p>
-                    <Money cents={account.balance} className="text-sm font-semibold sm:text-base" />
+                    <Money cents={account.balance} className="text-sm font-semibold @md:text-base" />
                   </div>
                 </li>
               )

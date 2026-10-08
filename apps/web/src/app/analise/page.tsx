@@ -40,7 +40,7 @@ export default async function Page() {
       <div className={`${COLUMNS} gap-4`}>
         <HeroCard
           monthlySavings={report.potentialMonthlySavings}
-          suggestions={savings.length}
+          opportunities={savings.length}
           headline={report.headline}
           summary={report.summary}
         />
@@ -60,7 +60,7 @@ export default async function Page() {
 
       <p className="text-muted-foreground flex items-start gap-2 text-xs">
         <Info className="mt-px size-3.5 shrink-0" aria-hidden />
-        Sugestões geradas automaticamente a partir das suas transações. Revise antes de agir: o Claude pode errar.
+        Análise gerada automaticamente a partir das suas transações. Revise antes de agir: o Claude pode errar.
       </p>
     </div>
   )

@@ -39,8 +39,10 @@ export default async function Page() {
       ? "Nenhum banco conectado ainda."
       : `${plural(connections.length, "banco conectado", "bancos conectados")} via Meu Pluggy · ${plural(accounts.length, "conta", "contas")}`
 
+  // As grades respondem à largura da área de conteúdo (container "page"), não à da janela:
+  // a barra lateral ocupa 16rem a partir de md e pode ser recolhida.
   return (
-    <div className="space-y-6">
+    <div className="@container/page space-y-6">
       <PageHeader title="Contas" description={description} actions={<AccountsHeaderActions />} />
 
       <ConnectionAlerts connections={connections} accounts={accounts} />
@@ -72,7 +74,11 @@ export default async function Page() {
             openInvoiceDueDate={cards.length === 1 ? (openInvoices[cards[0].id]?.dueDate ?? null) : null}
           />
 
-          <section aria-label="Bancos conectados" className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+          {/* Cada card ocupa duas linhas da grade (subgrid): cabeçalhos e divisórias alinham numa mesma fileira. */}
+          <section
+            aria-label="Bancos conectados"
+            className="grid grid-cols-1 gap-4 @2xl/page:grid-cols-2 @min-[60rem]/page:grid-cols-3"
+          >
             {connections.map((connection) => (
               <ConnectionCard
                 key={connection.id}
@@ -87,7 +93,11 @@ export default async function Page() {
         </>
       )}
 
-      <div className={histories.length > 0 ? "grid gap-4 xl:grid-cols-2" : undefined}>
+      <div
+        className={
+          histories.length > 0 ? "grid grid-cols-1 items-start gap-4 @min-[60rem]/page:grid-cols-2" : undefined
+        }
+      >
         {histories.map((history) => (
           <InvoicesCard key={history.accountId} history={history} />
         ))}

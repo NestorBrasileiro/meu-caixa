@@ -3,7 +3,7 @@ import type { Cents } from "@/lib/api/types"
 import { formatMoney, formatPercent } from "@/lib/format/money"
 import { cn } from "@/lib/utils"
 
-/** A partir daqui o limite usado vira alerta (ícone + rótulo, nunca só cor). */
+/** A partir daqui o limite em uso vira alerta (ícone + rótulo, nunca só cor). */
 const NEAR_LIMIT = 0.8
 
 /**
@@ -19,12 +19,12 @@ export function CreditLimitMeter({ used, limit }: { used: Cents; limit: Cents })
   return (
     <div className="space-y-1.5">
       <div className="flex items-baseline justify-between gap-2 text-xs">
-        <span className="text-muted-foreground">Limite usado</span>
+        <span className="text-muted-foreground">Limite em uso</span>
         <span className="tabular-nums">{formatPercent(fraction)}</span>
       </div>
       <div
         role="meter"
-        aria-label="Limite usado do cartão"
+        aria-label="Limite do cartão em uso"
         aria-valuemin={0}
         aria-valuemax={limit}
         aria-valuenow={Math.min(used, limit)}

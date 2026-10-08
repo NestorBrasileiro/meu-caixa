@@ -22,7 +22,7 @@ export const KIND: Record<InsightKind, { title: string; singular: string; descri
   },
   CUT: {
     title: "O que cortar",
-    singular: "Corte",
+    singular: "Corte possível",
     description: "Gastos que dá para reduzir sem abrir mão do hábito.",
     icon: Scissors,
   },

@@ -6,8 +6,8 @@ import { Tabs, TabsContent } from "@/components/ui/tabs"
 import type { Cents } from "@/lib/api/types"
 import { formatMoney, formatPercent } from "@/lib/format/money"
 import { cn } from "@/lib/utils"
-import { plural, type BudgetGroup, type BudgetRow } from "./model"
-import { HEADER_ACTION_CLASS, HEADER_DESCRIPTION_CLASS } from "./styles"
+import { listJoin, plural, type BudgetGroup, type BudgetRow } from "./model"
+import { HEADER_ACTION_CLASS, HEADER_DESCRIPTION_CLASS, PANEL_FOCUS_CLASS } from "./styles"
 import { ViewToggle } from "./view-toggle"
 
 /** Posição (0–100%) de uma fração do orçamento na escala comum das barras. */
@@ -47,13 +47,43 @@ function BudgetBar({ row, scaleMax }: { row: BudgetRow; scaleMax: number }) {
   )
 }
 
+/**
+ * "Moradia, Energia e Internet": de onde vem o gasto da categoria (o que a
+ * Visão geral mostra separado). null se não há gasto ou a única fonte tem o
+ * mesmo nome da categoria.
+ */
+function sourcesOf(row: BudgetRow): string | null {
+  if (row.sources.length === 0 || (row.sources.length === 1 && row.sources[0] === row.name)) return null
+  return listJoin(row.sources)
+}
+
 function rowSummary(row: BudgetRow, monthName: string): string {
-  if (row.budget === null) return `${row.name}: ${formatMoney(row.actual)} em ${monthName}, sem orçamento definido.`
+  const sources = sourcesOf(row)
+  const includes = sources ? ` Inclui ${sources}.` : ""
+  if (row.budget === null) {
+    return `${row.name}: ${formatMoney(row.actual)} em ${monthName}, sem orçamento definido.${includes}`
+  }
   const status =
     row.over > 0
       ? `${formatMoney(row.over)} acima do orçamento`
       : `${formatMoney(row.budget - row.actual)} abaixo do orçamento`
-  return `${row.name}: ${formatMoney(row.actual)} de ${formatMoney(row.budget)} (${formatPercent(row.ratio ?? 0)}), ${status}.`
+  return `${row.name}: ${formatMoney(row.actual)} de ${formatMoney(row.budget)} (${formatPercent(row.ratio ?? 0)}), ${status}.${includes}`
+}
+
+/** Rótulo do grupo com o total; um grupo acima do orçamento ganha o mesmo selo das linhas. */
+function GroupHeader({ group }: { group: BudgetGroup }) {
+  return (
+    <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-0.5 border-b pb-1.5 text-xs">
+      <span className="flex items-center gap-2">
+        <h4 className="font-medium">{group.label}</h4>
+        {group.actual > group.budget && <OverLabel over={group.actual - group.budget} className="font-medium" />}
+      </span>
+      <span className="ml-auto whitespace-nowrap tabular-nums">
+        <span className="font-medium">{formatMoney(group.actual)}</span>
+        <span className="text-muted-foreground"> de {formatMoney(group.budget)}</span>
+      </span>
+    </div>
+  )
 }
 
 function ChartView({ groups, scaleMax, monthName }: { groups: BudgetGroup[]; scaleMax: number; monthName: string }) {
@@ -72,12 +102,7 @@ function ChartView({ groups, scaleMax, monthName }: { groups: BudgetGroup[]; sca
       <div className="grid gap-x-10 gap-y-6 lg:grid-cols-2">
         {groups.map((group) => (
           <section key={group.kind} aria-label={group.label} className="space-y-3">
-            <div className="flex items-baseline justify-between gap-3 border-b pb-1.5 text-xs">
-              <h4 className="font-medium">{group.label}</h4>
-              <span className="text-muted-foreground tabular-nums">
-                {formatMoney(group.actual)} de {formatMoney(group.budget)}
-              </span>
-            </div>
+            <GroupHeader group={group} />
             <ul className="space-y-3.5">
               {group.rows.map((row) => (
                 <li key={row.id} className="space-y-1.5">
@@ -116,7 +141,47 @@ function Situation({ row }: { row: BudgetRow }) {
   )
 }
 
+/** Cartão largo: tabela completa. Estreito (celular): lista com nome e situação na primeira linha. */
 function TableView({ groups }: { groups: BudgetGroup[] }) {
+  return (
+    <div className="@container/budget-table">
+      <div className="hidden @xl/budget-table:block">
+        <WideTable groups={groups} />
+      </div>
+      <div className="space-y-6 @xl/budget-table:hidden">
+        {groups.map((group) => (
+          <section key={group.kind} aria-label={group.label} className="space-y-3">
+            <GroupHeader group={group} />
+            <ul className="divide-y">
+              {group.rows.map((row) => (
+                <li key={row.id} className="space-y-0.5 py-3 text-sm first:pt-0 last:pb-0">
+                  <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-0.5">
+                    <span className="font-medium">{row.name}</span>
+                    <span className="ml-auto text-right">
+                      <Situation row={row} />
+                    </span>
+                  </div>
+                  <p className="text-muted-foreground tabular-nums">
+                    {formatMoney(row.actual)}
+                    {row.budget !== null && (
+                      <>
+                        {" "}
+                        de {formatMoney(row.budget)} · {formatPercent(row.ratio ?? 0)} usado
+                      </>
+                    )}
+                  </p>
+                  {sourcesOf(row) && <p className="text-muted-foreground text-xs">{sourcesOf(row)}</p>}
+                </li>
+              ))}
+            </ul>
+          </section>
+        ))}
+      </div>
+    </div>
+  )
+}
+
+function WideTable({ groups }: { groups: BudgetGroup[] }) {
   return (
     <Table>
       <TableHeader>
@@ -137,7 +202,10 @@ function TableView({ groups }: { groups: BudgetGroup[] }) {
           </TableRow>,
           ...group.rows.map((row) => (
             <TableRow key={row.id} className="hover:bg-transparent">
-              <TableCell className="pl-0">{row.name}</TableCell>
+              <TableCell className="py-2.5 pl-0 whitespace-normal">
+                <p>{row.name}</p>
+                {sourcesOf(row) && <p className="text-muted-foreground text-xs">{sourcesOf(row)}</p>}
+              </TableCell>
               <TableCell className="text-right tabular-nums">{formatMoney(row.actual)}</TableCell>
               <TableCell className="text-right tabular-nums">
                 {row.budget !== null ? formatMoney(row.budget) : "—"}
@@ -160,6 +228,7 @@ export function BudgetCard({
   groups,
   scaleMax,
   monthLabel,
+  monthName,
   unbudgeted,
   staleNote,
   className,
@@ -169,13 +238,14 @@ export function BudgetCard({
   scaleMax: number
   /** "setembro de 2026" */
   monthLabel: string
+  /** "setembro" */
+  monthName: string
   /** Gasto do mês fora das categorias do orçamento. */
   unbudgeted: { total: Cents; labels: string[] }
   /** Aviso de conta desatualizada no mês, se houver. */
   staleNote: string | null
   className?: string
 }) {
-  const monthName = monthLabel.split(" de ")[0]
   const rows = groups.flatMap((group) => group.rows)
   const actual = rows.reduce((sum, row) => sum + row.actual, 0)
   const budget = rows.reduce((sum, row) => sum + (row.budget ?? 0), 0)
@@ -185,7 +255,9 @@ export function BudgetCard({
     <Card className={className}>
       <Tabs defaultValue="chart" className="flex-1 gap-6">
         <CardHeader>
-          <CardTitle>Orçamento por categoria</CardTitle>
+          <CardTitle className="text-balance">
+            <h3>Orçamento por categoria</h3>
+          </CardTitle>
           <CardDescription className={HEADER_DESCRIPTION_CLASS}>
             Gasto em {monthLabel}, o último mês fechado, contra o orçamento de cada categoria.
           </CardDescription>
@@ -210,10 +282,10 @@ export function BudgetCard({
             </Empty>
           ) : (
             <>
-              <TabsContent value="chart">
+              <TabsContent value="chart" className={PANEL_FOCUS_CLASS}>
                 <ChartView groups={groups} scaleMax={scaleMax} monthName={monthName} />
               </TabsContent>
-              <TabsContent value="table">
+              <TabsContent value="table" className={PANEL_FOCUS_CLASS}>
                 <TableView groups={groups} />
               </TabsContent>
             </>

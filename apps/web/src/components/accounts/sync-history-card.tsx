@@ -63,16 +63,20 @@ function count(value: number | undefined): string {
 export function SyncHistoryCard({ runs: allRuns }: { runs: SyncRun[] }) {
   const runs = allRuns.slice(0, MAX_RUNS)
   return (
-    <Card className="h-full">
+    <Card>
       <CardHeader>
-        <CardTitle>Histórico de sincronização</CardTitle>
+        <CardTitle>
+          <h3>Histórico de sincronização</h3>
+        </CardTitle>
         <CardDescription>
           {allRuns.length > MAX_RUNS
             ? `As ${MAX_RUNS} execuções mais recentes e o que cada uma trouxe.`
             : "Execuções mais recentes e o que cada uma trouxe."}
         </CardDescription>
       </CardHeader>
-      <CardContent className="flex flex-1 flex-col">
+      {/* Tabela ou lista pela largura do próprio card (container), não da janela: lado a lado com as faturas,
+          o card fica estreito mesmo em telas largas. A tabela precisa de ~34rem; abaixo de 36rem, lista. */}
+      <CardContent className="@container/sync">
         {runs.length === 0 ? (
           <Empty className="border">
             <EmptyHeader>
@@ -85,8 +89,8 @@ export function SyncHistoryCard({ runs: allRuns }: { runs: SyncRun[] }) {
           </Empty>
         ) : (
           <>
-            {/* Telas largas: tabela. */}
-            <div className="hidden md:block">
+            {/* Card largo: tabela. */}
+            <div className="hidden @xl/sync:block">
               <Table>
                 <TableHeader>
                   <TableRow className="hover:bg-transparent">
@@ -128,8 +132,8 @@ export function SyncHistoryCard({ runs: allRuns }: { runs: SyncRun[] }) {
               </Table>
             </div>
 
-            {/* Celular: lista empilhada. */}
-            <ul className="divide-y md:hidden">
+            {/* Card estreito: lista empilhada. */}
+            <ul className="divide-y @xl/sync:hidden">
               {runs.map((run) => (
                 <li key={run.id} className="space-y-1.5 py-3 first:pt-0 last:pb-0">
                   <div className="flex items-center justify-between gap-3 text-sm">

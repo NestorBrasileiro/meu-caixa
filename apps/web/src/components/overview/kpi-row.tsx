@@ -6,17 +6,27 @@ import type { Cents, IsoDate } from "@/lib/api/types"
 import type { PeriodTotals } from "@/lib/finance/aggregate"
 import { formatDateShort } from "@/lib/format/date"
 import { formatMoney, formatPercent } from "@/lib/format/money"
+import { plural } from "./model"
 
 export interface KpiData {
   cash: { total: Cents; accounts: number; stale: number }
   invoice: { total: Cents; dueDate: IsoDate | null }
   credit: { available: Cents; limit: Cents } | null
-  month: { totals: PeriodTotals; label: string }
+  month: {
+    totals: PeriodTotals
+    /** Até que dia do mês corrente há dados. */
+    day: number
+  }
 }
 
 /** Valor do tile: um passo menor no celular para caber em duas colunas. */
 function TileValue({ children }: { children: ReactNode }) {
   return <span className="text-xl sm:text-2xl">{children}</span>
+}
+
+/** Rótulo e valor que não se separam numa quebra de linha. */
+function Pair({ children }: { children: ReactNode }) {
+  return <span className="whitespace-nowrap">{children}</span>
 }
 
 /** No celular (2 colunas estreitas) o ícone sai para o rótulo caber numa linha. */
@@ -39,7 +49,7 @@ export function KpiRow({ data }: { data: KpiData }) {
         }
         hint={
           <span className="flex flex-wrap items-center gap-x-1.5 gap-y-0.5">
-            <span>{cash.accounts === 1 ? "1 conta" : `${cash.accounts} contas`}</span>
+            <span>{plural(cash.accounts, "conta", "contas")}</span>
             {cash.stale > 0 && (
               <span className="inline-flex items-center gap-1">
                 <AlertTriangle className="text-status-warning size-3" aria-hidden />
@@ -82,7 +92,7 @@ export function KpiRow({ data }: { data: KpiData }) {
               <div className="bg-chart-1 h-full rounded-full" style={{ width: `${Math.min(usedShare, 1) * 100}%` }} />
             </div>
             <p className="text-muted-foreground text-xs">
-              {formatPercent(usedShare)} de {formatMoney(credit.limit)} em uso
+              {formatPercent(usedShare)} de <Pair>{formatMoney(credit.limit)}</Pair> em uso
             </p>
           </div>
         ) : (
@@ -99,10 +109,12 @@ export function KpiRow({ data }: { data: KpiData }) {
         }
         hint={
           <span className="flex flex-col gap-0.5">
-            <span>{month.label}</span>
             <span>
-              Entradas {formatMoney(month.totals.income)} · gastos {formatMoney(month.totals.spending)}
+              <Pair>Entradas {formatMoney(month.totals.income)}</Pair> ·{" "}
+              <Pair>gastos {formatMoney(month.totals.spending)}</Pair>
             </span>
+            {/* Gastos por data da compra (cartão incluído), ao contrário do "Líquido" do fluxo de caixa. */}
+            <span>Até dia {month.day} · gastos incluem o cartão</span>
           </span>
         }
       />

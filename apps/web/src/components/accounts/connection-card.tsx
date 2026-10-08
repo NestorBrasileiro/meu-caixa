@@ -29,27 +29,32 @@ export function ConnectionCard({
   today: IsoDate
   now: IsoDateTime
 }) {
+  // O card ocupa duas linhas da grade do pai (subgrid): cabeçalho e contas. Assim os cabeçalhos de uma
+  // mesma fileira têm a mesma altura e as divisórias ficam alinhadas, mesmo quando um nome quebra linha.
   return (
-    <Card className="gap-4">
-      <CardHeader>
-        {/*
-          Avatar | nome (quebra linha, nunca reticências) | status.
-          A linha de atualização ocupa também a coluna do status, para caber inteira em cards estreitos.
-        */}
-        <div className="grid grid-cols-[auto_minmax(0,1fr)_auto] items-start gap-x-3 gap-y-1">
-          <Avatar size="lg" className="row-span-2 rounded-lg">
+    <Card className="row-span-2 grid grid-rows-subgrid gap-4">
+      <CardHeader className="block">
+        <div className="flex items-start gap-3">
+          <Avatar size="lg" className="rounded-lg">
             {connection.institutionLogoUrl && <AvatarImage src={connection.institutionLogoUrl} alt="" />}
             <AvatarFallback className="text-foreground rounded-lg text-xs font-medium">
               {institutionInitials(connection.institutionName)}
             </AvatarFallback>
           </Avatar>
-          <CardTitle className="pt-0.5 leading-snug text-pretty">{connection.institutionName}</CardTitle>
-          <ConnectionStatusBadge status={connection.status} />
-          <CardDescription className="col-span-2 col-start-2 text-xs">
-            {connection.lastRefreshedAt
-              ? `Atualizado pelo banco ${formatRelative(connection.lastRefreshedAt, now)}`
-              : "Ainda não atualizado pelo banco"}
-          </CardDescription>
+          <div className="min-w-0 flex-1 space-y-1">
+            {/* Nome nunca é espremido nem cortado: sem espaço, o status desce para a linha de baixo. */}
+            <div className="flex flex-wrap items-start justify-between gap-x-3 gap-y-1.5">
+              <CardTitle className="pt-0.5 leading-snug text-pretty">
+                <h3>{connection.institutionName}</h3>
+              </CardTitle>
+              <ConnectionStatusBadge status={connection.status} />
+            </div>
+            <CardDescription className="text-xs">
+              {connection.lastRefreshedAt
+                ? `Atualizado pelo banco ${formatRelative(connection.lastRefreshedAt, now)}`
+                : "Ainda não atualizado pelo banco"}
+            </CardDescription>
+          </div>
         </div>
       </CardHeader>
       <CardContent>
@@ -88,7 +93,7 @@ function AccountItem({
   const { label, icon: Icon } = ACCOUNT_TYPE[account.type]
   const isCard = account.type === "CREDIT_CARD"
   const sameAsName = label.localeCompare(account.name, "pt-BR", { sensitivity: "base" }) === 0
-  const secondary = [sameAsName ? null : label, account.number].filter(Boolean).join(" · ")
+  const secondary = [sameAsName ? null : label, account.number].filter((part): part is string => Boolean(part))
 
   return (
     <div className="space-y-3">
@@ -96,13 +101,23 @@ function AccountItem({
         <div className="bg-muted text-muted-foreground flex size-8 shrink-0 items-center justify-center rounded-md">
           <Icon className="size-4" aria-hidden />
         </div>
+        {/* Nada aqui usa reticências: o nome quebra linha e o número da conta desce inteiro, nunca cortado. */}
         <div className="min-w-0 flex-1">
-          <p className="truncate text-sm font-medium">{account.name}</p>
-          {secondary && <p className="text-muted-foreground truncate text-xs">{secondary}</p>}
+          <p className="text-sm font-medium text-pretty break-words">{account.name}</p>
+          {secondary.length > 0 && (
+            <p className="text-muted-foreground flex flex-wrap gap-x-1 text-xs">
+              {secondary.map((part, index) => (
+                <span key={index} className="whitespace-nowrap">
+                  {part}
+                  {index < secondary.length - 1 && " ·"}
+                </span>
+              ))}
+            </p>
+          )}
         </div>
         <div className="shrink-0 text-right">
           <p className="text-sm font-medium tabular-nums">{formatMoney(account.balance)}</p>
-          <p className="text-muted-foreground text-xs">{isCard ? "fatura aberta" : "saldo"}</p>
+          <p className="text-muted-foreground text-xs">{isCard ? "fatura em aberto" : "saldo"}</p>
         </div>
       </div>
 
@@ -147,7 +162,7 @@ function CardDetails({ account, openInvoice }: { account: Account; openInvoice: 
           </>
         ) : (
           <>
-            <dt className="text-muted-foreground">Fatura aberta</dt>
+            <dt className="text-muted-foreground">Fatura em aberto</dt>
             <dd className="text-right">Nenhuma</dd>
           </>
         )}
@@ -156,12 +171,23 @@ function CardDetails({ account, openInvoice }: { account: Account; openInvoice: 
   )
 }
 
+/** Até quando há transações. Atrasado = ícone de alerta + a palavra "desatualizado" (nunca só o ícone). */
 function SyncedThrough({ date, stale }: { date: IsoDate | null; stale: boolean }) {
-  const Icon = stale || !date ? TriangleAlert : CalendarCheck
+  const warn = stale || !date
+  const Icon = warn ? TriangleAlert : CalendarCheck
   return (
-    <p className="text-muted-foreground flex items-center gap-1.5 pl-11 text-xs">
-      <Icon className={stale || !date ? "text-status-warning size-3" : "size-3"} aria-hidden />
-      {date ? `Sincronizado até ${formatDayMonth(date)}` : "Transações ainda não sincronizadas"}
+    <p className="text-muted-foreground flex items-start gap-1.5 pl-11 text-xs">
+      <Icon className={warn ? "text-status-warning mt-0.5 size-3 shrink-0" : "mt-0.5 size-3 shrink-0"} aria-hidden />
+      <span>
+        {date ? (
+          <>
+            Sincronizado até {formatDayMonth(date)}
+            {stale && <span className="text-foreground"> · desatualizado</span>}
+          </>
+        ) : (
+          "Transações ainda não sincronizadas"
+        )}
+      </span>
     </p>
   )
 }

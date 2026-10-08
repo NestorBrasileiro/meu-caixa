@@ -1,7 +1,7 @@
 import type { Metadata } from "next"
 import { PageHeader } from "@/components/page-header"
 import { plural } from "@/components/transactions/format"
-import { periodRange, type AccountOption } from "@/components/transactions/model"
+import { isInternal, periodRange, type AccountOption } from "@/components/transactions/model"
 import { TransactionsView } from "@/components/transactions/transactions-view"
 import { getAccounts, getAllTransactions, getToday } from "@/lib/data"
 
@@ -21,11 +21,14 @@ export default async function Page() {
     transactionsSyncedThrough: account.transactionsSyncedThrough,
   }))
 
+  // Mesma contagem que a lista mostra em "Últimos 12 meses" (movimentações internas começam ocultas).
+  const visibleCount = transactions.filter((tx) => !isInternal(tx)).length
+
   return (
     <div className="space-y-6">
       <PageHeader
         title="Transações"
-        description={`Todas as contas em um só lugar · ${plural(transactions.length, "lançamento", "lançamentos")} nos últimos 12 meses`}
+        description={`Todas as contas em um só lugar · ${plural(visibleCount, "lançamento", "lançamentos")} nos últimos 12 meses`}
       />
       <TransactionsView transactions={transactions} accounts={accountOptions} today={today} />
     </div>

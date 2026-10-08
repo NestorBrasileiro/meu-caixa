@@ -22,13 +22,15 @@ export interface InvoiceHistory {
   closedCount: number
 }
 
-/** Fatura aberta do cartão: a que vence hoje ou depois (lista da API vem do vencimento mais novo ao mais antigo). */
+/**
+ * Fatura em aberto do cartão: a de vencimento mais próximo a partir de hoje (mesma regra da visão geral).
+ * Faturas futuras além dela (parcelas, por exemplo) não contam como "a" fatura em aberto.
+ */
 export function findOpenInvoice(invoices: Invoice[], accountId: string, today: IsoDate): Invoice | null {
   return (
     invoices
-      .filter((invoice) => invoice.accountId === accountId)
-      .sort((a, b) => b.dueDate.localeCompare(a.dueDate))
-      .find((invoice) => invoice.dueDate >= today) ?? null
+      .filter((invoice) => invoice.accountId === accountId && invoice.dueDate >= today)
+      .sort((a, b) => a.dueDate.localeCompare(b.dueDate))[0] ?? null
   )
 }
 
@@ -40,8 +42,9 @@ export function buildInvoiceHistory(
   count = 12,
 ): InvoiceHistory {
   const open = findOpenInvoice(invoices, card.id, today)
+  // Faturas que vencem depois da em aberto (parcelas futuras) ainda não são uma fatura de verdade: ficam fora.
   const points = invoices
-    .filter((invoice) => invoice.accountId === card.id)
+    .filter((invoice) => invoice.accountId === card.id && (!open || invoice.dueDate <= open.dueDate))
     .sort((a, b) => b.dueDate.localeCompare(a.dueDate))
     .slice(0, count)
     .reverse()

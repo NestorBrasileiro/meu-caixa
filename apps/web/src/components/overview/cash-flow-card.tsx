@@ -12,15 +12,15 @@ import {
   ChartTooltipContent,
   type ChartConfig,
 } from "@/components/ui/chart"
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
+import { Table, TableBody, TableCaption, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Tabs, TabsContent } from "@/components/ui/tabs"
 import type { Cents } from "@/lib/api/types"
 import { formatMonth, formatMonthShort } from "@/lib/format/date"
 import { formatAxisMoney, formatMoney } from "@/lib/format/money"
 import { cn } from "@/lib/utils"
-import { useIsMobile } from "@/hooks/use-mobile"
 import { capitalize } from "./model"
 import { CHART_AXIS_CLASS, HEADER_ACTION_CLASS, HEADER_DESCRIPTION_CLASS } from "./styles"
+import { useNarrow } from "./use-narrow"
 import { ViewToggle } from "./view-toggle"
 
 export interface CashFlowRow {
@@ -33,10 +33,21 @@ export interface CashFlowRow {
   partial: boolean
 }
 
+/**
+ * "Líquido" (entradas − saídas do caixa) e não "Resultado": o KPI "Resultado
+ * do mês" conta compras no cartão na data da compra; aqui o cartão só entra
+ * quando a fatura é paga. Nomes diferentes para números diferentes.
+ */
+const NET_LABEL = "Líquido"
+
 const chartConfig = {
   inflow: { label: "Entradas", color: "var(--chart-1)" },
   outflow: { label: "Saídas", color: "var(--chart-2)" },
 } satisfies ChartConfig
+
+const Y_AXIS_WIDTH = 56
+/** Largura mínima por mês para rótulos como "nov/25" não se encostarem. */
+const MIN_TICK_SLOT = 40
 
 /** Mês parcial com barras esmaecidas: o leitor não confunde "pouco gasto" com "mês pela metade". */
 function CashFlowBar(props: BarShapeProps) {
@@ -45,8 +56,8 @@ function CashFlowBar(props: BarShapeProps) {
 }
 
 /**
- * Meses com rótulo no eixo: todos no desktop; no celular, um sim um não,
- * contando a partir do mês corrente (que sempre aparece).
+ * Meses com rótulo no eixo: todos quando cabem; quando o gráfico é estreito,
+ * um sim um não, contando a partir do mês corrente (que sempre aparece).
  */
 function visibleMonths(rows: CashFlowRow[], everyOther: boolean): string[] {
   const months = rows.map((row) => row.month)
@@ -79,6 +90,69 @@ function partialNote(partial: PartialMonth, view: "chart" | "table"): string {
   return `${month}, só até dia ${partial.day}.${invoice}`
 }
 
+/** Celular: lista empilhada, com o líquido à direita e entradas/saídas embaixo (4 colunas não cabem). */
+function CashFlowList({ rows }: { rows: CashFlowRow[] }) {
+  return (
+    <div>
+      <div className="text-muted-foreground flex justify-between border-b pb-2 text-xs font-medium" aria-hidden>
+        <span>Mês</span>
+        <span>{NET_LABEL}</span>
+      </div>
+      <ul aria-label="Fluxo de caixa por mês" className="divide-y">
+        {rows.map((row) => (
+          <li key={row.month} className="space-y-0.5 py-2.5 last:pb-0">
+            <div className="flex items-baseline justify-between gap-3 text-sm">
+              <span className="font-medium">
+                {formatMonthShort(row.month, true)}
+                {row.partial && <span className="text-muted-foreground font-normal"> · parcial</span>}
+              </span>
+              <span>
+                <span className="sr-only">{NET_LABEL}: </span>
+                <Money cents={row.net} tone="flow" className="font-medium tabular-nums" />
+              </span>
+            </div>
+            <p className="text-muted-foreground text-xs">
+              <span className="whitespace-nowrap">Entradas {formatMoney(row.inflow)}</span> ·{" "}
+              <span className="whitespace-nowrap">saídas {formatMoney(row.outflow)}</span>
+            </p>
+          </li>
+        ))}
+      </ul>
+    </div>
+  )
+}
+
+function CashFlowTable({ rows }: { rows: CashFlowRow[] }) {
+  return (
+    <Table>
+      <TableCaption className="sr-only">Fluxo de caixa por mês, do mais recente ao mais antigo</TableCaption>
+      <TableHeader>
+        <TableRow>
+          <TableHead>Mês</TableHead>
+          <TableHead className="text-right">Entradas</TableHead>
+          <TableHead className="text-right">Saídas</TableHead>
+          <TableHead className="text-right">{NET_LABEL}</TableHead>
+        </TableRow>
+      </TableHeader>
+      <TableBody>
+        {rows.map((row) => (
+          <TableRow key={row.month}>
+            <TableCell>
+              {formatMonthShort(row.month, true)}
+              {row.partial && <span className="text-muted-foreground"> · parcial</span>}
+            </TableCell>
+            <TableCell className="text-right tabular-nums">{formatMoney(row.inflow)}</TableCell>
+            <TableCell className="text-right tabular-nums">{formatMoney(row.outflow)}</TableCell>
+            <TableCell className="text-right tabular-nums">
+              <Money cents={row.net} tone="flow" />
+            </TableCell>
+          </TableRow>
+        ))}
+      </TableBody>
+    </Table>
+  )
+}
+
 export function CashFlowCard({
   rows,
   partial,
@@ -89,14 +163,17 @@ export function CashFlowCard({
   partial: PartialMonth | null
   className?: string
 }) {
-  const isMobile = useIsMobile()
-  const ticks = visibleMonths(rows, isMobile)
+  const [chartRef, narrow] = useNarrow<HTMLDivElement>(Y_AXIS_WIDTH + rows.length * MIN_TICK_SLOT)
+  const ticks = visibleMonths(rows, narrow === true)
+  const newestFirst = [...rows].reverse()
 
   return (
     <Card className={className}>
       <Tabs defaultValue="chart" className="flex-1 gap-6">
         <CardHeader>
-          <CardTitle>Fluxo de caixa</CardTitle>
+          <CardTitle>
+            <h3>Fluxo de caixa</h3>
+          </CardTitle>
           <CardDescription className={HEADER_DESCRIPTION_CLASS}>
             Entradas e saídas das contas nos últimos 12 meses. O cartão entra quando a fatura é paga.
           </CardDescription>
@@ -104,10 +181,14 @@ export function CashFlowCard({
             <ViewToggle />
           </CardAction>
         </CardHeader>
-        <CardContent className="flex flex-1 flex-col">
+        <CardContent className="@container flex flex-1 flex-col">
           <TabsContent value="chart" className="flex flex-col">
             {/* 280px no mínimo; no desktop cresce até a altura da linha do grid. */}
-            <ChartContainer config={chartConfig} className={cn("aspect-auto min-h-70 w-full flex-1", CHART_AXIS_CLASS)}>
+            <ChartContainer
+              ref={chartRef}
+              config={chartConfig}
+              className={cn("aspect-auto min-h-70 w-full flex-1", CHART_AXIS_CLASS)}
+            >
               <BarChart data={rows} margin={{ top: 4, right: 0, bottom: 0, left: 0 }} barGap={2} accessibilityLayer>
                 <CartesianGrid vertical={false} stroke="var(--chart-grid)" />
                 <XAxis
@@ -122,7 +203,7 @@ export function CashFlowCard({
                 <YAxis
                   axisLine={false}
                   tickLine={false}
-                  width={56}
+                  width={Y_AXIS_WIDTH}
                   tickMargin={4}
                   tickFormatter={(value: number) => formatAxisMoney(value)}
                 />
@@ -152,7 +233,7 @@ export function CashFlowCard({
                             </span>
                             {index === 1 && (
                               <span className="mt-0.5 flex basis-full justify-between border-t pt-1.5">
-                                <span className="text-muted-foreground">Resultado</span>
+                                <span className="text-muted-foreground">{NET_LABEL}</span>
                                 <Money cents={row.net} tone="flow" className="font-medium tabular-nums" />
                               </span>
                             )}
@@ -189,31 +270,12 @@ export function CashFlowCard({
             {partial && <p className="text-muted-foreground mt-3 text-xs">{partialNote(partial, "chart")}</p>}
           </TabsContent>
           <TabsContent value="table">
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Mês</TableHead>
-                  <TableHead className="text-right">Entradas</TableHead>
-                  <TableHead className="text-right">Saídas</TableHead>
-                  <TableHead className="text-right">Resultado</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {[...rows].reverse().map((row) => (
-                  <TableRow key={row.month}>
-                    <TableCell>
-                      {formatMonthShort(row.month, true)}
-                      {row.partial && <span className="text-muted-foreground"> · parcial</span>}
-                    </TableCell>
-                    <TableCell className="text-right tabular-nums">{formatMoney(row.inflow)}</TableCell>
-                    <TableCell className="text-right tabular-nums">{formatMoney(row.outflow)}</TableCell>
-                    <TableCell className="text-right tabular-nums">
-                      <Money cents={row.net} tone="flow" />
-                    </TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
+            <div className="@sm:hidden">
+              <CashFlowList rows={newestFirst} />
+            </div>
+            <div className="hidden @sm:block">
+              <CashFlowTable rows={newestFirst} />
+            </div>
             {partial && <p className="text-muted-foreground mt-3 text-xs">{partialNote(partial, "table")}</p>}
           </TabsContent>
         </CardContent>

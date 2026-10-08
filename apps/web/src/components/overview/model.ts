@@ -2,7 +2,7 @@ import type { Insight } from "@/lib/api/analysis"
 import type { Commitment } from "@/lib/api/planning"
 import type { Account, Cents, Invoice, IsoDate } from "@/lib/api/types"
 import type { CategoryTotal } from "@/lib/finance/aggregate"
-import { formatDateShort } from "@/lib/format/date"
+import { formatDateShort, formatMonthShort } from "@/lib/format/date"
 
 /**
  * Regras de montagem da visão geral (funções puras, sem relógio): tudo
@@ -50,9 +50,28 @@ export function capitalize(value: string): string {
   return value.charAt(0).toLocaleUpperCase("pt-BR") + value.slice(1)
 }
 
-/** "outubro" a partir de "outubro de 2026". */
-export function monthName(formattedMonth: string): string {
-  return formattedMonth.split(" de ")[0]
+const monthNameFormatter = new Intl.DateTimeFormat("pt-BR", { month: "long", timeZone: "UTC" })
+
+/** `YYYY-MM` → "outubro". */
+export function monthNameOf(month: string): string {
+  return monthNameFormatter.format(calendarDate(`${month}-01`))
+}
+
+/** "jul a set" (meses do período), como na tela de análise; "setembro" quando é um mês só. */
+export function monthSpanLabel(from: IsoDate, to: IsoDate): string {
+  const first = from.slice(0, 7)
+  const last = to.slice(0, 7)
+  return first === last ? monthNameOf(first) : `${formatMonthShort(first)} a ${formatMonthShort(last)}`
+}
+
+/** "1 conta", "4 contas". */
+export function plural(count: number, singular: string, pluralForm: string): string {
+  return `${count} ${count === 1 ? singular : pluralForm}`
+}
+
+/** "15 out" com espaço não separável, para dia e mês não quebrarem em linhas diferentes. */
+function shortDate(date: IsoDate): string {
+  return formatDateShort(date).replace(" ", "\u00a0")
 }
 
 /** "hoje", "amanhã", "em 3 dias". */
@@ -74,15 +93,33 @@ export interface UpcomingItem {
   daysAway: number
   amount: Cents
   /**
-   * Cobrado direto no cartão: aparece na lista, mas fica fora do "total a
-   * pagar" porque sai do caixa só quando a fatura for paga (sem dupla contagem).
+   * Cobrado direto no cartão. `invoiceDue` é o vencimento da fatura em que a
+   * cobrança cai (null = numa fatura que ainda não existe).
    */
-  onCard: boolean
+  card: { invoiceDue: IsoDate | null } | null
+  /**
+   * Entra no "total a pagar" da janela. Uma cobrança no cartão só entra
+   * quando a fatura em que ela cai vence na janela: a fatura listada mostra o
+   * valor de hoje, sem essa cobrança futura, então não há dupla contagem.
+   */
+  inTotal: boolean
 }
 
-/** Compromisso cobrado no cartão: já entra na fatura, não somar de novo. */
+/** Compromisso cobrado no cartão: sai do caixa só quando a fatura for paga. */
 export function isChargedToCard(commitment: Pick<Commitment, "paymentMethod">): boolean {
   return commitment.paymentMethod === "CARD"
+}
+
+/**
+ * Fatura em aberto em que cai uma cobrança no cartão feita em `date`: a
+ * primeira que fecha no próprio dia ou depois (mesma regra do agregador).
+ */
+function invoiceForCharge(invoices: Invoice[], date: IsoDate, today: IsoDate): Invoice | null {
+  return (
+    invoices
+      .filter((invoice) => invoice.dueDate >= today && invoice.closingDate !== null && invoice.closingDate >= date)
+      .sort((a, b) => a.dueDate.localeCompare(b.dueDate))[0] ?? null
+  )
 }
 
 /**
@@ -112,15 +149,21 @@ export function upcomingDue({
     const installment = commitment.installments
       ? `Parcela ${commitment.installments.paid + 1} de ${commitment.installments.total}`
       : null
+    const invoice = isChargedToCard(commitment) ? invoiceForCharge(invoices, date, today) : null
+    const card = isChargedToCard(commitment) ? { invoiceDue: invoice?.dueDate ?? null } : null
+    const cardDetail = card
+      ? `No cartão · entra na ${card.invoiceDue ? `fatura de ${shortDate(card.invoiceDue)}` : "próxima fatura"}`
+      : null
     items.push({
       id: commitment.id,
       kind: "COMMITMENT",
       name: commitment.name,
-      detail: [installment, commitment.notes].filter(Boolean).join(" · ") || null,
+      detail: [cardDetail, installment, commitment.notes].filter(Boolean).join(" · ") || null,
       date,
       daysAway: daysBetween(today, date),
       amount: commitment.amount,
-      onCard: isChargedToCard(commitment),
+      card,
+      inTotal: card === null || (card.invoiceDue !== null && card.invoiceDue <= until),
     })
   }
 
@@ -129,7 +172,7 @@ export function upcomingDue({
     const account = accounts.find((a) => a.id === invoice.accountId)
     const closing =
       invoice.closingDate && invoice.closingDate >= today
-        ? `fecha ${formatDateShort(invoice.closingDate)}`
+        ? `fecha ${shortDate(invoice.closingDate)}`
         : null
     items.push({
       id: invoice.id,
@@ -139,7 +182,8 @@ export function upcomingDue({
       date: invoice.dueDate,
       daysAway: daysBetween(today, invoice.dueDate),
       amount: invoice.total,
-      onCard: false,
+      card: null,
+      inTotal: true,
     })
   }
 

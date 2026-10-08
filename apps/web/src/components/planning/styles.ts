@@ -18,3 +18,10 @@ export const TIGHT_MARGIN: number = 500_00
 
 /** Texto da dica dos botões que só funcionam com a API. */
 export const EDIT_SOON = "A edição chega com a API de planejamento (marco de 75%)."
+
+/**
+ * Painéis das abas (Radix dá tabIndex=0 e o TabsContent do shadcn tira o
+ * contorno): anel de foco visível, afastado do conteúdo.
+ */
+export const PANEL_FOCUS_CLASS =
+  "rounded-sm focus-visible:outline-3 focus-visible:outline-offset-4 focus-visible:outline-solid focus-visible:outline-ring/50"
