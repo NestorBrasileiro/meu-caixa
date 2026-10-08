@@ -1,4 +1,4 @@
-import type { Cents, IsoDate } from "./types"
+import type { Cents, IsoDate, PaymentMethod } from "./types"
 
 /**
  * Planejamento — ainda sem API (entra no marco de 75%). Os tipos já
@@ -23,6 +23,8 @@ export interface Commitment {
   name: string
   amount: Cents
   dayOfMonth: number
+  /** Como é pago. "CARD" = cai na fatura do cartão (não somar de novo ao pagar a fatura). */
+  paymentMethod: PaymentMethod
   categoryId: string
   startsOn: IsoDate
   /** null = sem data para acabar. */

@@ -86,7 +86,7 @@ export function buildAnalysis(dataset: MockDataset): AnalysisReport {
       id: "ins-restaurantes",
       kind: "CUT",
       title: "Restaurante aos domingos",
-      explanation: `Média de ${formatMoney(perMonth(restaurants.total))} por mês. Não precisa cortar — alternar um domingo sim, outro não, mantém o hábito e libera um terço do valor.`,
+      explanation: `Média de ${formatMoney(perMonth(restaurants.total))} por mês. Não precisa cortar — alternar um domingo sim, outro não, mantém o hábito e libera cerca de 30% do valor.`,
       monthlySavings: restaurantSavings,
       evidence: restaurants,
       confidence: "MEDIUM",

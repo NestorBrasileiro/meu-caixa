@@ -80,12 +80,9 @@ export interface UpcomingItem {
   onCard: boolean
 }
 
-/**
- * O contrato de `Commitment` ainda não diz como ele é pago; por ora a nota
- * "No cartão" é o único sinal de que a cobrança cai na fatura.
- */
-export function isChargedToCard(commitment: Pick<Commitment, "notes">): boolean {
-  return /\bno cart[aã]o\b/i.test(commitment.notes ?? "")
+/** Compromisso cobrado no cartão: já entra na fatura, não somar de novo. */
+export function isChargedToCard(commitment: Pick<Commitment, "paymentMethod">): boolean {
+  return commitment.paymentMethod === "CARD"
 }
 
 /**

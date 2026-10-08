@@ -1,5 +1,6 @@
 import { CalendarClock } from "lucide-react"
 import { Money } from "@/components/finance/money"
+import { PAYMENT_METHOD_LABEL } from "@/components/finance/payment-method"
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card"
 import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from "@/components/ui/empty"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
@@ -14,6 +15,12 @@ import { plural } from "./model"
 export interface CommitmentRow extends Commitment {
   /** Nome da categoria do orçamento. */
   categoryName: string | null
+}
+
+/** "No cartão · Loteadora Exemplo": como é pago + observação. */
+function detailOf(row: CommitmentRow): string {
+  const method = row.paymentMethod === "CARD" ? "No cartão" : PAYMENT_METHOD_LABEL[row.paymentMethod]
+  return [method, row.notes].filter(Boolean).join(" · ")
 }
 
 function Term({ row }: { row: CommitmentRow }) {
@@ -82,7 +89,7 @@ export function CommitmentsCard({
                     <TableRow key={row.id} className="hover:bg-transparent">
                       <TableCell className="py-3 pl-0 whitespace-normal">
                         <p className="font-medium">{row.name}</p>
-                        {row.notes && <p className="text-muted-foreground text-xs">{row.notes}</p>}
+                        <p className="text-muted-foreground text-xs">{detailOf(row)}</p>
                       </TableCell>
                       <TableCell className="tabular-nums">Dia {row.dayOfMonth}</TableCell>
                       <TableCell className="text-muted-foreground">{row.categoryName ?? "Sem categoria"}</TableCell>
@@ -106,7 +113,7 @@ export function CommitmentsCard({
                       <p className="text-sm font-medium">{row.name}</p>
                       <p className="text-muted-foreground text-xs">
                         Dia {row.dayOfMonth} · {row.categoryName ?? "Sem categoria"}
-                        {row.notes && <> · {row.notes}</>}
+ · {detailOf(row)}
                       </p>
                     </div>
                     <Money cents={row.amount} className="shrink-0 text-sm font-medium tabular-nums" />
