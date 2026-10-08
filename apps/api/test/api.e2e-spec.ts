@@ -28,6 +28,6 @@ describe('API (e2e)', () => {
     ['status desconhecido', { status: 'CANCELLED' }],
     ['parâmetro desconhecido', { foo: 'bar' }],
   ])('rejeita filtros inválidos: %s', async (_case, query) => {
-    await http().get('/transactions').query(query).expect(400);
+    await http().get('/api/transactions').query(query).expect(400);
   });
 });

@@ -62,7 +62,7 @@ describe('Autenticação com Keycloak (e2e)', () => {
   }
 
   it('bloqueia as rotas sem sessão, exceto as públicas', async () => {
-    await agent().get('/accounts').expect(401);
+    await agent().get('/api/accounts').expect(401);
     await agent().get('/auth/me').expect(401);
     await agent().get('/health').expect(200);
   });
@@ -89,7 +89,7 @@ describe('Autenticação com Keycloak (e2e)', () => {
       email: 'nestor@example.com',
       roles: ['default-roles-meu-caixa', 'owner'],
     });
-    await client.get('/accounts').expect(200);
+    await client.get('/api/accounts').expect(200);
 
     const db = app.get<Database>(DATABASE);
     const sid = decodeURIComponent(cookie!.split(';')[0]!.split('=')[1]!).slice(2).split('.')[0]!;
@@ -136,7 +136,7 @@ describe('Autenticação com Keycloak (e2e)', () => {
     const refreshesBefore = keycloak.calls.refresh;
 
     await client.get('/auth/me').expect(200);
-    await client.get('/accounts').expect(200);
+    await client.get('/api/accounts').expect(200);
 
     expect(keycloak.calls.refresh - refreshesBefore).toBe(2);
   });
@@ -158,7 +158,7 @@ describe('Autenticação com Keycloak (e2e)', () => {
     const client = agent();
     await login(client);
 
-    await client.get('/accounts').expect(403);
+    await client.get('/api/accounts').expect(403);
   });
 
   it('aceita a role vinda do realm', async () => {
@@ -166,7 +166,7 @@ describe('Autenticação com Keycloak (e2e)', () => {
     const client = agent();
     await login(client);
 
-    await client.get('/accounts').expect(200);
+    await client.get('/api/accounts').expect(200);
   });
 
   it('faz logout local e no Keycloak', async () => {
@@ -188,8 +188,8 @@ describe('Autenticação com Keycloak (e2e)', () => {
     const client = agent();
     await login(client);
 
-    await client.post('/sync').set('Origin', 'http://malicioso.test').expect(403);
-    await client.post('/sync').set('Origin', FRONTEND_URL).expect(202);
+    await client.post('/api/sync').set('Origin', 'http://malicioso.test').expect(403);
+    await client.post('/api/sync').set('Origin', FRONTEND_URL).expect(202);
     await app.get(SyncService).waitForIdle();
   });
 
@@ -200,6 +200,6 @@ describe('Autenticação com Keycloak (e2e)', () => {
       new TypeError('fetch failed'),
     );
 
-    await client.get('/accounts').expect(503);
+    await client.get('/api/accounts').expect(503);
   });
 });
