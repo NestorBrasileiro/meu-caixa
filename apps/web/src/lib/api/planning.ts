@@ -1,0 +1,64 @@
+import type { Cents, IsoDate } from "./types"
+
+/**
+ * Planejamento — ainda sem API (entra no marco de 75%). Os tipos já
+ * descrevem o que o módulo `planning` do backend vai expor.
+ */
+
+/** Como a categoria entra no orçamento. */
+export type CategoryKind = "ESSENTIAL" | "DISCRETIONARY"
+
+export interface BudgetCategory {
+  id: string
+  name: string
+  kind: CategoryKind
+  /** Categorias do agregador que caem aqui. */
+  sourceCategories: string[]
+  monthlyBudget: Cents | null
+}
+
+/** Compromisso fixo recorrente (ex.: parcela do terreno). */
+export interface Commitment {
+  id: string
+  name: string
+  amount: Cents
+  dayOfMonth: number
+  categoryId: string
+  startsOn: IsoDate
+  /** null = sem data para acabar. */
+  endsOn: IsoDate | null
+  /** Para financiamentos/parcelados: quantas já foram pagas de quantas. */
+  installments: { paid: number; total: number } | null
+  notes: string | null
+}
+
+/** Meta de economia (ex.: entrada do carro). */
+export interface Goal {
+  id: string
+  name: string
+  target: Cents
+  saved: Cents
+  targetDate: IsoDate
+  monthlyContribution: Cents
+  /** Conta onde o dinheiro está sendo guardado. */
+  accountId: string | null
+}
+
+/** Projeção mensal: renda esperada menos compromissos, metas e gasto variável médio. */
+export interface MonthProjection {
+  /** `YYYY-MM` */
+  month: string
+  expectedIncome: Cents
+  commitments: Cents
+  goalContributions: Cents
+  expectedVariableSpending: Cents
+  /** Sobra (ou falta) prevista no mês. */
+  projectedBalance: Cents
+}
+
+export interface PlanningOverview {
+  categories: BudgetCategory[]
+  commitments: Commitment[]
+  goals: Goal[]
+  projections: MonthProjection[]
+}
