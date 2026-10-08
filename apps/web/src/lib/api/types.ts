@@ -52,8 +52,10 @@ export interface Transaction {
   /** Negativo = dinheiro saindo; positivo = entrando. */
   amount: Cents
   status: TransactionStatus
-  /** Categoria do agregador (nomes em inglês da Pluggy). */
+  /** Categoria efetiva: a escolhida pelo usuário ou, sem escolha, a do agregador (nomes em inglês da Pluggy). */
   category: string | null
+  /** Categoria que veio do agregador; difere de `category` quando o usuário recategorizou. */
+  originalCategory: string | null
   paymentMethod: PaymentMethod | null
   counterpartyName: string | null
   installment: { number: number; total: number } | null

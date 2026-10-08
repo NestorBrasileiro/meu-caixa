@@ -42,7 +42,7 @@ const TOP_CATEGORIES = 7
 const TOP_LEAKS = 3
 
 export default async function Page() {
-  const today = getToday()
+  const today = await getToday()
   const currentMonth = today.slice(0, 7)
   const months = lastMonths(currentMonth, 12)
   const lastClosedMonth = lastMonths(currentMonth, 2)[0]

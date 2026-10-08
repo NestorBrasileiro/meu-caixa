@@ -33,7 +33,7 @@ import { formatMoney } from "@/lib/format/money"
 export const metadata: Metadata = { title: "Planejamento" }
 
 export default async function Page() {
-  const today = getToday()
+  const today = await getToday()
   const lastClosedMonth = lastMonths(today.slice(0, 7), 2)[0]
   const closedRange = monthRange(lastClosedMonth)
 

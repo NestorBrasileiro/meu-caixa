@@ -5,10 +5,11 @@ import { usePathname } from "next/navigation"
 import { Separator } from "@/components/ui/separator"
 import { SidebarTrigger } from "@/components/ui/sidebar"
 import { isActive, NAV_ITEMS } from "./nav"
-import { SyncIndicator, type SyncSummary } from "./sync-indicator"
+import type * as React from "react"
 import { ThemeToggle } from "./theme-toggle"
 
-export function SiteHeader({ sync }: { sync: SyncSummary }) {
+/** `syncStatus` chega pronto do servidor (dentro de um Suspense, porque lê a sessão). */
+export function SiteHeader({ syncStatus }: { syncStatus: React.ReactNode }) {
   const pathname = usePathname()
   const current = NAV_ITEMS.find((item) => isActive(pathname, item.href))
 
@@ -19,7 +20,7 @@ export function SiteHeader({ sync }: { sync: SyncSummary }) {
       <span className="truncate text-sm font-medium">{current?.title ?? "Meu Caixa"}</span>
       <div className="ml-auto flex items-center gap-1">
         <Link href="/contas" className="rounded-md">
-          <SyncIndicator sync={sync} />
+          {syncStatus}
         </Link>
         <ThemeToggle />
       </div>

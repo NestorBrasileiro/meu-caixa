@@ -26,6 +26,7 @@ const tx = (accountId: string, date: string, amount: number, category: string | 
   amount,
   status: "POSTED",
   category,
+  originalCategory: category,
   paymentMethod: null,
   counterpartyName: null,
   installment: null,

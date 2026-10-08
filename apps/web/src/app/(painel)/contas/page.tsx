@@ -16,8 +16,8 @@ import { getAccounts, getConnections, getInvoices, getNow, getSyncRuns, getToday
 export const metadata: Metadata = { title: "Contas" }
 
 export default async function Page() {
-  const today = getToday()
-  const now = getNow()
+  const today = await getToday()
+  const now = await getNow()
   const [connections, accounts, invoices, runs] = await Promise.all([
     getConnections(),
     getAccounts(),

@@ -3,7 +3,7 @@
 import Link from "next/link"
 import { usePathname } from "next/navigation"
 import { Wallet } from "lucide-react"
-import type { AuthUser } from "@/lib/api/types"
+import type * as React from "react"
 import {
   Sidebar,
   SidebarContent,
@@ -17,9 +17,9 @@ import {
   SidebarRail,
 } from "@/components/ui/sidebar"
 import { isActive, NAV_ITEMS } from "./nav"
-import { UserMenu } from "./user-menu"
 
-export function AppSidebar({ user }: { user: AuthUser }) {
+/** `userMenu` chega pronto do servidor (dentro de um Suspense, porque lê a sessão). */
+export function AppSidebar({ userMenu }: { userMenu: React.ReactNode }) {
   const pathname = usePathname()
 
   return (
@@ -60,7 +60,7 @@ export function AppSidebar({ user }: { user: AuthUser }) {
         </SidebarGroup>
       </SidebarContent>
       <SidebarFooter>
-        <UserMenu user={user} />
+        {userMenu}
       </SidebarFooter>
       <SidebarRail />
     </Sidebar>

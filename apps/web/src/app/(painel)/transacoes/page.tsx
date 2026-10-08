@@ -8,7 +8,7 @@ import { getAccounts, getAllTransactions, getToday } from "@/lib/data"
 export const metadata: Metadata = { title: "Transações" }
 
 export default async function Page() {
-  const today = getToday()
+  const today = await getToday()
   // O maior período oferecido nos filtros; os demais são recortes dele, feitos no cliente.
   const [transactions, accounts] = await Promise.all([getAllTransactions(periodRange("12m", today)), getAccounts()])
 
