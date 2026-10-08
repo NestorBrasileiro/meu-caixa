@@ -28,10 +28,10 @@ export function HeroCard({
       {/* Lado a lado só a partir de 42rem: abaixo disso a coluna de texto ficaria estreita demais. */}
       <CardContent className="grid gap-6 @2xl:grid-cols-[auto_minmax(0,1fr)] @2xl:gap-8">
         <div className="space-y-2">
-          <h3 className="text-muted-foreground flex items-center gap-1.5 text-sm font-normal">
+          <h2 className="text-muted-foreground flex items-center gap-1.5 text-sm font-normal">
             <Sparkles className="size-4" aria-hidden />
             Economia possível por mês
-          </h3>
+          </h2>
           <p className="text-5xl font-semibold tracking-tight whitespace-nowrap">{formatMoney(monthlySavings)}</p>
           <p className="text-muted-foreground text-sm">
             <span className="whitespace-nowrap">{formatMoney(monthlySavings * 12)} por ano</span>

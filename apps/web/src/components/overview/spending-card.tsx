@@ -67,7 +67,7 @@ export function SpendingCard({
       <Tabs defaultValue="chart" className="flex-1 gap-6">
         <CardHeader>
           <CardTitle>
-            <h3>Gastos por categoria</h3>
+            <h2>Gastos por categoria</h2>
           </CardTitle>
           <CardDescription className={HEADER_DESCRIPTION_CLASS}>
             Em {monthLabel}, o último mês fechado. Cartão e contas, sem pagamento de fatura.

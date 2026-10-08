@@ -81,10 +81,10 @@ export function TransactionList({
           <section key={group.date} aria-labelledby={headingId}>
             {/* Faixa opaca (fica por cima das linhas ao rolar), mais clara que bg-muted para o texto passar de 4,5:1. */}
             <div className="sticky top-14 z-[1] flex items-center justify-between gap-4 border-b bg-[color-mix(in_oklab,var(--muted)_50%,var(--card))] px-4 py-2 text-sm">
-              <h3 id={headingId} className="flex items-baseline gap-1.5">
+              <h2 id={headingId} className="flex items-baseline gap-1.5">
                 <span className="font-medium">{heading.title}</span>
                 <span className="text-muted-foreground text-xs">{heading.date}</span>
-              </h3>
+              </h2>
               <p className="text-foreground text-xs font-medium tabular-nums">
                 <span className="sr-only">Saldo do dia: </span>
                 <Money cents={group.net} tone="flow" />

@@ -150,7 +150,7 @@ export function ProjectionCard({
       <Tabs defaultValue="chart" className="flex-1 gap-6">
         <CardHeader>
           <CardTitle className="text-balance">
-            <h3>Projeção dos próximos 6 meses</h3>
+            <h2>Projeção dos próximos 6 meses</h2>
           </CardTitle>
           <CardDescription className={cn("col-start-1", HEADER_DESCRIPTION_CLASS)}>
             Renda prevista menos compromissos, aportes em metas e gasto variável médio.

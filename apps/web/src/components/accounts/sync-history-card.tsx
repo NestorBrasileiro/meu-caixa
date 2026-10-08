@@ -66,7 +66,7 @@ export function SyncHistoryCard({ runs: allRuns }: { runs: SyncRun[] }) {
     <Card>
       <CardHeader>
         <CardTitle>
-          <h3>Histórico de sincronização</h3>
+          <h2>Histórico de sincronização</h2>
         </CardTitle>
         <CardDescription>
           {allRuns.length > MAX_RUNS

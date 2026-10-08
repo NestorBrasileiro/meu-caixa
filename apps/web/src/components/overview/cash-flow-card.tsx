@@ -172,7 +172,7 @@ export function CashFlowCard({
       <Tabs defaultValue="chart" className="flex-1 gap-6">
         <CardHeader>
           <CardTitle>
-            <h3>Fluxo de caixa</h3>
+            <h2>Fluxo de caixa</h2>
           </CardTitle>
           <CardDescription className={HEADER_DESCRIPTION_CLASS}>
             Entradas e saídas das contas nos últimos 12 meses. O cartão entra quando a fatura é paga.

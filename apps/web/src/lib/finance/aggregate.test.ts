@@ -67,6 +67,11 @@ describe("finance/aggregate", () => {
     expect(totals[0].label).toBe("Mercado")
   })
 
+  it("crédito de pagamento de fatura no cartão não é renda", () => {
+    const withCardCredit = [...transactions, tx("card", "2026-09-15", 500_00, "Credit card payment")]
+    expect(periodTotals(withCardCredit, { from: "2026-09-01", to: "2026-09-30" }).income).toBe(9_000_00)
+  })
+
   it("renda e gasto do período", () => {
     expect(periodTotals(transactions, { from: "2026-09-01", to: "2026-09-30" })).toEqual({
       income: 9_000_00,

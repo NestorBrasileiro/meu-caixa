@@ -1,6 +1,7 @@
 import type { BudgetCategory, Commitment, Goal, MonthProjection, PlanningOverview } from "@/lib/api/planning"
 import type { Cents } from "@/lib/api/types"
-import { lastMonths, monthRange, spendingByCategory } from "@/lib/finance/aggregate"
+import { lastMonths, monthRange } from "@/lib/finance/aggregate"
+import { isSpending } from "@/lib/finance/classify"
 import { IDS, MOCK_TODAY, type MockDataset } from "./generator"
 
 export const BUDGET_CATEGORIES: BudgetCategory[] = [
@@ -62,6 +63,13 @@ export const BUDGET_CATEGORIES: BudgetCategory[] = [
   },
 ]
 
+/** Parcelas mensais já vencidas desde `startsOn` (inclusive) até hoje. */
+function paidSince(startsOn: string): number {
+  const [y0, m0, d0] = startsOn.split("-").map(Number)
+  const [y1, m1, d1] = MOCK_TODAY.split("-").map(Number)
+  return (y1 - y0) * 12 + (m1 - m0) + (d1 >= d0 ? 1 : 0)
+}
+
 export const COMMITMENTS: Commitment[] = [
   {
     id: "cmt-terreno",
@@ -72,7 +80,7 @@ export const COMMITMENTS: Commitment[] = [
     categoryId: "cat-moradia",
     startsOn: "2023-09-10",
     endsOn: "2033-08-10",
-    installments: { paid: 38, total: 120 },
+    installments: { paid: paidSince("2023-09-10"), total: 120 },
     notes: "Loteadora Exemplo",
   },
   {
@@ -160,18 +168,29 @@ export const GOALS: Goal[] = [
 
 const EXPECTED_INCOME: Cents = 9_000_00
 
+/**
+ * Lançamentos que pagam um compromisso fixo. Casar pela contraparte (e não
+ * pela categoria inteira) mantém assinaturas avulsas, como o Streaming Plus,
+ * no gasto variável — assim fixo + variável fecha com o gasto real.
+ */
+const COMMITTED_COUNTERPARTIES = new Set([
+  "Loteadora Exemplo",
+  "Fibra Exemplo",
+  "Operadora Exemplo",
+  "Academia Exemplo",
+  "Streaming Exemplo",
+  "Música Exemplo",
+])
+
 /** Gasto variável médio dos últimos 3 meses fechados (tudo que não é compromisso). */
 export function averageVariableSpending(dataset: MockDataset): Cents {
-  const committedCategories = new Set(["Housing", "Internet", "Telecommunications", "Gyms and fitness centers"])
   const months = lastMonths(MOCK_TODAY.slice(0, 7), 4).slice(0, 3)
-  let total = 0
-  for (const month of months) {
-    for (const row of spendingByCategory(dataset.transactions, monthRange(month))) {
-      if (row.category && committedCategories.has(row.category)) continue
-      if (row.category === "Video streaming" || row.category === "Music streaming") continue
-      total += row.total
-    }
-  }
+  const from = monthRange(months[0]).from
+  const to = monthRange(months[months.length - 1]).to
+  const total = dataset.transactions
+    .filter((tx) => isSpending(tx) && tx.date >= from && tx.date <= to)
+    .filter((tx) => !COMMITTED_COUNTERPARTIES.has(tx.counterpartyName ?? ""))
+    .reduce((sum, tx) => sum - tx.amount, 0)
   return Math.round(total / months.length)
 }
 

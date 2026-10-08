@@ -92,7 +92,7 @@ export function SpendingSplitCard({
   return (
     <Card className={className}>
       <CardHeader>
-        <CardTitle role="heading" aria-level={3}>
+        <CardTitle role="heading" aria-level={2}>
           Para onde vai o dinheiro
         </CardTitle>
         <CardDescription>Média de {periodLabel}: o que é compromisso e o que é escolha.</CardDescription>

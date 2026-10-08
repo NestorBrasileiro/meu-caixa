@@ -20,9 +20,9 @@ export function AskClaudeCard({ className }: { className?: string }) {
             <MessageCircleQuestion className="text-muted-foreground size-4" aria-hidden />
           </span>
           <div className="space-y-1">
-            <h3 id="pergunte-ao-claude" className="leading-tight font-semibold">
+            <h2 id="pergunte-ao-claude" className="leading-tight font-semibold">
               Pergunte ao Claude
-            </h3>
+            </h2>
             <p className="text-muted-foreground text-sm text-pretty">
               Tire dúvidas sobre o seu dinheiro em linguagem natural, direto das suas transações.
             </p>

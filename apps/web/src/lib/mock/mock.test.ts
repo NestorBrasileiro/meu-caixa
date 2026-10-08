@@ -46,3 +46,23 @@ describe("dataset mocado", () => {
     expect(analysis.insights.every((i) => i.evidence === null || i.evidence.total > 0)).toBe(true)
   })
 })
+
+describe("planejamento mocado", () => {
+  it("fixo + variável fecha com o gasto real dos 3 meses fechados", async () => {
+    const { lastMonths, monthRange, periodTotals } = await import("@/lib/finance/aggregate")
+    const { averageVariableSpending, COMMITMENTS } = await import("./planning")
+    const months = lastMonths(MOCK_TODAY.slice(0, 7), 4).slice(0, 3)
+    const spending = periodTotals(mockDataset().transactions, {
+      from: monthRange(months[0]).from,
+      to: monthRange(months[2]).to,
+    }).spending
+    const fixed = COMMITMENTS.reduce((sum, c) => sum + c.amount, 0)
+    expect(Math.abs(fixed + averageVariableSpending(mockDataset()) - spending / 3)).toBeLessThanOrEqual(1)
+  })
+
+  it("parcelas do terreno pagas até hoje", async () => {
+    const { COMMITMENTS } = await import("./planning")
+    // Set/2023 a set/2026: 37 parcelas (a de 10/out ainda não venceu em 07/out).
+    expect(COMMITMENTS.find((c) => c.id === "cmt-terreno")?.installments?.paid).toBe(37)
+  })
+})

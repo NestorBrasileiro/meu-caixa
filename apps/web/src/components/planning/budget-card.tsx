@@ -75,7 +75,7 @@ function GroupHeader({ group }: { group: BudgetGroup }) {
   return (
     <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-0.5 border-b pb-1.5 text-xs">
       <span className="flex items-center gap-2">
-        <h4 className="font-medium">{group.label}</h4>
+        <h3 className="font-medium">{group.label}</h3>
         {group.actual > group.budget && <OverLabel over={group.actual - group.budget} className="font-medium" />}
       </span>
       <span className="ml-auto whitespace-nowrap tabular-nums">
@@ -256,7 +256,7 @@ export function BudgetCard({
       <Tabs defaultValue="chart" className="flex-1 gap-6">
         <CardHeader>
           <CardTitle className="text-balance">
-            <h3>Orçamento por categoria</h3>
+            <h2>Orçamento por categoria</h2>
           </CardTitle>
           <CardDescription className={HEADER_DESCRIPTION_CLASS}>
             Gasto em {monthLabel}, o último mês fechado, contra o orçamento de cada categoria.

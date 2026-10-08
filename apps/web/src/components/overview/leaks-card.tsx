@@ -27,7 +27,7 @@ export function LeaksCard({
     <Card className={className}>
       <CardHeader>
         <CardTitle>
-          <h3>Maiores vazamentos</h3>
+          <h2>Onde dá para economizar</h2>
         </CardTitle>
         <CardDescription>
           {total > 0 ? (

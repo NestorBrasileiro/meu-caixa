@@ -41,7 +41,7 @@ export function GoalCard({ goal, className }: { goal: GoalProgress; className?: 
       */}
       <CardHeader className="@max-[25rem]/goal:grid-cols-1!">
         <CardTitle className="text-balance">
-          <h4>{goal.name}</h4>
+          <h3>{goal.name}</h3>
         </CardTitle>
         <CardDescription>{goal.accountName ? `Guardada em ${goal.accountName}` : "Meta de economia"}</CardDescription>
         <CardAction className="@max-[25rem]/goal:col-start-1 @max-[25rem]/goal:row-span-1 @max-[25rem]/goal:row-start-3 @max-[25rem]/goal:justify-self-start">

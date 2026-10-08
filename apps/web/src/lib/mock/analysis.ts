@@ -44,6 +44,9 @@ export function buildAnalysis(dataset: MockDataset): AnalysisReport {
 
   const deliveryMonthly = perMonth(delivery.total)
   const deliverySavings = Math.round(deliveryMonthly * 0.4)
+  const ordersPerMonth = delivery.occurrences / 3
+  // Quantos pedidos por mês trocar para chegar aos 40% — texto e número não divergem.
+  const ordersToSwap = Math.max(1, Math.round(ordersPerMonth * 0.4))
   const restaurantSavings = Math.round(perMonth(restaurants.total) * 0.3)
   const ridesSavings = Math.round(perMonth(rides.total) * 0.25)
   const streamingSavings = perMonth(extraStreaming.total)
@@ -59,7 +62,7 @@ export function buildAnalysis(dataset: MockDataset): AnalysisReport {
       id: "ins-delivery",
       kind: "SIN",
       title: "Delivery virou rotina de fim de semana",
-      explanation: `Foram ${delivery.occurrences} pedidos em 3 meses — cerca de ${Math.round(delivery.occurrences / 3)} por mês, quase sempre sexta e sábado. É o seu maior gasto discricionário. Trocar 4 desses pedidos por mês por comida feita em casa já corta perto de 40%.`,
+      explanation: `Foram ${delivery.occurrences} pedidos em 3 meses — cerca de ${Math.round(ordersPerMonth)} por mês, quase sempre sexta e sábado. É o seu maior gasto discricionário. Trocar ${ordersToSwap} desses pedidos por mês por comida feita em casa corta perto de 40% do valor.`,
       monthlySavings: deliverySavings,
       evidence: delivery,
       confidence: "HIGH",

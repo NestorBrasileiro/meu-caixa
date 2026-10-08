@@ -64,7 +64,7 @@ export function CommitmentsCard({
     <Card className={className}>
       <CardHeader>
         <CardTitle className="text-balance">
-          <h3>Compromissos fixos</h3>
+          <h2>Compromissos fixos</h2>
         </CardTitle>
         <CardDescription>Contas que se repetem todo mês, da maior para a menor.</CardDescription>
       </CardHeader>

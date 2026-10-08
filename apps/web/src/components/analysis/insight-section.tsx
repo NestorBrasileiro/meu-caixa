@@ -12,9 +12,9 @@ function InsightCard({ insight, period }: { insight: Insight; period: Period }) 
   return (
     <Card role="article" className="gap-3 px-5 py-5" aria-labelledby={`insight-${insight.id}`}>
       <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between sm:gap-6">
-        <h4 id={`insight-${insight.id}`} className="leading-snug font-medium">
+        <h3 id={`insight-${insight.id}`} className="leading-snug font-medium">
           {insight.title}
-        </h4>
+        </h3>
         {insight.monthlySavings !== null && (
           // Contorno em vez de fundo bg-muted: o texto muted sobre o cartão mantém contraste AA.
           <p className="text-muted-foreground w-fit shrink-0 rounded-md border px-2 py-0.5 text-xs leading-5 whitespace-nowrap">
@@ -57,9 +57,9 @@ function InsightSection({ group, period }: { group: InsightGroup; period: Period
           <Icon className="text-muted-foreground size-4" aria-hidden />
         </span>
         <div className="min-w-0 space-y-0.5">
-          <h3 id={headingId} className="leading-tight font-semibold">
+          <h2 id={headingId} className="leading-tight font-semibold">
             {title}
-          </h3>
+          </h2>
           <p className="text-muted-foreground text-sm">{description}</p>
         </div>
       </header>

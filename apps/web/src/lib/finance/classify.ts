@@ -26,9 +26,12 @@ export function isSpending(tx: Transaction): boolean {
   return tx.amount < 0 && !isOwnTransfer(tx) && !isCardPayment(tx)
 }
 
-/** Entrada de dinheiro novo (salário, rendimento, Pix recebido). */
+/**
+ * Entrada de dinheiro novo (salário, rendimento, Pix recebido). O crédito do
+ * pagamento de fatura no cartão não é renda: é o dinheiro da conta quitando a dívida.
+ */
 export function isIncome(tx: Transaction): boolean {
-  return tx.amount > 0 && !isOwnTransfer(tx)
+  return tx.amount > 0 && !isOwnTransfer(tx) && !isCardPayment(tx)
 }
 
 export function isCashAccount(account: Pick<Account, "type">): boolean {

@@ -113,6 +113,6 @@ No `apps/web`: `pnpm dev`, `pnpm lint`, `pnpm typecheck`, `pnpm test` e `pnpm bu
 
 - [x] **25% — Fundação e dados reais:** esqueleto Nest com os módulos e a `FinanceProvider`; adapter da Pluggy (contas, transações, faturas); Postgres modelado; `sync` gravando os dados; CI (lint, build, testes). Falta validar com 1 banco real usando as suas credenciais.
 - [x] **Autenticação:** login com Keycloak (OIDC + PKCE) e sessão `express-session` no Postgres.
-- [ ] **50% — Interface completa, mocada:** telas em Next.js + shadcn/ui (visão geral, contas, transações, planejamento, análise).
+- [x] **50% — Interface completa, mocada:** telas em Next.js + shadcn/ui (visão geral, contas, transações, planejamento, análise), com dados mocados no formato da API, temas claro/escuro e layout para celular.
 - [ ] **75% — Interface ligada no back-end:** fim do mock; módulo `planning` com compromissos fixos, metas e categorias.
 - [ ] **100% — Análise via MCP e deploy:** MCP expondo os dados para o Claude; deploy na DigitalOcean.

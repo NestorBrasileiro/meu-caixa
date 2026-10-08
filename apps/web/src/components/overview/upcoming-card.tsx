@@ -57,7 +57,7 @@ export function UpcomingCard({
     <Card className={className}>
       <CardHeader>
         <CardTitle>
-          <h3>Próximos vencimentos</h3>
+          <h2>Próximos vencimentos</h2>
         </CardTitle>
         <CardDescription>
           Compromissos e faturas até {formatDateShort(until)}, nos próximos {horizonDays} dias.

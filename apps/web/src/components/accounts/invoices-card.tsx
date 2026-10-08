@@ -87,7 +87,7 @@ export function InvoicesCard({ history }: { history: InvoiceHistory }) {
       <Card>
         <CardHeader>
           <CardTitle className="col-start-1">
-            <h3>Faturas do cartão</h3>
+            <h2>Faturas do cartão</h2>
           </CardTitle>
           <CardDescription className="col-start-1">
             {/* Quebra depois do "·", nunca antes, e o período fica inteiro. */}

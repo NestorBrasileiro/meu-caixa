@@ -24,7 +24,7 @@ export function AccountsCard({ accounts, today }: { accounts: Account[]; today: 
     <Card>
       <CardHeader>
         <CardTitle>
-          <h3>Contas</h3>
+          <h2>Contas</h2>
         </CardTitle>
         <CardDescription className={HEADER_DESCRIPTION_CLASS}>
           Saldo de cada conta conectada. No cartão, o valor da fatura em aberto.

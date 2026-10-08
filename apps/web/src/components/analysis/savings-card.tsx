@@ -95,7 +95,7 @@ export function SavingsCard({ rows, className }: { rows: SavingsRow[]; className
     <Card className={className}>
       <Tabs defaultValue="chart" className="gap-6">
         <CardHeader>
-          <CardTitle role="heading" aria-level={3}>
+          <CardTitle role="heading" aria-level={2}>
             De onde vem a economia
           </CardTitle>
           <CardDescription>Quanto cada oportunidade libera por mês.</CardDescription>

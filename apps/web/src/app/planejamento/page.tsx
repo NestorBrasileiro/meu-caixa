@@ -96,9 +96,9 @@ export default async function Page() {
       <div className="grid grid-cols-1 gap-4 xl:grid-cols-[minmax(0,1fr)_26rem]">
         <CommitmentsCard rows={commitments} total={committed} />
         <section aria-labelledby="metas-title" className="grid content-start gap-4 lg:grid-cols-2 xl:grid-cols-1">
-          <h3 id="metas-title" className="sr-only">
+          <h2 id="metas-title" className="sr-only">
             Metas
-          </h3>
+          </h2>
           {goals.length === 0 ? (
             <Card className="lg:col-span-2 xl:col-span-1">
               <Empty className="p-6 md:p-8">

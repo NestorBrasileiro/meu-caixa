@@ -16,7 +16,7 @@ export function SiteHeader({ sync }: { sync: SyncSummary }) {
     <header className="bg-background/80 sticky top-0 z-10 flex h-14 shrink-0 items-center gap-2 border-b px-4 backdrop-blur supports-[backdrop-filter]:bg-background/60">
       <SidebarTrigger className="-ml-1" />
       <Separator orientation="vertical" className="mr-1 data-[orientation=vertical]:h-4" />
-      <h1 className="truncate text-sm font-medium">{current?.title ?? "Meu Caixa"}</h1>
+      <span className="truncate text-sm font-medium">{current?.title ?? "Meu Caixa"}</span>
       <div className="ml-auto flex items-center gap-1">
         <Link href="/contas" className="rounded-md">
           <SyncIndicator sync={sync} />

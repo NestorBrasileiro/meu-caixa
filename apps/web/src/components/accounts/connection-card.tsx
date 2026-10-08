@@ -45,7 +45,7 @@ export function ConnectionCard({
             {/* Nome nunca é espremido nem cortado: sem espaço, o status desce para a linha de baixo. */}
             <div className="flex flex-wrap items-start justify-between gap-x-3 gap-y-1.5">
               <CardTitle className="pt-0.5 leading-snug text-pretty">
-                <h3>{connection.institutionName}</h3>
+                <h2>{connection.institutionName}</h2>
               </CardTitle>
               <ConnectionStatusBadge status={connection.status} />
             </div>
