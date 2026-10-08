@@ -1,0 +1,58 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  api:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: meu_caixa_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      TEST_DATABASE_URL: postgres://postgres:postgres@localhost:5432/meu_caixa_test
+    steps:
+      - uses: actions/checkout@v5
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v5
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Lint
+        run: pnpm --filter api lint
+      - name: Formatação
+        run: pnpm --filter api format:check
+      - name: Typecheck
+        run: pnpm --filter api typecheck
+      - name: Build
+        run: pnpm --filter api build
+      - name: Testes unitários
+        run: pnpm --filter api test
+      - name: Testes e2e (Postgres)
+        run: pnpm --filter api test:e2e
+      - name: Migrations em dia com o schema
+        run: |
+          pnpm --filter api db:generate
+          if [ -n "$(git status --porcelain apps/api/drizzle)" ]; then
+            echo "::error::O schema mudou sem migration. Rode 'pnpm --filter api db:generate' e commite."
+            git status --porcelain apps/api/drizzle
+            exit 1
+          fi

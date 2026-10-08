@@ -1,0 +1,36 @@
+import { Module, ValidationPipe } from '@nestjs/common';
+import { APP_GUARD, APP_PIPE } from '@nestjs/core';
+import { AccountsModule } from './accounts/accounts.module.js';
+import { ApiTokenGuard } from './common/api-token.guard.js';
+import { ConfigModule } from './config/config.module.js';
+import { DatabaseModule } from './database/database.module.js';
+import { HealthController } from './health/health.controller.js';
+import { IntegrationsModule } from './integrations/integrations.module.js';
+import { PlanningModule } from './planning/planning.module.js';
+import { SyncModule } from './sync/sync.module.js';
+import { TransactionsModule } from './transactions/transactions.module.js';
+
+@Module({
+  imports: [
+    ConfigModule,
+    DatabaseModule,
+    IntegrationsModule,
+    AccountsModule,
+    TransactionsModule,
+    PlanningModule,
+    SyncModule,
+  ],
+  controllers: [HealthController],
+  providers: [
+    { provide: APP_GUARD, useClass: ApiTokenGuard },
+    {
+      provide: APP_PIPE,
+      useValue: new ValidationPipe({
+        transform: true,
+        whitelist: true,
+        forbidNonWhitelisted: true,
+      }),
+    },
+  ],
+})
+export class AppModule {}
