@@ -1,7 +1,7 @@
 import { Module, ValidationPipe } from '@nestjs/common';
-import { APP_GUARD, APP_PIPE } from '@nestjs/core';
+import { APP_PIPE } from '@nestjs/core';
 import { AccountsModule } from './accounts/accounts.module.js';
-import { ApiTokenGuard } from './common/api-token.guard.js';
+import { AuthModule } from './auth/auth.module.js';
 import { ConfigModule } from './config/config.module.js';
 import { DatabaseModule } from './database/database.module.js';
 import { HealthController } from './health/health.controller.js';
@@ -14,6 +14,7 @@ import { TransactionsModule } from './transactions/transactions.module.js';
   imports: [
     ConfigModule,
     DatabaseModule,
+    AuthModule,
     IntegrationsModule,
     AccountsModule,
     TransactionsModule,
@@ -22,7 +23,6 @@ import { TransactionsModule } from './transactions/transactions.module.js';
   ],
   controllers: [HealthController],
   providers: [
-    { provide: APP_GUARD, useClass: ApiTokenGuard },
     {
       provide: APP_PIPE,
       useValue: new ValidationPipe({

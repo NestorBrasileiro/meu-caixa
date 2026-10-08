@@ -1,0 +1,52 @@
+{
+  "realm": "meu-caixa",
+  "displayName": "Meu Caixa",
+  "enabled": true,
+  "registrationAllowed": false,
+  "loginWithEmailAllowed": true,
+  "resetPasswordAllowed": false,
+  "bruteForceProtected": true,
+  "roles": {
+    "client": {
+      "web": [
+        {
+          "name": "owner",
+          "description": "Acesso aos dados financeiros do Meu Caixa"
+        }
+      ]
+    }
+  },
+  "clients": [
+    {
+      "clientId": "web",
+      "name": "Meu Caixa",
+      "enabled": true,
+      "protocol": "openid-connect",
+      "publicClient": false,
+      "clientAuthenticatorType": "client-secret",
+      "secret": "meu-caixa-dev-secret",
+      "standardFlowEnabled": true,
+      "implicitFlowEnabled": false,
+      "directAccessGrantsEnabled": false,
+      "serviceAccountsEnabled": false,
+      "redirectUris": ["http://localhost:3000/auth/callback"],
+      "webOrigins": ["http://localhost:3001"],
+      "attributes": {
+        "pkce.code.challenge.method": "S256",
+        "post.logout.redirect.uris": "http://localhost:3001"
+      }
+    }
+  ],
+  "users": [
+    {
+      "username": "dev",
+      "enabled": true,
+      "email": "dev@meucaixa.local",
+      "emailVerified": true,
+      "firstName": "Dev",
+      "lastName": "Local",
+      "credentials": [{ "type": "password", "value": "dev", "temporary": false }],
+      "clientRoles": { "web": ["owner"] }
+    }
+  ]
+}

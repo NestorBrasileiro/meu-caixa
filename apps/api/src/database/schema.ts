@@ -163,3 +163,14 @@ export type InvoiceRow = typeof invoices.$inferSelect;
 export type SyncRunRow = typeof syncRuns.$inferSelect;
 export type SyncStatus = (typeof SYNC_RUN_STATUSES)[number];
 export type SyncTrigger = (typeof SYNC_TRIGGERS)[number];
+
+/** Sessões do express-session (login via Keycloak). */
+export const sessions = pgTable(
+  'sessions',
+  {
+    sid: text('sid').primaryKey(),
+    data: jsonb('data').notNull(),
+    expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
+  },
+  (t) => [index('sessions_expires_at_idx').on(t.expiresAt)],
+);

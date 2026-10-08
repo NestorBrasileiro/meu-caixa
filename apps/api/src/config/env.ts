@@ -1,3 +1,4 @@
+import { randomBytes } from 'node:crypto';
 import { z } from 'zod';
 
 const booleanFlag = z.enum(['true', 'false']).transform((value) => value === 'true');
@@ -17,8 +18,24 @@ export const envSchema = z
     DATABASE_URL: z.string().min(1),
     DATABASE_MIGRATE_ON_START: booleanFlag.default(false),
 
-    // Protege a API com `Authorization: Bearer <token>`. Obrigatório em produção.
-    API_TOKEN: z.string().min(32).optional(),
+    /** URL pública desta API (o callback do login é `${APP_URL}/auth/callback`). */
+    APP_URL: z.url().default('http://localhost:3000'),
+    /** Para onde o usuário volta depois do login/logout; também é a origem liberada no CORS. */
+    FRONTEND_URL: z.url().default('http://localhost:3001'),
+
+    // Default aleatório por boot: seguro em dev, mas derruba as sessões a cada
+    // restart — em produção é obrigatório definir (validado em validateEnv).
+    SESSION_SECRET: z
+      .string()
+      .min(32)
+      .default(() => randomBytes(32).toString('hex')),
+
+    KEYCLOAK_URL: z.url().default('http://localhost:8080'),
+    KEYCLOAK_REALM: z.string().default('meu-caixa'),
+    KEYCLOAK_CLIENT_ID: z.string().default('web'),
+    KEYCLOAK_CLIENT_SECRET: z.string().min(1),
+    /** Role (de realm ou do client) exigida para acessar os dados financeiros. */
+    KEYCLOAK_REQUIRED_ROLE: z.string().default('owner'),
 
     TIMEZONE: z.string().default('America/Sao_Paulo'),
 
@@ -57,13 +74,6 @@ export const envSchema = z
         });
       }
     }
-    if (env.NODE_ENV === 'production' && !env.API_TOKEN) {
-      ctx.addIssue({
-        code: 'custom',
-        path: ['API_TOKEN'],
-        message: 'obrigatório em produção',
-      });
-    }
   });
 
 export type Env = z.output<typeof envSchema>;
@@ -77,6 +87,11 @@ export function validateEnv(raw: Record<string, unknown>): Env {
   const result = envSchema.safeParse(input);
   if (!result.success) {
     throw new Error(`Configuração inválida:\n${z.prettifyError(result.error)}`);
+  }
+  if (result.data.NODE_ENV === 'production' && !input.SESSION_SECRET) {
+    throw new Error(
+      'Configuração inválida:\n✖ SESSION_SECRET é obrigatório em produção (mín. 32 caracteres)',
+    );
   }
   return result.data;
 }

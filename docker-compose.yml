@@ -1,3 +1,4 @@
+# Ambiente local: Postgres + Keycloak (somente desenvolvimento).
 services:
   postgres:
     image: postgres:17-alpine
@@ -15,6 +16,19 @@ services:
       interval: 5s
       timeout: 5s
       retries: 10
+
+  # Realm "meu-caixa" importado de docker/keycloak: client "web" e usuário dev/dev
+  # com a role "owner". Console de administração: http://localhost:8080 (admin/admin).
+  keycloak:
+    image: quay.io/keycloak/keycloak:26.3.4
+    command: start-dev --import-realm
+    environment:
+      KC_BOOTSTRAP_ADMIN_USERNAME: admin
+      KC_BOOTSTRAP_ADMIN_PASSWORD: admin
+    ports:
+      - '8080:8080'
+    volumes:
+      - ./docker/keycloak:/opt/keycloak/data/import:ro
 
 volumes:
   pgdata:
