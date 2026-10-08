@@ -18,6 +18,10 @@ Bancos → Open Finance → Meu Pluggy → integrations/pluggy (ACL) → Postgre
 ## Estrutura
 
 ```
+apps/web/                  Next.js 16 + shadcn/ui (interface)
+  src/app/                 telas: visão geral, contas, transações, planejamento, análise
+  src/lib/data/            ponto único de acesso a dados (hoje mocado, no formato da API)
+  src/lib/finance/         regras compartilhadas (fluxo de caixa, gasto por categoria)
 apps/api/                  NestJS 12 + TypeScript (ESM)
   src/auth/                login com Keycloak, sessão, guard global e CSRF
   src/domain/              modelo próprio: Conta, Transação, Fatura, Conexão
@@ -45,6 +49,14 @@ pnpm --filter api start:dev          # aplica as migrations e sincroniza na subi
 Abra http://localhost:3000/auth/login e entre com `dev` / `dev` (realm `meu-caixa` importado de `docker/keycloak`). Depois do login o Keycloak volta para `FRONTEND_URL`; as rotas da API já respondem com o cookie de sessão. O console do Keycloak fica em http://localhost:8080 (`admin` / `admin`).
 
 Com `FINANCE_PROVIDER=fake` (padrão do `.env.example`) a API sobe com dados fictícios, sem credenciais da Pluggy — útil para desenvolver a interface.
+
+### Interface
+
+```bash
+pnpm --filter web dev                # http://localhost:3001
+```
+
+Por enquanto a interface usa dados mocados (`apps/web/src/lib/mock`), no formato exato das respostas da API, e não precisa da API rodando. No marco de 75% só `apps/web/src/lib/data` muda para chamar a API com o cookie de sessão.
 
 ### Usando seus bancos (Meu Pluggy)
 
@@ -95,10 +107,12 @@ Convenções: valores monetários em **centavos** (inteiros); transações negat
 | `pnpm db:generate` | Gera migration a partir de mudanças em `src/database/schema.ts` |
 | `pnpm db:migrate` | Aplica as migrations no `DATABASE_URL` |
 
+No `apps/web`: `pnpm dev`, `pnpm lint`, `pnpm typecheck`, `pnpm test` e `pnpm build`.
+
 ## Roadmap
 
 - [x] **25% — Fundação e dados reais:** esqueleto Nest com os módulos e a `FinanceProvider`; adapter da Pluggy (contas, transações, faturas); Postgres modelado; `sync` gravando os dados; CI (lint, build, testes). Falta validar com 1 banco real usando as suas credenciais.
 - [x] **Autenticação:** login com Keycloak (OIDC + PKCE) e sessão `express-session` no Postgres.
-- [ ] **50% — Interface completa, mocada:** telas em Next.js + shadcn/ui (visão geral, contas, transações, planejamento, análise).
+- [x] **50% — Interface completa, mocada:** telas em Next.js + shadcn/ui (visão geral, contas, transações, planejamento, análise), com dados mocados no formato da API, temas claro/escuro e layout para celular.
 - [ ] **75% — Interface ligada no back-end:** fim do mock; módulo `planning` com compromissos fixos, metas e categorias.
 - [ ] **100% — Análise via MCP e deploy:** MCP expondo os dados para o Claude; deploy na DigitalOcean.
