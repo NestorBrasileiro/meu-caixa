@@ -90,17 +90,15 @@ async function main(): Promise<void> {
         startsOn: '2021-03-01',
       },
     ]);
-    await db
-      .insert(goals)
-      .values([
-        {
-          name: 'Entrada do carro',
-          target: 40_000_00,
-          saved: 12_500_00,
-          targetDate: '2027-12-01',
-          monthlyContribution: 1_500_00,
-        },
-      ]);
+    await db.insert(goals).values([
+      {
+        name: 'Entrada do carro',
+        target: 40_000_00,
+        saved: 12_500_00,
+        targetDate: '2027-12-01',
+        monthlyContribution: 1_500_00,
+      },
+    ]);
     console.log('Planejamento de exemplo criado.');
   } finally {
     await pool.end();
