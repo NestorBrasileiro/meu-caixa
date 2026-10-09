@@ -1,6 +1,6 @@
 import type { Insight, InsightKind } from "@/lib/api/analysis"
 import type { Cents, IsoDate } from "@/lib/api/types"
-import { formatDateShort, formatMonth, formatMonthShort } from "@/lib/format/date"
+import { formatDateShort, formatDateTime, formatMonth, formatMonthShort } from "@/lib/format/date"
 import { formatMoney } from "@/lib/format/money"
 
 export interface Period {
@@ -88,7 +88,9 @@ export function plural(count: number, singular: string, pluralForm: string): str
 /** ["Pedidos de delivery", "38 ocorrências", "R$ 2.554,80 no período"] — exibidos separados por " · ". */
 export function evidenceParts(evidence: NonNullable<Insight["evidence"]>, reportPeriod: Period): string[] {
   const samePeriod = evidence.period.from === reportPeriod.from && evidence.period.to === reportPeriod.to
-  const when = samePeriod ? "no período" : `de ${formatDateShort(evidence.period.from)} a ${formatDateShort(evidence.period.to)}`
+  const when = samePeriod
+    ? "no período"
+    : `de ${formatDateShort(evidence.period.from)} a ${formatDateShort(evidence.period.to)}`
   return [
     evidence.label,
     plural(evidence.occurrences, "ocorrência", "ocorrências"),
@@ -120,4 +122,21 @@ export function balanceColumns(groups: InsightGroup[]): [InsightGroup[], Insight
     left += weights[split] ?? 0
   }
   return [groups.slice(0, best), groups.slice(best)]
+}
+
+/**
+ * Partes da descrição da página, exibidas separadas por " · ". O relatório de
+ * exemplo não diz quando nem como foi "gerado": ele não veio das transações do usuário.
+ */
+export function reportDescription(report: { generatedAt: string; period: Period }, sample: boolean): string[] {
+  const period = `período ${formatDateShort(report.period.from)} a ${formatDateShort(report.period.to)}`
+  if (sample) return ["Exemplo do relatório do Claude", period]
+  return [`Gerada em ${formatDateTime(report.generatedAt)}`, period, "via MCP"]
+}
+
+/** Nota de rodapé: o relatório de exemplo não afirma ter lido as transações do usuário. */
+export function reportFootnote(sample: boolean): string {
+  return sample
+    ? "Quando a integração chegar, a análise será feita a partir das suas transações. Revise antes de agir: o Claude pode errar."
+    : "Análise gerada automaticamente a partir das suas transações. Revise antes de agir: o Claude pode errar."
 }

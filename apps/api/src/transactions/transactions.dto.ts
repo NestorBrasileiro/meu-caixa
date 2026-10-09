@@ -1,5 +1,6 @@
 import { Type } from 'class-transformer';
 import {
+  ValidateIf,
   IsIn,
   IsInt,
   IsISO8601,
@@ -59,4 +60,12 @@ export class ListInvoicesQuery {
   @IsOptional()
   @IsUUID()
   accountId?: string;
+}
+
+export class RecategorizeTransactionDto {
+  /** Categoria do agregador (ex.: "Groceries"); `null` volta para a original. */
+  @ValidateIf((_, value) => value !== null)
+  @IsString()
+  @MaxLength(80)
+  category!: string | null;
 }

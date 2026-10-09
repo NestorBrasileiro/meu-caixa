@@ -18,8 +18,12 @@ export const envSchema = z
     DATABASE_URL: z.string().min(1),
     DATABASE_MIGRATE_ON_START: booleanFlag.default(false),
 
-    /** URL pública desta API (o callback do login é `${APP_URL}/auth/callback`). */
-    APP_URL: z.url().default('http://localhost:3000'),
+    /**
+     * URL pública por onde o browser chega nesta API. Com a interface fazendo
+     * proxy de `/auth` e `/api`, é a URL da interface; o callback do login é
+     * `${APP_URL}/auth/callback`.
+     */
+    APP_URL: z.url().default('http://localhost:3001'),
     /** Para onde o usuário volta depois do login/logout; também é a origem liberada no CORS. */
     FRONTEND_URL: z.url().default('http://localhost:3001'),
 

@@ -11,16 +11,19 @@ Bancos → Open Finance → Meu Pluggy → integrations/pluggy (ACL) → Postgre
 ```
 
 - **A Pluggy é plugável.** O sistema depende só da interface `FinanceProvider` (`apps/api/src/integrations/finance-provider.ts`). O módulo `integrations/pluggy` traduz o formato da Pluggy para o modelo de domínio próprio (`src/domain/finance.ts`). Trocar de agregador = escrever outro adapter.
-- **Postgres é a fonte de verdade.** O módulo `sync` copia os dados do provedor para o banco a cada `SYNC_INTERVAL_HOURS` (e sob demanda em `POST /sync`). A API sempre lê do banco; se a Pluggy cair, as telas continuam funcionando com o último dado sincronizado.
+- **Postgres é a fonte de verdade.** O módulo `sync` copia os dados do provedor para o banco a cada `SYNC_INTERVAL_HOURS` (e sob demanda em `POST /api/sync`, o botão "Sincronizar agora"). A API sempre lê do banco; se a Pluggy cair, as telas continuam funcionando com o último dado sincronizado.
 - **Login com Keycloak no backend (padrão BFF).** A API faz o fluxo OIDC (Authorization Code + PKCE) com o Keycloak e guarda os tokens numa sessão do `express-session` no Postgres. O browser só recebe um cookie `httpOnly`; os tokens nunca chegam ao frontend.
+- **O browser fala só com o Next.** O `next.config.ts` faz proxy de `/api/*` e `/auth/*` para a API, então o cookie de sessão é do mesmo site e não há CORS. As telas (Server Components) chamam a API direto do servidor repassando o cookie; as ações (salvar, sincronizar) saem do browser por `/api`.
 - **O adapter trata o que um ORM de banco não precisa:** timeout por requisição, retry com backoff (rede, 429, 5xx, respeitando `Retry-After`), renovação automática da API key, paginação, cache em memória e validação do formato das respostas (mudança de contrato falha alto, em vez de gravar lixo).
 
 ## Estrutura
 
 ```
 apps/web/                  Next.js 16 + shadcn/ui (interface)
-  src/app/                 telas: visão geral, contas, transações, planejamento, análise
-  src/lib/data/            ponto único de acesso a dados (hoje mocado, no formato da API)
+  src/app/(painel)/        telas: visão geral, contas, transações, planejamento, análise
+  src/app/(acesso)/        sem acesso (403) e erro de login, fora do painel
+  src/lib/data/            ponto único de acesso a dados: API real ou mock (DATA_SOURCE)
+  src/lib/api/             contratos da API e cliente do browser para as ações
   src/lib/finance/         regras compartilhadas (fluxo de caixa, gasto por categoria)
 apps/api/                  NestJS 12 + TypeScript (ESM)
   src/auth/                login com Keycloak, sessão, guard global e CSRF
@@ -28,9 +31,9 @@ apps/api/                  NestJS 12 + TypeScript (ESM)
   src/integrations/        FinanceProvider + adapters (pluggy, fake) + cache
   src/database/            schema Drizzle (Postgres)
   src/sync/                sincronização provedor → Postgres
-  src/accounts/            GET /connections, GET /accounts
-  src/transactions/        GET /transactions, GET /invoices
-  src/planning/            compromissos fixos, metas, categorias (marco de 75%)
+  src/accounts/            GET /api/connections, GET /api/accounts
+  src/transactions/        transações (lista e recategorização) e faturas
+  src/planning/            compromissos fixos, metas, categorias e projeção
   drizzle/                 migrations SQL
   test/                    testes e2e contra Postgres real
 ```
@@ -43,20 +46,27 @@ Requisitos: Node 22.12+ (CI usa 24), pnpm 10 e Docker.
 docker compose up -d                 # Postgres 17 (meu_caixa e meu_caixa_test) + Keycloak
 pnpm install
 cp apps/api/.env.example apps/api/.env
-pnpm --filter api start:dev          # aplica as migrations e sincroniza na subida
+cp apps/web/.env.example apps/web/.env.local
+pnpm --filter api start:dev          # API em :3000; aplica as migrations e sincroniza na subida
+pnpm --filter api db:seed            # opcional: compromissos, metas e categorias de exemplo
+pnpm --filter web dev                # interface em :3001
 ```
 
-Abra http://localhost:3000/auth/login e entre com `dev` / `dev` (realm `meu-caixa` importado de `docker/keycloak`). Depois do login o Keycloak volta para `FRONTEND_URL`; as rotas da API já respondem com o cookie de sessão. O console do Keycloak fica em http://localhost:8080 (`admin` / `admin`).
+Abra http://localhost:3001 e entre com `dev` / `dev` (realm `meu-caixa` importado de `docker/keycloak`). O console do Keycloak fica em http://localhost:8080 (`admin` / `admin`).
 
-Com `FINANCE_PROVIDER=fake` (padrão do `.env.example`) a API sobe com dados fictícios, sem credenciais da Pluggy — útil para desenvolver a interface.
+Com `FINANCE_PROVIDER=fake` (padrão do `.env.example`) a API sobe com dados fictícios, sem credenciais da Pluggy.
 
 ### Interface
 
-```bash
-pnpm --filter web dev                # http://localhost:3001
-```
+`apps/web/.env.local`:
 
-Por enquanto a interface usa dados mocados (`apps/web/src/lib/mock`), no formato exato das respostas da API, e não precisa da API rodando. No marco de 75% só `apps/web/src/lib/data` muda para chamar a API com o cookie de sessão.
+| Variável | Para quê |
+| --- | --- |
+| `DATA_SOURCE` | `api` (padrão): dados reais da API. `mock`: dataset fictício (`src/lib/mock`), sem API, banco nem Keycloak — bom para mexer só no visual; as ações de escrita ficam desabilitadas |
+| `API_URL` | Onde a API responde, visto do servidor do Next (padrão `http://localhost:3000`); também é o destino do proxy de `/api` e `/auth` |
+| `TIMEZONE` | Fuso do "hoje" das telas (padrão `America/Sao_Paulo`) |
+
+Na API, `APP_URL` e `FRONTEND_URL` apontam para a interface (`http://localhost:3001`): o callback do login passa pelo proxy do Next.
 
 ### Usando seus bancos (Meu Pluggy)
 
@@ -73,26 +83,35 @@ Fluxo igual ao do cronoflow: a API é o cliente confidencial do Keycloak e a int
 | Rota | O que faz |
 | --- | --- |
 | `GET /auth/login` | Redireciona para o login do Keycloak (PKCE + state guardados na sessão) |
-| `GET /auth/callback` | Troca o code por tokens, gera um novo id de sessão e volta para `FRONTEND_URL` (em caso de erro, `FRONTEND_URL?authError=login_failed`) |
+| `GET /auth/callback` | Troca o code por tokens, gera um novo id de sessão e volta para `FRONTEND_URL` (em caso de erro, `FRONTEND_URL?authError=login_failed`, que a interface manda para `/erro-login`) |
 | `GET /auth/logout` | Apaga a sessão e encerra o SSO no Keycloak, voltando para `FRONTEND_URL` |
 | `GET /auth/me` | Usuário logado (`id`, `name`, `email`, `roles`) |
 
 - Todas as rotas, exceto `/health` e `/auth/login|callback|logout`, exigem sessão válida e a role `KEYCLOAK_REQUIRED_ROLE` (padrão `owner`, do client ou do realm). A cada requisição o token é validado por introspecção no Keycloak e renovado com o refresh token quando está para expirar.
-- Respostas: `401` sem sessão (a interface redireciona para `/auth/login`), `403` sem a role, `503` se o Keycloak estiver fora do ar.
-- Requisições mutantes (`POST`, …) de uma origem diferente de `FRONTEND_URL`/`APP_URL` levam `403` (proteção CSRF por `Origin`).
-- Na interface: `fetch(url, { credentials: 'include' })`. O cookie é `SameSite=Lax`, então em produção API e interface devem ficar no mesmo site — o mais simples é o Next fazer proxy de `/auth` e da API e apontar `APP_URL` para a URL pública.
+- Respostas: `401` sem sessão (a interface redireciona para `/auth/login`), `403` sem a role (a interface mostra `/sem-acesso`), `503` se o Keycloak estiver fora do ar.
+- Requisições mutantes (`POST`, `PATCH`, `DELETE`) de uma origem diferente de `FRONTEND_URL`/`APP_URL` levam `403` (proteção CSRF por `Origin`).
+- O cookie é `SameSite=Lax`: API e interface ficam no mesmo site porque o Next faz proxy de `/auth` e `/api`. Em produção, `APP_URL` e `FRONTEND_URL` são a URL pública da interface.
 
 ## API
 
-| Rota | O que devolve |
+Rotas de dados sob `/api`; `/health` e `/auth/*` ficam na raiz.
+
+| Rota | O que faz |
 | --- | --- |
 | `GET /health` | Status da API e do banco (pública) |
-| `GET /connections` | Bancos conectados e o estado de cada conexão |
-| `GET /accounts` | Contas e cartões com saldo, limite e até quando foram sincronizados |
-| `GET /transactions` | Lista unificada; filtros `accountId`, `from`, `to`, `status`, `search`, `limit`, `offset` |
-| `GET /invoices` | Faturas de cartão; filtro `accountId` |
-| `POST /sync` | Dispara uma sincronização (202); 409 se já houver uma rodando |
-| `GET /sync/runs` | Histórico das sincronizações, com contagens e erros |
+| `GET /api/connections` | Bancos conectados e o estado de cada conexão |
+| `GET /api/accounts` | Contas e cartões com saldo, limite e até quando foram sincronizados |
+| `GET /api/transactions` | Lista unificada; filtros `accountId`, `from`, `to`, `status`, `search`, `limit`, `offset`. Cada item traz a categoria efetiva (`category`) e a do agregador (`originalCategory`) |
+| `PATCH /api/transactions/:id` | Recategoriza (`{ category }`); `null` volta para a categoria do agregador. A sincronização não desfaz |
+| `GET /api/invoices` | Faturas de cartão; filtro `accountId` |
+| `POST /api/sync` | Dispara uma sincronização (202); 409 se já houver uma rodando |
+| `GET /api/sync/runs` | Histórico das sincronizações, com contagens e erros |
+| `GET /api/planning` | Categorias de orçamento, compromissos fixos (com parcelas pagas), metas e a projeção dos próximos 6 meses |
+| `POST/PATCH/DELETE /api/planning/commitments[/:id]` | Compromissos fixos (ex.: parcela do terreno); com `installmentsTotal`, o fim sai do total de parcelas |
+| `POST/PATCH/DELETE /api/planning/goals[/:id]` | Metas de economia (ex.: entrada do carro) |
+| `POST/PATCH/DELETE /api/planning/categories[/:id]` | Categorias de orçamento: agrupam categorias do agregador e têm um teto mensal |
+
+A projeção usa a média dos últimos 3 meses fechados: renda esperada menos compromissos ativos no mês, aportes das metas até serem atingidas e o gasto variável médio (gasto total menos os compromissos). Pagamento de fatura e transferência entre contas próprias não contam como renda nem gasto.
 
 Convenções: valores monetários em **centavos** (inteiros); transações negativas são saídas e positivas, entradas; datas `YYYY-MM-DD` no fuso `TIMEZONE` (padrão `America/Sao_Paulo`).
 
@@ -106,6 +125,7 @@ Convenções: valores monetários em **centavos** (inteiros); transações negat
 | `pnpm lint` / `pnpm typecheck` / `pnpm format` | Qualidade |
 | `pnpm db:generate` | Gera migration a partir de mudanças em `src/database/schema.ts` |
 | `pnpm db:migrate` | Aplica as migrations no `DATABASE_URL` |
+| `pnpm db:seed` | Planejamento de exemplo (compromissos, metas, categorias) para desenvolvimento; não duplica se rodar de novo |
 
 No `apps/web`: `pnpm dev`, `pnpm lint`, `pnpm typecheck`, `pnpm test` e `pnpm build`.
 
@@ -114,5 +134,5 @@ No `apps/web`: `pnpm dev`, `pnpm lint`, `pnpm typecheck`, `pnpm test` e `pnpm bu
 - [x] **25% — Fundação e dados reais:** esqueleto Nest com os módulos e a `FinanceProvider`; adapter da Pluggy (contas, transações, faturas); Postgres modelado; `sync` gravando os dados; CI (lint, build, testes). Falta validar com 1 banco real usando as suas credenciais.
 - [x] **Autenticação:** login com Keycloak (OIDC + PKCE) e sessão `express-session` no Postgres.
 - [x] **50% — Interface completa, mocada:** telas em Next.js + shadcn/ui (visão geral, contas, transações, planejamento, análise), com dados mocados no formato da API, temas claro/escuro e layout para celular.
-- [ ] **75% — Interface ligada no back-end:** fim do mock; módulo `planning` com compromissos fixos, metas e categorias.
+- [x] **75% — Interface ligada no back-end:** telas lendo a API real (proxy do Next, sessão do Keycloak); módulo `planning` com compromissos fixos, metas, categorias e projeção, editáveis na interface; recategorização de transações; "Sincronizar agora". A análise do Claude segue como exemplo, identificado nas telas.
 - [ ] **100% — Análise via MCP e deploy:** MCP expondo os dados para o Claude; deploy na DigitalOcean.

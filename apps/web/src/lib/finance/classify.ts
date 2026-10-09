@@ -10,7 +10,13 @@ import type { Account, Transaction } from "@/lib/api/types"
  *   como o pagamento da fatura.
  */
 
-const OWN_TRANSFER_CATEGORIES = new Set(["Transfer - Savings"])
+// Mesma lista da API (apps/api/src/domain/classify.ts).
+const OWN_TRANSFER_CATEGORIES = new Set([
+  "Transfer - Savings",
+  "Same person transfer",
+  "Same person transfer - PIX",
+  "Same person transfer - TED",
+])
 const CARD_PAYMENT_CATEGORIES = new Set(["Credit card payment"])
 
 export function isOwnTransfer(tx: Transaction): boolean {

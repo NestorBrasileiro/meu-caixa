@@ -93,8 +93,10 @@ export function isInternal(tx: Transaction): boolean {
 
 export type InternalKind = "card-payment" | "own-transfer"
 
-function internalKind(tx: Transaction): InternalKind | null {
-  return isCardPayment(tx) ? "card-payment" : isOwnTransfer(tx) ? "own-transfer" : null
+/** Tipo de movimentação interna que a categoria representa (as regras olham só a categoria). */
+export function internalKindOf(category: string | null): InternalKind | null {
+  const probe = { category } as Transaction
+  return isCardPayment(probe) ? "card-payment" : isOwnTransfer(probe) ? "own-transfer" : null
 }
 
 /** Por que um lançamento editado nesta tela só continua na lista por estar fixado. */
@@ -226,13 +228,22 @@ export interface CategoryOption {
   internal: InternalKind | null
 }
 
-/** Categorias presentes nos dados, em ordem alfabética do rótulo em português. */
-export function categoryOptions(transactions: Transaction[]): CategoryOption[] {
+function toOption(category: string | null): CategoryOption {
+  return { value: category ?? NO_CATEGORY, label: categoryLabel(category), internal: internalKindOf(category) }
+}
+
+/**
+ * Categorias presentes nos dados (mais as de `extra`), em ordem alfabética do
+ * rótulo em português.
+ */
+export function categoryOptions(transactions: Transaction[], extra: Iterable<string | null> = []): CategoryOption[] {
   const byValue = new Map<string, CategoryOption>()
-  for (const tx of transactions) {
-    const value = tx.category ?? NO_CATEGORY
-    if (!byValue.has(value)) byValue.set(value, { value, label: categoryLabel(tx.category), internal: internalKind(tx) })
+  const add = (category: string | null) => {
+    const value = category ?? NO_CATEGORY
+    if (!byValue.has(value)) byValue.set(value, toOption(category))
   }
+  for (const tx of transactions) add(tx.category)
+  for (const category of extra) add(category)
   return [...byValue.values()].sort((a, b) => a.label.localeCompare(b.label, "pt-BR"))
 }
 
@@ -241,17 +252,21 @@ export function categoryOptions(transactions: Transaction[]): CategoryOption[] {
  * ocorrer: pagamento de fatura sai da conta (ou entra como crédito no cartão);
  * transferência para poupança só entre contas de dinheiro. A categoria atual
  * e a original sempre ficam na lista.
+ *
+ * "Sem categoria" só aparece quando é a original: a API guarda uma categoria
+ * escolhida, e mandar `null` significa "voltar para a do banco".
  */
 export function categoryOptionsFor(
   options: CategoryOption[],
   tx: Transaction,
-  original: string | null,
   account: Pick<Account, "type"> | undefined,
 ): CategoryOption[] {
   const cash = account ? isCashAccount(account) : true
   return options.filter((option) => {
     const value = option.value === NO_CATEGORY ? null : option.value
-    if (option.internal === null || value === tx.category || value === original) return true
+    if (value === tx.category || value === tx.originalCategory) return true
+    if (value === null) return false
+    if (option.internal === null) return true
     if (option.internal === "card-payment") return cash ? tx.amount < 0 : tx.amount > 0
     return cash
   })
@@ -277,4 +292,18 @@ export function staleAccounts(accounts: AccountOption[], accountId: string, rang
       account.transactionsSyncedThrough !== null &&
       account.transactionsSyncedThrough < range.to,
   )
+}
+
+// --------------------------------------------------------------- sem dados
+
+/** Por que a tela não tem nenhum lançamento (antes de qualquer filtro). */
+export type NoDataReason = "no-accounts" | "not-synced"
+
+/**
+ * Sem lançamento nenhum, "nada corresponde aos filtros" seria mentira: ou não
+ * há banco conectado, ou a sincronização ainda não trouxe lançamentos.
+ */
+export function noDataReason(transactionCount: number, accountCount: number): NoDataReason | null {
+  if (transactionCount > 0) return null
+  return accountCount === 0 ? "no-accounts" : "not-synced"
 }

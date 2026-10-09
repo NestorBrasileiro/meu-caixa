@@ -1,6 +1,8 @@
 import type { BudgetCategory, CategoryKind, Commitment, Goal, MonthProjection } from "@/lib/api/planning"
-import type { Account, Cents, IsoDate } from "@/lib/api/types"
+import type { Account, Cents, IsoDate, Transaction } from "@/lib/api/types"
 import type { CategoryTotal } from "@/lib/finance/aggregate"
+import { isSpending } from "@/lib/finance/classify"
+import { categoryLabel } from "@/lib/format/category"
 
 /**
  * Regras de montagem do planejamento (funções puras, sem relógio): tudo
@@ -45,11 +47,46 @@ export function monthsBetween(from: string, to: string): number {
 
 // ------------------------------------------------------------ compromissos
 
-export function sortCommitments(commitments: Commitment[]): Commitment[] {
-  return [...commitments].sort((a, b) => b.amount - a.amount || a.name.localeCompare(b.name, "pt-BR"))
+/**
+ * Situação do compromisso no mês de `today`: ativo se começa até o fim do mês e
+ * não acabou antes do início dele (o `endsOn` da API já inclui o fim das parcelas).
+ */
+export type CommitmentStatus = "active" | "upcoming" | "ended"
+
+export function commitmentStatus(
+  commitment: Pick<Commitment, "startsOn" | "endsOn">,
+  today: IsoDate,
+): CommitmentStatus {
+  const month = today.slice(0, 7)
+  if (commitment.endsOn !== null && commitment.endsOn.slice(0, 7) < month) return "ended"
+  if (commitment.startsOn.slice(0, 7) > month) return "upcoming"
+  return "active"
 }
 
-export function commitmentsTotal(commitments: Commitment[]): Cents {
+/** Compromissos que contam no mês de `today` (os que acabaram ou ainda não começaram ficam de fora). */
+export function activeCommitments<T extends Pick<Commitment, "startsOn" | "endsOn">>(
+  commitments: T[],
+  today: IsoDate,
+): T[] {
+  return commitments.filter((commitment) => commitmentStatus(commitment, today) === "active")
+}
+
+const STATUS_ORDER: Record<CommitmentStatus, number> = { active: 0, upcoming: 1, ended: 2 }
+
+/** Ativos primeiro, depois os que vão começar e por fim os encerrados; em cada grupo, do maior para o menor. */
+export function sortCommitments<T extends Commitment>(
+  commitments: T[],
+  today: IsoDate,
+): (T & { status: CommitmentStatus })[] {
+  return commitments
+    .map((commitment) => ({ ...commitment, status: commitmentStatus(commitment, today) }))
+    .sort(
+      (a, b) =>
+        STATUS_ORDER[a.status] - STATUS_ORDER[b.status] || b.amount - a.amount || a.name.localeCompare(b.name, "pt-BR"),
+    )
+}
+
+export function commitmentsTotal(commitments: Pick<Commitment, "amount">[]): Cents {
   return commitments.reduce((sum, c) => sum + c.amount, 0)
 }
 
@@ -109,6 +146,15 @@ export function goalProgress(goal: Goal, today: IsoDate, accounts: Account[]): G
     done,
     accountName: account ? account.name : null,
   }
+}
+
+/** Aporte mensal das metas em andamento (as já alcançadas não recebem mais aporte). */
+export function goalContributions(goals: Pick<GoalProgress, "done" | "monthlyContribution">[]): {
+  total: Cents
+  count: number
+} {
+  const active = goals.filter((goal) => !goal.done)
+  return { total: active.reduce((sum, goal) => sum + goal.monthlyContribution, 0), count: active.length }
 }
 
 // --------------------------------------------------------------- orçamento
@@ -178,25 +224,46 @@ export const KIND_LABEL: Record<CategoryKind, string> = {
   DISCRETIONARY: "Não essenciais",
 }
 
-export interface BudgetGroup {
+/**
+ * Totais de um conjunto de linhas do orçamento. "Gasto de orçamento" compara só
+ * as categorias com teto; o gasto das sem teto fica à parte.
+ */
+export interface BudgetSummary {
+  /** Gasto das categorias com teto. */
+  actual: Cents
+  /** Soma dos tetos. */
+  budget: Cents
+  /** Soma dos estouros de cada categoria (uma abaixo do teto não compensa outra acima). */
+  over: Cents
+  /** Gasto das categorias sem teto. */
+  unlimited: Cents
+  /** Categorias sem teto que tiveram gasto. */
+  unlimitedNames: string[]
+}
+
+export function budgetSummary(rows: BudgetRow[]): BudgetSummary {
+  const budgeted = rows.filter((row) => row.budget !== null)
+  const unlimited = rows.filter((row) => row.budget === null)
+  return {
+    actual: budgeted.reduce((sum, row) => sum + row.actual, 0),
+    budget: budgeted.reduce((sum, row) => sum + (row.budget ?? 0), 0),
+    over: budgeted.reduce((sum, row) => sum + row.over, 0),
+    unlimited: unlimited.reduce((sum, row) => sum + row.actual, 0),
+    unlimitedNames: unlimited.filter((row) => row.actual > 0).map((row) => row.name),
+  }
+}
+
+export interface BudgetGroup extends BudgetSummary {
   kind: CategoryKind
   label: string
   rows: BudgetRow[]
-  actual: Cents
-  budget: Cents
 }
 
 export function groupBudget(rows: BudgetRow[]): BudgetGroup[] {
   return (["ESSENTIAL", "DISCRETIONARY"] as const)
     .map((kind) => {
       const groupRows = rows.filter((row) => row.kind === kind)
-      return {
-        kind,
-        label: KIND_LABEL[kind],
-        rows: groupRows,
-        actual: groupRows.reduce((sum, row) => sum + row.actual, 0),
-        budget: groupRows.reduce((sum, row) => sum + (row.budget ?? 0), 0),
-      }
+      return { kind, label: KIND_LABEL[kind], rows: groupRows, ...budgetSummary(groupRows) }
     })
     .filter((group) => group.rows.length > 0)
 }
@@ -242,6 +309,11 @@ export function projectionCallout(
   const deficit = -worst.projectedBalance
 
   const name = formatMonthName(worst.month)
+  const negativeValues = new Set(projections.filter((row) => row.projectedBalance < 0).map((row) => row.projectedBalance))
+  // Todos os meses no vermelho com o mesmo valor: não há "pior mês" para apontar.
+  if (negatives === projections.length && negatives > 1 && negativeValues.size === 1) {
+    return `Os ${negatives} meses fecham no vermelho, com ${formatMoney(worst.projectedBalance)} cada: a renda média não cobre compromissos, metas e gasto variável.`
+  }
   let sentence =
     negatives > 1
       ? `${negatives} meses fecham no vermelho; o pior é ${name}, com ${formatMoney(worst.projectedBalance)}`
@@ -275,4 +347,67 @@ export function thinMarginNote(
   const max = Math.max(...values)
   const amount = min === max ? `é de só ${formatMoney(min)} por mês` : `fica entre ${formatMoney(min)} e ${formatMoney(max)}`
   return `Em ${months} a sobra prevista ${amount}, margem apertada para imprevistos.`
+}
+
+/**
+ * Histórico que a projeção da API usa: a média dos 3 últimos meses fechados
+ * (renda e gasto somados e divididos por 3, mesmo que um mês esteja vazio).
+ *
+ * - `none`: nenhum desses meses tem transações (usuário novo ou sem sincronizar).
+ * - `partial`: só parte deles tem; a média fica abaixo do real.
+ */
+export type HistoryState = { kind: "none" } | { kind: "partial"; months: string[] } | { kind: "full" }
+
+export function historyState(transactions: Pick<Transaction, "date">[], closedMonths: string[]): HistoryState {
+  const seen = new Set(transactions.map((tx) => tx.date.slice(0, 7)))
+  const months = closedMonths.filter((month) => seen.has(month))
+  if (months.length === 0) return { kind: "none" }
+  if (months.length < closedMonths.length) return { kind: "partial", months }
+  return { kind: "full" }
+}
+
+/** Aviso da projeção com histórico incompleto (null se completo ou vazio). */
+export function partialHistoryNote(state: HistoryState, total: number): string | null {
+  if (state.kind !== "partial") return null
+  const names = listJoin(state.months.map(monthName))
+  const verb = state.months.length === 1 ? "tem" : "têm"
+  return `Dos ${total} últimos meses fechados, só ${names} ${verb} transações: renda e gasto médios ficam abaixo do real até completar o histórico.`
+}
+
+/** Frase do cabeçalho da página. */
+export function headerSummary(
+  committed: Cents,
+  commitmentCount: number,
+  activeGoals: number,
+  formatMoney: (cents: Cents) => string,
+): string {
+  if (commitmentCount === 0 && activeGoals === 0) {
+    return "Cadastre compromissos fixos e metas para ver quanto sobra nos próximos meses."
+  }
+  const goals = activeGoals === 0 ? "nenhuma meta em andamento" : plural(activeGoals, "meta em andamento", "metas em andamento")
+  const commitments = commitmentCount === 0 ? "Nenhum compromisso fixo" : `${formatMoney(committed)}/mês já comprometidos`
+  return `${commitments} · ${goals}`
+}
+
+export interface SourceCategoryOption {
+  /** Nome do agregador (o que a API guarda), ex.: "Groceries". */
+  value: string
+  /** Nome em pt-BR, ex.: "Mercado". */
+  label: string
+}
+
+/**
+ * Categorias do banco que podem entrar no orçamento: as que aparecem como
+ * gasto nas transações carregadas mais as que alguma categoria já usa.
+ */
+export function sourceCategoryOptions(
+  transactions: Transaction[],
+  categories: Pick<BudgetCategory, "sourceCategories">[],
+): SourceCategoryOption[] {
+  const names = new Set<string>()
+  for (const tx of transactions) if (tx.category && isSpending(tx)) names.add(tx.category)
+  for (const category of categories) for (const name of category.sourceCategories) names.add(name)
+  return [...names]
+    .map((value) => ({ value, label: categoryLabel(value) }))
+    .sort((a, b) => a.label.localeCompare(b.label, "pt-BR"))
 }

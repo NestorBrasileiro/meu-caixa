@@ -1,4 +1,5 @@
 import { Sparkles } from "lucide-react"
+import { Badge } from "@/components/ui/badge"
 import { Card, CardContent } from "@/components/ui/card"
 import type { Cents } from "@/lib/api/types"
 import { formatMoney } from "@/lib/format/money"
@@ -14,6 +15,7 @@ export function HeroCard({
   opportunities,
   headline,
   summary,
+  sample,
   className,
 }: {
   monthlySavings: Cents
@@ -21,6 +23,8 @@ export function HeroCard({
   opportunities: number
   headline: string
   summary: string
+  /** Relatório de exemplo: o número herói leva o selo "Exemplo" para não passar por dinheiro do usuário. */
+  sample: boolean
   className?: string
 }) {
   return (
@@ -28,10 +32,17 @@ export function HeroCard({
       {/* Lado a lado só a partir de 42rem: abaixo disso a coluna de texto ficaria estreita demais. */}
       <CardContent className="grid gap-6 @2xl:grid-cols-[auto_minmax(0,1fr)] @2xl:gap-8">
         <div className="space-y-2">
-          <h2 className="text-muted-foreground flex items-center gap-1.5 text-sm font-normal">
-            <Sparkles className="size-4" aria-hidden />
-            Economia possível por mês
-          </h2>
+          <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+            <h2 className="text-muted-foreground flex items-center gap-1.5 text-sm font-normal">
+              <Sparkles className="size-4" aria-hidden />
+              Economia possível por mês
+            </h2>
+            {sample && (
+              <Badge variant="outline" className="text-muted-foreground">
+                Exemplo
+              </Badge>
+            )}
+          </div>
           <p className="text-5xl font-semibold tracking-tight whitespace-nowrap">{formatMoney(monthlySavings)}</p>
           <p className="text-muted-foreground text-sm">
             <span className="whitespace-nowrap">{formatMoney(monthlySavings * 12)} por ano</span>

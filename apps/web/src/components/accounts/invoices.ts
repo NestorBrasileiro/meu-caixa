@@ -17,6 +17,8 @@ export interface InvoiceHistory {
   /** Do mais antigo ao mais novo, no máximo `count`. */
   points: InvoicePoint[]
   open: InvoicePoint | null
+  /** A fatura em aberto já fechou (não recebe mais compras), mas ainda não venceu. */
+  openHasClosed: boolean
   /** Média das faturas fechadas exibidas (null se não houver nenhuma). */
   averageClosed: Cents | null
   closedCount: number
@@ -32,6 +34,11 @@ export function findOpenInvoice(invoices: Invoice[], accountId: string, today: I
       .filter((invoice) => invoice.accountId === accountId && invoice.dueDate >= today)
       .sort((a, b) => a.dueDate.localeCompare(b.dueDate))[0] ?? null
   )
+}
+
+/** A fatura já fechou: compras novas vão para a próxima. No dia do fechamento ela ainda está aberta. */
+export function hasClosed(invoice: Pick<Invoice, "closingDate">, today: IsoDate): boolean {
+  return invoice.closingDate !== null && invoice.closingDate < today
 }
 
 /** Últimas `count` faturas de um cartão, com a aberta marcada e a média das fechadas. */
@@ -65,6 +72,7 @@ export function buildInvoiceHistory(
     cardName: card.name,
     points,
     open: points.find((point) => point.open) ?? null,
+    openHasClosed: open !== null && hasClosed(open, today),
     averageClosed,
     closedCount: closed.length,
   }
