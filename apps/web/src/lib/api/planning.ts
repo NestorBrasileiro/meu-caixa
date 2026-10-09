@@ -62,3 +62,46 @@ export interface PlanningOverview {
   goals: Goal[]
   projections: MonthProjection[]
 }
+
+// ------------------------------------------------- escrita (POST / PATCH)
+
+/** Corpo de `POST /api/planning/commitments`. `endsOn` fica null quando `installmentsTotal` define o fim. */
+export interface CommitmentInput {
+  name: string
+  amount: Cents
+  dayOfMonth: number
+  paymentMethod: PaymentMethod
+  categoryId: string | null
+  startsOn: IsoDate
+  endsOn: IsoDate | null
+  installmentsTotal: number | null
+  notes: string | null
+}
+
+/** Corpo de `PATCH /api/planning/commitments/:id`: campo ausente = não muda; null limpa. */
+export type CommitmentPatch = Partial<CommitmentInput>
+
+/** Corpo de `POST /api/planning/goals`. */
+export interface GoalInput {
+  name: string
+  target: Cents
+  saved: Cents
+  targetDate: IsoDate
+  monthlyContribution: Cents
+  accountId: string | null
+}
+
+export type GoalPatch = Partial<GoalInput>
+
+/** Corpo de `POST /api/planning/categories`. */
+export interface BudgetCategoryInput {
+  name: string
+  kind: CategoryKind
+  /** Nomes de categoria do agregador (ex.: "Groceries"). */
+  sourceCategories: string[]
+  monthlyBudget: Cents | null
+  /** Ordem no orçamento (menor primeiro). */
+  position?: number
+}
+
+export type BudgetCategoryPatch = Partial<BudgetCategoryInput>

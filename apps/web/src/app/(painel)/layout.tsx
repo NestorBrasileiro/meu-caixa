@@ -1,6 +1,11 @@
 import { Suspense } from "react"
 import { AppSidebar } from "@/components/shell/app-sidebar"
-import { SessionSyncStatus, SessionUserMenu, UserMenuSkeleton } from "@/components/shell/session-slots"
+import {
+  SessionSyncStatus,
+  SessionUserMenu,
+  SyncIndicatorSkeleton,
+  UserMenuSkeleton,
+} from "@/components/shell/session-slots"
 import { SiteHeader } from "@/components/shell/site-header"
 import { SidebarInset, SidebarProvider } from "@/components/ui/sidebar"
 
@@ -18,7 +23,7 @@ export default function PainelLayout({ children }: LayoutProps<"/">) {
       <SidebarInset>
         <SiteHeader
           syncStatus={
-            <Suspense fallback={null}>
+            <Suspense fallback={<SyncIndicatorSkeleton />}>
               <SessionSyncStatus />
             </Suspense>
           }

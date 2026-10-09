@@ -1,9 +1,10 @@
 import type { Metadata } from "next"
 import { PageHeader } from "@/components/page-header"
 import { plural } from "@/components/transactions/format"
-import { isInternal, periodRange, type AccountOption } from "@/components/transactions/model"
+import { isInternal, noDataReason, periodRange, type AccountOption } from "@/components/transactions/model"
+import { NoTransactions } from "@/components/transactions/no-transactions"
 import { TransactionsView } from "@/components/transactions/transactions-view"
-import { getAccounts, getAllTransactions, getToday } from "@/lib/data"
+import { CAN_WRITE, getAccounts, getAllTransactions, getToday } from "@/lib/data"
 
 export const metadata: Metadata = { title: "Transações" }
 
@@ -21,6 +22,7 @@ export default async function Page() {
     transactionsSyncedThrough: account.transactionsSyncedThrough,
   }))
 
+  const empty = noDataReason(transactions.length, accounts.length)
   // Mesma contagem que a lista mostra em "Últimos 12 meses" (movimentações internas começam ocultas).
   const visibleCount = transactions.filter((tx) => !isInternal(tx)).length
 
@@ -28,9 +30,17 @@ export default async function Page() {
     <div className="space-y-6">
       <PageHeader
         title="Transações"
-        description={`Todas as contas em um só lugar · ${plural(visibleCount, "lançamento", "lançamentos")} nos últimos 12 meses`}
+        description={
+          empty
+            ? "Todas as contas em um só lugar"
+            : `Todas as contas em um só lugar · ${plural(visibleCount, "lançamento", "lançamentos")} nos últimos 12 meses`
+        }
       />
-      <TransactionsView transactions={transactions} accounts={accountOptions} today={today} />
+      {empty ? (
+        <NoTransactions reason={empty} />
+      ) : (
+        <TransactionsView transactions={transactions} accounts={accountOptions} today={today} readOnly={!CAN_WRITE} />
+      )}
     </div>
   )
 }

@@ -12,6 +12,23 @@ export interface PlanningKpis {
   goals: { total: Cents; count: number }
   variableSpending: Cents | null
   nextMonth: { label: string; balance: Cents; income: Cents } | null
+  /**
+   * Nenhuma transação nos 3 últimos meses fechados: a API devolve renda e gasto
+   * 0, e a sobra viraria um número negativo sem sentido. Os tiles mostram "—".
+   */
+  noHistory: boolean
+}
+
+/** Valor indisponível: o travessão é visual; leitores de tela ouvem "indisponível". */
+function Unavailable() {
+  return (
+    <>
+      <span className="text-muted-foreground" aria-hidden>
+        —
+      </span>
+      <span className="sr-only">indisponível</span>
+    </>
+  )
 }
 
 /** Valor do tile: um passo menor no celular para caber em duas colunas. */
@@ -50,7 +67,9 @@ function BalanceHint({ balance }: { balance: Cents }) {
 }
 
 export function KpiRow({ data }: { data: PlanningKpis }) {
-  const { commitments, goals, variableSpending, nextMonth } = data
+  const { commitments, goals, noHistory } = data
+  const variableSpending = noHistory ? null : data.variableSpending
+  const nextMonth = data.nextMonth
 
   return (
     <section aria-label="Indicadores do planejamento" className="grid grid-cols-2 gap-4 xl:grid-cols-4">
@@ -64,9 +83,11 @@ export function KpiRow({ data }: { data: PlanningKpis }) {
           </TileValue>
         }
         hint={
-          commitments.incomeShare !== null
-            ? `Por mês · ${formatPercent(commitments.incomeShare)} da renda prevista`
-            : `Por mês · ${plural(commitments.count, "compromisso", "compromissos")}`
+          commitments.count === 0
+            ? "Nenhum compromisso cadastrado"
+            : commitments.incomeShare !== null
+              ? `Por mês · ${formatPercent(commitments.incomeShare)} da renda prevista`
+              : `Por mês · ${plural(commitments.count, "compromisso", "compromissos")}`
         }
       />
       <StatTile
@@ -86,26 +107,22 @@ export function KpiRow({ data }: { data: PlanningKpis }) {
         icon={<ShoppingBasket className={iconClass} aria-hidden />}
         value={
           <TileValue>
-            {variableSpending !== null ? (
-              <Money cents={variableSpending} />
-            ) : (
-              <span className="text-muted-foreground">—</span>
-            )}
+            {variableSpending !== null ? <Money cents={variableSpending} /> : <Unavailable />}
           </TileValue>
         }
-        hint="Por mês · sem os compromissos"
+        hint={noHistory ? "Sem transações nos últimos 3 meses" : "Por mês · sem os compromissos"}
       />
       <StatTile
         className={tileClass}
         label={nextMonth ? `Sobra prevista em ${nextMonth.label}` : "Sobra prevista"}
         icon={<Wallet className={iconClass} aria-hidden />}
         value={
-          <TileValue>
-            {nextMonth ? <Money cents={nextMonth.balance} /> : <span className="text-muted-foreground">—</span>}
-          </TileValue>
+          <TileValue>{nextMonth && !noHistory ? <Money cents={nextMonth.balance} /> : <Unavailable />}</TileValue>
         }
         hint={
-          nextMonth ? (
+          noHistory ? (
+            "Precisa do histórico de renda e gasto"
+          ) : nextMonth ? (
             <span className="flex flex-col gap-0.5">
               <BalanceHint balance={nextMonth.balance} />
               <span>

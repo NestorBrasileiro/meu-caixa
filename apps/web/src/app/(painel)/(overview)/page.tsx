@@ -5,11 +5,11 @@ import { KpiRow } from "@/components/overview/kpi-row"
 import { LeaksCard } from "@/components/overview/leaks-card"
 import {
   addDays,
-  capitalize,
+  cashFlowWindow,
   monthNameOf,
   monthSpanLabel,
   nextOpenInvoice,
-  plural,
+  overviewDescription,
   topCategories,
   topLeaks,
   upcomingDue,
@@ -17,6 +17,7 @@ import {
 import { SpendingCard } from "@/components/overview/spending-card"
 import { UpcomingCard } from "@/components/overview/upcoming-card"
 import {
+  ANALYSIS_IS_SAMPLE,
   getAccounts,
   getAllTransactions,
   getAnalysis,
@@ -40,6 +41,8 @@ import { formatDateShort, formatWeekday } from "@/lib/format/date"
 const UPCOMING_DAYS = 10
 const TOP_CATEGORIES = 7
 const TOP_LEAKS = 3
+/** Com histórico curto, o fluxo de caixa começa no primeiro mês com movimento, mas mostra ao menos isto. */
+const MIN_CASH_FLOW_MONTHS = 6
 
 export default async function Page() {
   const today = await getToday()
@@ -65,10 +68,10 @@ export default async function Page() {
   const dayOfMonth = Number(today.slice(8, 10))
 
   // Fluxo de caixa: o mês corrente é parcial.
-  const cashFlow: CashFlowRow[] = monthlyCashFlow(transactions, accounts, months).map((row) => ({
-    ...row,
-    partial: row.month === currentMonth,
-  }))
+  const cashFlow: CashFlowRow[] = cashFlowWindow(
+    monthlyCashFlow(transactions, accounts, months).map((row) => ({ ...row, partial: row.month === currentMonth })),
+    MIN_CASH_FLOW_MONTHS,
+  )
   const pendingInvoice = openInvoice && openInvoice.dueDate.slice(0, 7) === currentMonth ? openInvoice : null
   const partial = {
     month: monthNameOf(currentMonth),
@@ -90,10 +93,7 @@ export default async function Page() {
     horizonDays: UPCOMING_DAYS,
   })
 
-  const description = [
-    capitalize(formatWeekday(today)),
-    `${plural(accounts.length, "conta", "contas")} em ${plural(connections.length, "banco", "bancos")}`,
-  ].join(" · ")
+  const description = overviewDescription(formatWeekday(today), accounts.length, connections.length)
 
   return (
     <div className="space-y-6">
@@ -106,7 +106,7 @@ export default async function Page() {
             accounts: cashAccounts.length,
             stale: cashAccounts.filter((account) => account.connectionStatus !== "ACTIVE").length,
           },
-          invoice: { total: totalCardDebt(accounts), dueDate: openInvoice?.dueDate ?? null },
+          invoice: { total: totalCardDebt(accounts), dueDate: openInvoice?.dueDate ?? null, cards: cards.length },
           credit: cards.length > 0 ? { available: creditAvailable, limit: creditLimit } : null,
           month: {
             totals: periodTotals(transactions, { from: `${currentMonth}-01`, to: today }),
@@ -121,17 +121,29 @@ export default async function Page() {
         acima e abaixo (gráfico de 12 meses em meia coluna fica apertado).
       */}
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-2 xl:grid-cols-[minmax(0,1fr)_22rem]">
-        <CashFlowCard rows={cashFlow} partial={partial} className="lg:col-span-2 xl:col-span-1" />
-        <UpcomingCard items={upcoming} until={upcomingUntil} horizonDays={UPCOMING_DAYS} />
+        <CashFlowCard
+          rows={cashFlow}
+          partial={partial}
+          hasAccounts={cashAccounts.length > 0}
+          className="lg:col-span-2 xl:col-span-1"
+        />
+        <UpcomingCard
+          items={upcoming}
+          until={upcomingUntil}
+          horizonDays={UPCOMING_DAYS}
+          hasCommitments={planning.commitments.length > 0}
+        />
         <SpendingCard
           rows={topCategories(categoryRows, TOP_CATEGORIES)}
           total={categoryTotal}
           month={lastClosedMonth}
+          hasHistory={transactions.length > 0}
           className="lg:col-span-2 lg:row-start-3 xl:col-span-1 xl:col-start-1 xl:row-start-2"
         />
         <LeaksCard
           items={topLeaks(analysis.insights, TOP_LEAKS)}
           periodLabel={monthSpanLabel(analysis.period.from, analysis.period.to)}
+          sample={ANALYSIS_IS_SAMPLE}
           className="lg:col-start-2 lg:row-start-2"
         />
       </div>

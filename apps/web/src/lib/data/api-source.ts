@@ -120,5 +120,3 @@ export function getPlanning(): Promise<PlanningOverview> {
 export async function getAnalysis(): Promise<AnalysisReport> {
   return buildAnalysis(mockDataset())
 }
-
-export const ANALYSIS_IS_SAMPLE = true

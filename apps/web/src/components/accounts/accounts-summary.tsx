@@ -57,6 +57,8 @@ export function AccountsSummary({
                 Inclui saldo desatualizado ({stale.name}, {formatDateShort(stale.transactionsSyncedThrough)})
               </span>
             </span>
+          ) : cashAccounts.length === 0 ? (
+            "Nenhuma conta corrente ou poupança"
           ) : (
             `Soma de ${plural(cashAccounts.length, "conta", "contas")}`
           )

@@ -18,8 +18,11 @@ export function SiteHeader({ syncStatus }: { syncStatus: React.ReactNode }) {
       <SidebarTrigger className="-ml-1" />
       <Separator orientation="vertical" className="mr-1 data-[orientation=vertical]:h-4" />
       <span className="truncate text-sm font-medium">{current?.title ?? "Meu Caixa"}</span>
-      <div className="ml-auto flex items-center gap-1">
-        <Link href="/contas" className="rounded-md">
+      <div className="ml-auto flex min-w-0 items-center gap-1">
+        <Link
+          href="/contas"
+          className="focus-visible:ring-ring/50 min-w-0 rounded-md outline-none focus-visible:ring-[3px]"
+        >
           {syncStatus}
         </Link>
         <ThemeToggle />

@@ -6,6 +6,7 @@ import { Card, CardAction, CardContent, CardDescription, CardHeader, CardTitle }
 import { formatMonth, formatMonthShort } from "@/lib/format/date"
 import { formatMoney, formatPercent } from "@/lib/format/money"
 import { cn } from "@/lib/utils"
+import { RowActions } from "./actions"
 import { ProgressMeter } from "./meters"
 import { plural, type GoalProgress } from "./model"
 
@@ -29,27 +30,34 @@ function Fact({ label, children }: { label: string; children: ReactNode }) {
   )
 }
 
+function StatusBadge({ status, className }: { status: ReturnType<typeof goalStatus>; className?: string }) {
+  const StatusIcon = status.icon
+  return (
+    <Badge variant="outline" className={cn("gap-1 font-normal", className)}>
+      <StatusIcon className={cn("size-3", status.className)} aria-hidden />
+      {status.label}
+    </Badge>
+  )
+}
+
 export function GoalCard({ goal, className }: { goal: GoalProgress; className?: string }) {
   const status = goalStatus(goal)
-  const StatusIcon = status.icon
 
   return (
     <Card className={cn("@container/goal gap-4", className)}>
-      {/*
-        Cartão estreito: o selo desce para baixo da descrição em vez de espremer o título.
-        O "!" vence o has-[card-action]:grid-cols-[1fr_auto] do CardHeader (o :has() pesa mais).
-      */}
-      <CardHeader className="@max-[25rem]/goal:grid-cols-1!">
+      <CardHeader>
         <CardTitle className="text-balance">
           <h3>{goal.name}</h3>
         </CardTitle>
         <CardDescription>{goal.accountName ? `Guardada em ${goal.accountName}` : "Meta de economia"}</CardDescription>
-        <CardAction className="@max-[25rem]/goal:col-start-1 @max-[25rem]/goal:row-span-1 @max-[25rem]/goal:row-start-3 @max-[25rem]/goal:justify-self-start">
-          <Badge variant="outline" className="gap-1 font-normal">
-            <StatusIcon className={cn("size-3", status.className)} aria-hidden />
-            {status.label}
-          </Badge>
+        <CardAction className="-mt-1.5 -mr-2 flex items-center gap-1">
+          {/* Cartão estreito: o selo desce para baixo da descrição em vez de espremer o título. */}
+          <StatusBadge status={status} className="@max-[25rem]/goal:hidden" />
+          <RowActions kind="goal" id={goal.id} name={goal.name} />
         </CardAction>
+        <div className="col-span-full hidden @max-[25rem]/goal:block">
+          <StatusBadge status={status} />
+        </div>
       </CardHeader>
       <CardContent className="@container space-y-5">
         <div className="space-y-2">

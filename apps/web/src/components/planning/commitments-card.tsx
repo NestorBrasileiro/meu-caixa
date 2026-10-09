@@ -2,12 +2,14 @@ import { CalendarClock } from "lucide-react"
 import { Money } from "@/components/finance/money"
 import { PAYMENT_METHOD_LABEL } from "@/components/finance/payment-method"
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card"
-import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from "@/components/ui/empty"
+import { Empty, EmptyContent, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from "@/components/ui/empty"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import type { Commitment } from "@/lib/api/planning"
 import type { Cents } from "@/lib/api/types"
 import { formatMonthShort } from "@/lib/format/date"
 import { formatMoney } from "@/lib/format/money"
+import { cn } from "@/lib/utils"
+import { AddButton, RowActions } from "./actions"
 import { InstallmentMeter } from "./meters"
 import { plural } from "./model"
 
@@ -61,7 +63,7 @@ export function CommitmentsCard({
   className?: string
 }) {
   return (
-    <Card className={className}>
+    <Card className={cn("@container/commitments", className)}>
       <CardHeader>
         <CardTitle className="text-balance">
           <h2>Compromissos fixos</h2>
@@ -80,6 +82,9 @@ export function CommitmentsCard({
                 Parcelas, aluguel e assinaturas cadastrados aqui entram na projeção de todo mês.
               </EmptyDescription>
             </EmptyHeader>
+            <EmptyContent>
+              <AddButton kind="commitment">Adicionar compromisso</AddButton>
+            </EmptyContent>
           </Empty>
         ) : (
           <>
@@ -92,7 +97,10 @@ export function CommitmentsCard({
                     <TableHead>Vence</TableHead>
                     <TableHead>Categoria</TableHead>
                     <TableHead className="w-40">Prazo</TableHead>
-                    <TableHead className="pr-0 text-right">Valor</TableHead>
+                    <TableHead className="text-right">Valor</TableHead>
+                    <TableHead className="w-10 pr-0 pl-2">
+                      <span className="sr-only">Ações</span>
+                    </TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -107,8 +115,9 @@ export function CommitmentsCard({
                       <TableCell className="py-3">
                         <Term row={row} />
                       </TableCell>
-                      <TableCell className="pr-0 text-right font-medium tabular-nums">
-                        {formatMoney(row.amount)}
+                      <TableCell className="text-right font-medium tabular-nums">{formatMoney(row.amount)}</TableCell>
+                      <TableCell className="py-0 pr-0 pl-2 text-right">
+                        <RowActions kind="commitment" id={row.id} name={row.name} />
                       </TableCell>
                     </TableRow>
                   ))}
@@ -119,12 +128,13 @@ export function CommitmentsCard({
             <ul className="divide-y @xl:hidden">
               {rows.map((row) => (
                 <li key={row.id} className="space-y-2 py-3 first:pt-0 last:pb-0">
-                  <div className="flex items-start justify-between gap-3">
-                    <div className="min-w-0 space-y-0.5">
+                  <div className="flex items-start gap-3">
+                    <div className="min-w-0 flex-1 space-y-0.5">
                       <p className="text-sm font-medium">{row.name}</p>
                       <p className="text-muted-foreground text-xs">{stackedDetailOf(row)}</p>
                     </div>
                     <Money cents={row.amount} className="shrink-0 text-sm font-medium tabular-nums" />
+                    <RowActions kind="commitment" id={row.id} name={row.name} className="-mt-1.5 -mr-2 shrink-0" />
                   </div>
                   {row.installments && (
                     <InstallmentMeter
@@ -144,9 +154,15 @@ export function CommitmentsCard({
       {rows.length > 0 && (
         <CardFooter className="justify-between gap-4 border-t text-sm [.border-t]:pt-4">
           <span className="text-muted-foreground">
-            Total por mês · {plural(rows.length, "compromisso", "compromissos")}
+            Total por mês
+            {/* No celular a contagem sai: as linhas já mostram, e o total fica numa linha só. */}
+            <span className="hidden @[39rem]/commitments:inline">
+              {" "}
+              · {plural(rows.length, "compromisso", "compromissos")}
+            </span>
           </span>
-          <span className="font-semibold tabular-nums">{formatMoney(total)}</span>
+          {/* Alinha com os valores das linhas (o "…" de cada linha fica à direita). */}
+          <span className="mr-9 font-semibold tabular-nums @[39rem]/commitments:mr-12">{formatMoney(total)}</span>
         </CardFooter>
       )}
     </Card>

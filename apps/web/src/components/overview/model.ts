@@ -74,6 +74,23 @@ function shortDate(date: IsoDate): string {
   return formatDateShort(date).replace(" ", "\u00a0")
 }
 
+/** Descrição da página: "Quinta-feira, 8 de outubro · 3 contas em 2 bancos". */
+export function overviewDescription(weekday: string, accounts: number, connections: number): string {
+  const where =
+    connections === 0
+      ? "nenhum banco conectado"
+      : `${plural(accounts, "conta", "contas")} em ${plural(connections, "banco", "bancos")}`
+  return `${capitalize(weekday)} · ${where}`
+}
+
+/** "fecha hoje", "fecha amanhã", "fecha 12 out". */
+export function closingLabel(closingDate: IsoDate, today: IsoDate): string {
+  const days = daysBetween(today, closingDate)
+  if (days === 0) return "fecha hoje"
+  if (days === 1) return "fecha amanhã"
+  return `fecha ${shortDate(closingDate)}`
+}
+
 /** "hoje", "amanhã", "em 3 dias". */
 export function relativeDays(days: number): string {
   if (days <= 0) return "hoje"
@@ -171,9 +188,7 @@ export function upcomingDue({
     if (invoice.dueDate < today || invoice.dueDate > until) continue
     const account = accounts.find((a) => a.id === invoice.accountId)
     const closing =
-      invoice.closingDate && invoice.closingDate >= today
-        ? `fecha ${shortDate(invoice.closingDate)}`
-        : null
+      invoice.closingDate && invoice.closingDate >= today ? closingLabel(invoice.closingDate, today) : null
     items.push({
       id: invoice.id,
       kind: "INVOICE",
@@ -197,6 +212,35 @@ export function nextOpenInvoice(invoices: Invoice[], today: IsoDate): Invoice | 
       .filter((invoice) => invoice.dueDate >= today)
       .sort((a, b) => a.dueDate.localeCompare(b.dueDate))[0] ?? null
   )
+}
+
+// ---------------------------------------------------------- fluxo de caixa
+
+interface FlowLike {
+  inflow: Cents
+  outflow: Cents
+}
+
+/** Algum mês com entrada ou saída: sem isso o gráfico seria só um eixo de zeros. */
+export function hasMovement(rows: FlowLike[]): boolean {
+  return rows.some((row) => row.inflow !== 0 || row.outflow !== 0)
+}
+
+/**
+ * Janela do gráfico: tira os meses vazios do começo (histórico mais curto
+ * que 12 meses, como logo depois da primeira sincronização), mantendo pelo
+ * menos `minMonths` meses para o gráfico não virar uma barra solta.
+ * Sem movimento nenhum, devolve tudo (quem chama mostra o estado vazio).
+ */
+export function cashFlowWindow<T extends FlowLike>(rows: T[], minMonths: number): T[] {
+  const first = rows.findIndex((row) => row.inflow !== 0 || row.outflow !== 0)
+  if (first < 0) return rows
+  return rows.slice(Math.max(0, Math.min(first, rows.length - minMonths)))
+}
+
+/** Houve entrada ou gasto no período (transferências próprias e pagamento de fatura não contam). */
+export function hasPeriodMovement(totals: { income: Cents; spending: Cents }): boolean {
+  return totals.income !== 0 || totals.spending !== 0
 }
 
 // ------------------------------------------------------------- categorias

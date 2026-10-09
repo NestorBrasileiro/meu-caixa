@@ -18,9 +18,12 @@ function CardSkeleton({ bodyClassName }: { bodyClassName: string }) {
 export default function Loading() {
   return (
     <div className="space-y-6" aria-busy="true" aria-label="Carregando planejamento">
-      <div className="space-y-2">
-        <Skeleton className="h-7 w-44" />
-        <Skeleton className="h-4 w-80 max-w-full" />
+      <div className="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
+        <div className="space-y-2">
+          <Skeleton className="h-7 w-44" />
+          <Skeleton className="h-4 w-80 max-w-full" />
+        </div>
+        <Skeleton className="h-8 w-32" />
       </div>
       <div className="grid grid-cols-2 gap-4 xl:grid-cols-4">
         {Array.from({ length: 4 }, (_, i) => (

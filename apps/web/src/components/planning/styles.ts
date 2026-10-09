@@ -16,9 +16,6 @@ export const HEADER_DESCRIPTION_CLASS = "max-sm:col-span-2"
 /** Abaixo disso a sobra prevista do mês é considerada apertada. */
 export const TIGHT_MARGIN: number = 500_00
 
-/** Texto da dica dos botões que só funcionam com a API. */
-export const EDIT_SOON = "A edição chega com a API de planejamento (marco de 75%)."
-
 /**
  * Painéis das abas (Radix dá tabIndex=0 e o TabsContent do shadcn tira o
  * contorno): anel de foco visível, afastado do conteúdo.

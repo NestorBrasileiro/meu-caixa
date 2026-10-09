@@ -1,6 +1,8 @@
-import { CalendarCheck, CreditCard } from "lucide-react"
+import { ArrowRight, CalendarCheck, CreditCard } from "lucide-react"
+import Link from "next/link"
+import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card"
-import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from "@/components/ui/empty"
+import { Empty, EmptyContent, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from "@/components/ui/empty"
 import type { IsoDate } from "@/lib/api/types"
 import { formatDateLong, formatDateShort } from "@/lib/format/date"
 import { formatMoney } from "@/lib/format/money"
@@ -43,11 +45,14 @@ export function UpcomingCard({
   items,
   until,
   horizonDays,
+  hasCommitments,
   className,
 }: {
   items: UpcomingItem[]
   until: IsoDate
   horizonDays: number
+  /** Há compromissos cadastrados no planejamento (sem nenhum, o vazio convida a cadastrar). */
+  hasCommitments: boolean
   className?: string
 }) {
   const total = items.reduce((sum, item) => sum + (item.inTotal ? item.amount : 0), 0)
@@ -71,8 +76,22 @@ export function UpcomingCard({
                 <CalendarCheck aria-hidden />
               </EmptyMedia>
               <EmptyTitle className="text-base">Nada vence nos próximos {horizonDays} dias</EmptyTitle>
-              <EmptyDescription>Compromissos fixos e faturas do cartão aparecem aqui perto do vencimento.</EmptyDescription>
+              <EmptyDescription>
+                {hasCommitments
+                  ? "Compromissos fixos e faturas do cartão aparecem aqui perto do vencimento."
+                  : "Cadastre aluguel, parcelas e assinaturas no planejamento para vê-los aqui perto do vencimento."}
+              </EmptyDescription>
             </EmptyHeader>
+            {!hasCommitments && (
+              <EmptyContent>
+                <Button variant="outline" size="sm" asChild>
+                  <Link href="/planejamento">
+                    Ir para o planejamento
+                    <ArrowRight aria-hidden />
+                  </Link>
+                </Button>
+              </EmptyContent>
+            )}
           </Empty>
         ) : (
           <ul className="divide-y">

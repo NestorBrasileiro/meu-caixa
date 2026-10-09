@@ -1,7 +1,10 @@
 import { Skeleton } from "@/components/ui/skeleton"
 import { getConnections, getCurrentUser, getNow, getSyncRuns } from "@/lib/data"
 import { SyncIndicator } from "./sync-indicator"
+import { summarizeSync } from "./sync-status"
 import { UserMenu } from "./user-menu"
+
+export { SyncIndicatorSkeleton } from "./sync-indicator"
 
 /**
  * Pedaços do layout que dependem da sessão. Ficam atrás de Suspense para não
@@ -26,17 +29,8 @@ export function UserMenuSkeleton() {
   )
 }
 
+/** Indicador do cabeçalho. Lê as execuções e as conexões aqui; o resto da regra está em `sync-status.ts`. */
 export async function SessionSyncStatus() {
   const [runs, connections, now] = await Promise.all([getSyncRuns(), getConnections(), getNow()])
-  const lastRun = runs.find((run) => run.status !== "RUNNING")
-  return (
-    <SyncIndicator
-      sync={{
-        lastSyncAt: lastRun?.finishedAt ?? null,
-        now,
-        attentionCount: connections.filter((c) => c.status !== "ACTIVE").length,
-        running: runs.some((run) => run.status === "RUNNING"),
-      }}
-    />
-  )
+  return <SyncIndicator summary={summarizeSync(runs, connections, now)} />
 }
