@@ -17,9 +17,19 @@ export function isInterruptedRun(run: Pick<SyncRun, "status" | "startedAt">, now
   return run.status === "RUNNING" && Date.parse(now) - Date.parse(run.startedAt) > STALE_RUN_MS
 }
 
-/** A execução que está rodando agora (a mais recente), ignorando as interrompidas. */
+/**
+ * A execução que está rodando agora. Só a mais recente (`runs[0]`, a API devolve as mais novas primeiro)
+ * conta: uma em andamento mais antiga, com outra mais nova já iniciada, ficou para trás (a API caiu no
+ * meio). Se a mais recente terminou ou foi interrompida, não há nenhuma rodando.
+ */
 export function findActiveRun(runs: SyncRun[], now: IsoDateTime): SyncRun | null {
-  return runs.find((run) => run.status === "RUNNING" && !isInterruptedRun(run, now)) ?? null
+  const [latest] = runs
+  return latest && latest.status === "RUNNING" && !isInterruptedRun(latest, now) ? latest : null
+}
+
+/** A execução rodando, a menos que a tela já tenha desistido de acompanhá-la (ver `abandonsRun`). */
+export function liveRunId(runId: string | null, abandoned: ReadonlySet<string>): string | null {
+  return runId !== null && !abandoned.has(runId) ? runId : null
 }
 
 /** Conexões que pedem ação do usuário: login de novo ou erro no banco. "Atualizando" não conta. */

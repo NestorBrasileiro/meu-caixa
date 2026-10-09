@@ -19,6 +19,7 @@ import {
   COMMITMENT_FIELDS,
   commitmentForm,
   commitmentPatch,
+  isIsoDate,
   lastInstallmentMonth,
   NOTES_MAX,
   validateCommitment,
@@ -88,9 +89,17 @@ export function CommitmentDialog({
   }
 
   const total = Number(form.installmentsTotal)
+  const day = Number(form.dayOfMonth)
   const lastMonth =
-    form.installments && /^\d{4}-\d{2}-\d{2}$/.test(form.startsOn) && Number.isInteger(total) && total >= 1 && total <= 600
-      ? lastInstallmentMonth(form.startsOn, total)
+    form.installments &&
+    isIsoDate(form.startsOn) &&
+    Number.isInteger(day) &&
+    day >= 1 &&
+    day <= 31 &&
+    Number.isInteger(total) &&
+    total >= 1 &&
+    total <= 600
+      ? lastInstallmentMonth(form.startsOn, day, total)
       : null
 
   return (

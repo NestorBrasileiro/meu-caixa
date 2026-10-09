@@ -11,11 +11,21 @@ import { formatMoney } from "@/lib/format/money"
 import { cn } from "@/lib/utils"
 import { AddButton, RowActions } from "./actions"
 import { InstallmentMeter } from "./meters"
-import { plural } from "./model"
+import { plural, type CommitmentStatus } from "./model"
 
 export interface CommitmentRow extends Commitment {
   /** Nome da categoria do orçamento. */
   categoryName: string | null
+  /** Situação no mês atual: só os ativos entram no total. */
+  status: CommitmentStatus
+}
+
+/** "Encerrado em ago/26" / "Começa em nov/26"; null se ativo. */
+function statusLabel(row: CommitmentRow): string | null {
+  if (row.status === "ended")
+    return row.endsOn ? `Encerrado em ${formatMonthShort(row.endsOn.slice(0, 7), true)}` : "Encerrado"
+  if (row.status === "upcoming") return `Começa em ${formatMonthShort(row.startsOn.slice(0, 7), true)}`
+  return null
 }
 
 /** Como é pago ("Outro" não diz nada e fica de fora). */
@@ -31,10 +41,14 @@ function detailOf(row: CommitmentRow): string {
 
 /** Linha da lista empilhada: "Dia 10 · Moradia e contas · Boleto · Loteadora Exemplo". */
 function stackedDetailOf(row: CommitmentRow): string {
-  return [`Dia ${row.dayOfMonth}`, row.categoryName ?? "Sem categoria", detailOf(row)].filter(Boolean).join(" · ")
+  return [statusLabel(row), `Dia ${row.dayOfMonth}`, row.categoryName ?? "Sem categoria", detailOf(row)]
+    .filter(Boolean)
+    .join(" · ")
 }
 
 function Term({ row }: { row: CommitmentRow }) {
+  const status = statusLabel(row)
+  if (status) return <span className="text-muted-foreground text-sm">{status}</span>
   if (row.installments) {
     return (
       <InstallmentMeter
@@ -57,11 +71,13 @@ export function CommitmentsCard({
   total,
   className,
 }: {
-  /** Já ordenados do maior para o menor. */
+  /** Já ordenados: ativos do maior para o menor, depois os que vão começar e os encerrados. */
   rows: CommitmentRow[]
+  /** Soma só dos ativos no mês. */
   total: Cents
   className?: string
 }) {
+  const activeCount = rows.filter((row) => row.status === "active").length
   return (
     <Card className={cn("@container/commitments", className)}>
       <CardHeader>
@@ -105,7 +121,10 @@ export function CommitmentsCard({
                 </TableHeader>
                 <TableBody>
                   {rows.map((row) => (
-                    <TableRow key={row.id} className="hover:bg-transparent">
+                    <TableRow
+                      key={row.id}
+                      className={cn("hover:bg-transparent", row.status !== "active" && "text-muted-foreground")}
+                    >
                       <TableCell className="py-3 pl-0 whitespace-normal">
                         <p className="font-medium">{row.name}</p>
                         {detailOf(row) && <p className="text-muted-foreground text-xs">{detailOf(row)}</p>}
@@ -127,7 +146,13 @@ export function CommitmentsCard({
 
             <ul className="divide-y @xl:hidden">
               {rows.map((row) => (
-                <li key={row.id} className="space-y-2 py-3 first:pt-0 last:pb-0">
+                <li
+                  key={row.id}
+                  className={cn(
+                    "space-y-2 py-3 first:pt-0 last:pb-0",
+                    row.status !== "active" && "text-muted-foreground",
+                  )}
+                >
                   <div className="flex items-start gap-3">
                     <div className="min-w-0 flex-1 space-y-0.5">
                       <p className="text-sm font-medium">{row.name}</p>
@@ -136,7 +161,7 @@ export function CommitmentsCard({
                     <Money cents={row.amount} className="shrink-0 text-sm font-medium tabular-nums" />
                     <RowActions kind="commitment" id={row.id} name={row.name} className="-mt-1.5 -mr-2 shrink-0" />
                   </div>
-                  {row.installments && (
+                  {row.installments && row.status === "active" && (
                     <InstallmentMeter
                       name={row.name}
                       paid={row.installments.paid}
@@ -158,7 +183,10 @@ export function CommitmentsCard({
             {/* No celular a contagem sai: as linhas já mostram, e o total fica numa linha só. */}
             <span className="hidden @[39rem]/commitments:inline">
               {" "}
-              · {plural(rows.length, "compromisso", "compromissos")}
+              ·{" "}
+              {activeCount === rows.length
+                ? plural(activeCount, "compromisso", "compromissos")
+                : plural(activeCount, "compromisso ativo", "compromissos ativos")}
             </span>
           </span>
           {/* Alinha com os valores das linhas (o "…" de cada linha fica à direita). */}

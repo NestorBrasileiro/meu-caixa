@@ -106,8 +106,12 @@ describe("planning/forms: datas", () => {
   })
 
   it("calcula o mês da última parcela como a API", () => {
-    expect(lastInstallmentMonth("2023-09-10", 120)).toBe("2033-08")
-    expect(lastInstallmentMonth("2026-10-08", 1)).toBe("2026-10")
+    expect(lastInstallmentMonth("2023-09-10", 10, 120)).toBe("2033-08")
+    expect(lastInstallmentMonth("2026-10-08", 8, 1)).toBe("2026-10")
+    expect(lastInstallmentMonth("2026-10-08", 20, 1)).toBe("2026-10")
+    // O dia 5 de outubro já passou em 08/10: a 1ª parcela vence em novembro.
+    expect(lastInstallmentMonth("2026-10-08", 5, 1)).toBe("2026-11")
+    expect(lastInstallmentMonth("2026-10-08", 5, 12)).toBe("2027-10")
   })
 })
 
@@ -291,6 +295,20 @@ describe("planning/forms: categorias", () => {
   it("valida nome (até 60) e teto", () => {
     const result = validateCategory({ ...categoryForm(null), name: "x".repeat(61), monthlyBudget: "abc" })
     expect(!result.ok && Object.keys(result.errors).sort()).toEqual(["monthlyBudget", "name"])
+  })
+
+  it("teto de R$ 0,00 não vale (a API exige pelo menos 1 centavo); em branco = sem teto", () => {
+    for (const monthlyBudget of ["0", "0,00", "R$ 0,00"]) {
+      const result = validateCategory({ ...categoryForm(null), name: "Lazer", monthlyBudget })
+      expect(result).toEqual({
+        ok: false,
+        errors: { monthlyBudget: "Use pelo menos R$ 0,01 ou deixe em branco para não ter teto." },
+      })
+    }
+    const cent = validateCategory({ ...categoryForm(null), name: "Lazer", monthlyBudget: "0,01" })
+    expect(cent.ok && cent.value.monthlyBudget).toBe(1)
+    const empty = validateCategory({ ...categoryForm(null), name: "Lazer", monthlyBudget: "  " })
+    expect(empty.ok && empty.value.monthlyBudget).toBeNull()
   })
 
   it("PATCH ignora a ordem das categorias do banco", () => {

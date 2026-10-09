@@ -1,12 +1,20 @@
 import { describe, expect, it } from "vitest"
+import type { BudgetCategory, Commitment } from "@/lib/api/planning"
 import type { Transaction } from "@/lib/api/types"
 import {
+  activeCommitments,
   budgetRows,
+  budgetSummary,
+  commitmentStatus,
+  commitmentsTotal,
+  goalContributions,
   goalProgress,
+  groupBudget,
   headerSummary,
   historyState,
   partialHistoryNote,
   projectionCallout,
+  sortCommitments,
   sourceCategoryOptions,
 } from "./model"
 
@@ -142,5 +150,134 @@ describe("planning/model: frase da projeção", () => {
 
   it("nenhum mês no vermelho: sem frase", () => {
     expect(projectionCallout([row("2026-11", 10_00)], name, money)).toBeNull()
+  })
+})
+
+describe("planning/model: compromissos ativos no mês", () => {
+  const today = "2026-10-09"
+  const commitment = (id: string, amount: number, startsOn: string, endsOn: string | null): Commitment => ({
+    id,
+    name: id,
+    amount,
+    dayOfMonth: 10,
+    paymentMethod: "PIX",
+    categoryId: null,
+    startsOn,
+    endsOn,
+    installments: null,
+    notes: null,
+  })
+  const all = [
+    commitment("encerrado", 900_00, "2025-01-10", "2026-09-10"),
+    commitment("acaba-este-mes", 300_00, "2025-01-10", "2026-10-01"),
+    commitment("ativo", 100_00, "2024-01-10", null),
+    commitment("comeca-este-mes", 50_00, "2026-10-31", null),
+    commitment("futuro", 1_000_00, "2026-11-01", null),
+  ]
+
+  it("ativo = começa até o fim do mês e não acabou antes do início dele", () => {
+    expect(all.map((c) => commitmentStatus(c, today))).toEqual(["ended", "active", "active", "active", "upcoming"])
+  })
+
+  it("o total soma só os ativos", () => {
+    const active = activeCommitments(all, today)
+    expect(active.map((c) => c.id)).toEqual(["acaba-este-mes", "ativo", "comeca-este-mes"])
+    expect(commitmentsTotal(active)).toBe(450_00)
+  })
+
+  it("lista os ativos primeiro (do maior para o menor), depois os futuros e os encerrados", () => {
+    expect(sortCommitments(all, today).map((c) => [c.id, c.status])).toEqual([
+      ["acaba-este-mes", "active"],
+      ["ativo", "active"],
+      ["comeca-este-mes", "active"],
+      ["futuro", "upcoming"],
+      ["encerrado", "ended"],
+    ])
+  })
+})
+
+describe("planning/model: aportes em metas", () => {
+  it("soma e conta só as metas que ainda não foram alcançadas", () => {
+    const goals = [
+      { done: false, monthlyContribution: 1_500_00 },
+      { done: true, monthlyContribution: 800_00 },
+      { done: false, monthlyContribution: 500_00 },
+    ]
+    expect(goalContributions(goals)).toEqual({ total: 2_000_00, count: 2 })
+    expect(goalContributions([{ done: true, monthlyContribution: 800_00 }])).toEqual({ total: 0, count: 0 })
+  })
+
+  it("meta com o valor já guardado conta como alcançada", () => {
+    const goal = goalProgress(
+      {
+        id: "g",
+        name: "Viagem",
+        target: 5_000_00,
+        saved: 5_000_00,
+        targetDate: "2027-01-01",
+        monthlyContribution: 500_00,
+        accountId: null,
+      },
+      "2026-10-09",
+      [],
+    )
+    expect(goalContributions([goal])).toEqual({ total: 0, count: 0 })
+  })
+})
+
+describe("planning/model: totais do orçamento", () => {
+  const category = (id: string, kind: BudgetCategory["kind"], source: string, monthlyBudget: number | null) => ({
+    id,
+    name: id,
+    kind,
+    sourceCategories: [source],
+    monthlyBudget,
+  })
+  const categories: BudgetCategory[] = [
+    category("Mercado", "ESSENTIAL", "Groceries", 1_000_00),
+    category("Transporte", "ESSENTIAL", "Taxi", 500_00),
+    category("Farmácia", "ESSENTIAL", "Pharmacy", null),
+    category("Lazer", "DISCRETIONARY", "Restaurants", null),
+  ]
+  const spending = [
+    { category: "Groceries", label: "Mercado", total: 1_200_00, count: 4 },
+    { category: "Taxi", label: "Táxi", total: 300_00, count: 2 },
+    { category: "Pharmacy", label: "Farmácia", total: 400_00, count: 1 },
+    { category: "Restaurants", label: "Restaurantes", total: 250_00, count: 3 },
+  ]
+
+  it("estouro do grupo = soma dos estouros das categorias com teto; gasto sem teto fica à parte", () => {
+    const [essential, discretionary] = groupBudget(budgetRows(categories, spending))
+    expect(essential).toMatchObject({
+      kind: "ESSENTIAL",
+      actual: 1_500_00,
+      budget: 1_500_00,
+      over: 200_00,
+      unlimited: 400_00,
+      unlimitedNames: ["Farmácia"],
+    })
+    // Só categorias sem teto: nenhum estouro, nada de "R$ 250,00 acima de R$ 0,00".
+    expect(discretionary).toMatchObject({
+      kind: "DISCRETIONARY",
+      actual: 0,
+      budget: 0,
+      over: 0,
+      unlimited: 250_00,
+      unlimitedNames: ["Lazer"],
+    })
+  })
+
+  it("rodapé: compara só as categorias com teto", () => {
+    expect(budgetSummary(budgetRows(categories, spending))).toEqual({
+      actual: 1_500_00,
+      budget: 1_500_00,
+      over: 200_00,
+      unlimited: 650_00,
+      unlimitedNames: ["Farmácia", "Lazer"],
+    })
+  })
+
+  it("categoria sem teto e sem gasto não aparece entre as sem teto", () => {
+    expect(budgetSummary(budgetRows(categories, spending.slice(0, 2))).unlimitedNames).toEqual([])
   })
 })

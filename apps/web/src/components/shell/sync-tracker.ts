@@ -6,6 +6,7 @@ import { toast } from "sonner"
 import { apiRequest, ClientApiError } from "@/lib/api/client"
 import type { SyncRun } from "@/lib/api/types"
 import {
+  abandonsRun,
   MAX_POLL_FAILURES,
   POLL_INTERVAL_MS,
   POLL_RUNS_LIMIT,
@@ -29,7 +30,10 @@ export type SyncPhase = "idle" | "starting" | "running" | "refreshing"
 
 export interface SyncTrackerState {
   phase: SyncPhase
-  /** Execuções que deixamos de acompanhar por tempo (continuam na API; não voltamos a esperar por elas). */
+  /**
+   * Execuções que deixamos de acompanhar sem ver o fim (tempo esgotado, falha ao consultar a API):
+   * talvez continuem na API, mas a tela não volta a esperar por elas.
+   */
   abandoned: ReadonlySet<string>
 }
 
@@ -93,7 +97,7 @@ async function track(runId: string | null, announce: boolean): Promise<void> {
   const result = await poll(current)
   job = null
 
-  if (result.kind === "timeout" && current.runId) {
+  if (abandonsRun(result) && current.runId) {
     update({ abandoned: new Set(state.abandoned).add(current.runId) })
   }
   // Com a API fora do ar, atualizar a tela só trocaria os dados por uma página de erro.

@@ -11,6 +11,7 @@ import type {
   GoalPatch,
 } from "@/lib/api/planning"
 import type { Cents, IsoDate, PaymentMethod } from "@/lib/api/types"
+import { installmentDueDate } from "./schedule"
 
 /**
  * Regras dos formulários do planejamento (funções puras): leitura do que foi
@@ -91,16 +92,12 @@ export function isIsoDate(value: string): boolean {
   return date.getUTCFullYear() === year && date.getUTCMonth() === month - 1 && date.getUTCDate() === day
 }
 
-/** `YYYY-MM` deslocado `offset` meses. */
-function shiftMonth(month: string, offset: number): string {
-  const [year, m] = month.split("-").map(Number)
-  const index = year * 12 + (m - 1) + offset
-  return `${Math.floor(index / 12)}-${String((index % 12) + 1).padStart(2, "0")}`
-}
-
-/** Mês (`YYYY-MM`) da última parcela, como a API calcula: início + (total − 1) meses. */
-export function lastInstallmentMonth(startsOn: IsoDate, total: number): string {
-  return shiftMonth(startsOn.slice(0, 7), total - 1)
+/**
+ * Mês (`YYYY-MM`) da última parcela, como a API calcula: o vencimento da 1ª
+ * (no mês do início, ou no seguinte se o dia já passou) + (total − 1) meses.
+ */
+export function lastInstallmentMonth(startsOn: IsoDate, dayOfMonth: number, total: number): string {
+  return installmentDueDate(startsOn, dayOfMonth, total).slice(0, 7)
 }
 
 function integerIn(input: string, min: number, max: number): number | null {
@@ -391,8 +388,11 @@ export function validateCategory(form: CategoryForm): Validation<BudgetCategoryI
   const name = nameError(form.name, 60)
   if (name) errors.name = name
 
-  const budget = moneyError(form.monthlyBudget, { required: false, min: 0, label: "o teto mensal" })
-  if (budget.error) errors.monthlyBudget = budget.error
+  // Vazio = sem teto; R$ 0,00 não é teto (a API exige pelo menos 1 centavo).
+  const budget = moneyError(form.monthlyBudget, { required: false, min: 1, label: "o teto mensal" })
+  if (budget.error)
+    errors.monthlyBudget =
+      budget.cents === 0 ? "Use pelo menos R$ 0,01 ou deixe em branco para não ter teto." : budget.error
 
   if (form.sourceCategories.length > SOURCE_CATEGORIES_MAX)
     errors.sourceCategories = `Escolha até ${SOURCE_CATEGORIES_MAX} categorias.`

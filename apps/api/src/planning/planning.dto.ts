@@ -26,7 +26,8 @@ const MAX_CENTS = 10_000_000_000;
 type BudgetCategoryKind = (typeof BUDGET_CATEGORY_KINDS)[number];
 
 // Convenção dos DTOs de atualização: campo ausente = não muda; `null` limpa
-// os campos opcionais (por isso `ValidateIf(value !== null)`).
+// os campos opcionais (por isso `ValidateIf(value !== null)`). Nos campos
+// obrigatórios `null` é inválido (400), então só `undefined` pula a validação.
 
 export class CreateCommitmentDto {
   @IsString()
@@ -74,25 +75,25 @@ export class CreateCommitmentDto {
 }
 
 export class UpdateCommitmentDto {
-  @IsOptional()
+  @ValidateIf((_, value) => value !== undefined)
   @IsString()
   @MinLength(1)
   @MaxLength(80)
   name?: string;
 
-  @IsOptional()
+  @ValidateIf((_, value) => value !== undefined)
   @IsInt()
   @Min(1)
   @Max(MAX_CENTS)
   amount?: number;
 
-  @IsOptional()
+  @ValidateIf((_, value) => value !== undefined)
   @IsInt()
   @Min(1)
   @Max(31)
   dayOfMonth?: number;
 
-  @IsOptional()
+  @ValidateIf((_, value) => value !== undefined)
   @IsIn(PAYMENT_METHODS)
   paymentMethod?: PaymentMethod;
 
@@ -100,7 +101,7 @@ export class UpdateCommitmentDto {
   @IsUUID()
   categoryId?: string | null;
 
-  @IsOptional()
+  @ValidateIf((_, value) => value !== undefined)
   @Matches(ISO_DATE, { message: ISO_DATE_MESSAGE })
   @IsISO8601({ strict: true })
   startsOn?: string;
@@ -154,30 +155,30 @@ export class CreateGoalDto {
 }
 
 export class UpdateGoalDto {
-  @IsOptional()
+  @ValidateIf((_, value) => value !== undefined)
   @IsString()
   @MinLength(1)
   @MaxLength(80)
   name?: string;
 
-  @IsOptional()
+  @ValidateIf((_, value) => value !== undefined)
   @IsInt()
   @Min(1)
   @Max(MAX_CENTS)
   target?: number;
 
-  @IsOptional()
+  @ValidateIf((_, value) => value !== undefined)
   @IsInt()
   @Min(0)
   @Max(MAX_CENTS)
   saved?: number;
 
-  @IsOptional()
+  @ValidateIf((_, value) => value !== undefined)
   @Matches(ISO_DATE, { message: ISO_DATE_MESSAGE })
   @IsISO8601({ strict: true })
   targetDate?: string;
 
-  @IsOptional()
+  @ValidateIf((_, value) => value !== undefined)
   @IsInt()
   @Min(0)
   @Max(MAX_CENTS)
@@ -204,9 +205,10 @@ export class CreateBudgetCategoryDto {
   @MaxLength(80, { each: true })
   sourceCategories?: string[];
 
+  /** Centavos; `null` = sem teto (zero não é aceito: seria ambíguo). */
   @IsOptional()
   @IsInt()
-  @Min(0)
+  @Min(1)
   @Max(MAX_CENTS)
   monthlyBudget?: number | null;
 
@@ -218,17 +220,17 @@ export class CreateBudgetCategoryDto {
 }
 
 export class UpdateBudgetCategoryDto {
-  @IsOptional()
+  @ValidateIf((_, value) => value !== undefined)
   @IsString()
   @MinLength(1)
   @MaxLength(60)
   name?: string;
 
-  @IsOptional()
+  @ValidateIf((_, value) => value !== undefined)
   @IsIn(BUDGET_CATEGORY_KINDS)
   kind?: BudgetCategoryKind;
 
-  @IsOptional()
+  @ValidateIf((_, value) => value !== undefined)
   @IsArray()
   @ArrayMaxSize(50)
   @IsString({ each: true })
@@ -237,11 +239,11 @@ export class UpdateBudgetCategoryDto {
 
   @ValidateIf((_, value) => value !== null && value !== undefined)
   @IsInt()
-  @Min(0)
+  @Min(1)
   @Max(MAX_CENTS)
   monthlyBudget?: number | null;
 
-  @IsOptional()
+  @ValidateIf((_, value) => value !== undefined)
   @IsInt()
   @Min(0)
   position?: number;

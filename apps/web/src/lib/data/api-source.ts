@@ -91,14 +91,26 @@ export function getTransactions(params: TransactionQuery = {}): Promise<Page<Tra
   return api<Page<Transaction>>(`/api/transactions${query({ ...params })}`)
 }
 
-/** Todas as transações do período, página a página. */
-export async function getAllTransactions(range: { from?: IsoDate; to?: IsoDate } = {}): Promise<Transaction[]> {
-  const items: Transaction[] = []
-  for (let offset = 0; ; offset += PAGE_LIMIT) {
-    const page = await getTransactions({ ...range, limit: PAGE_LIMIT, offset })
-    items.push(...page.items)
-    if (items.length >= page.total || page.items.length === 0) return items
+/**
+ * Junta as páginas (paginação por offset) sem repetir itens. Se uma sincronização insere transações
+ * no meio da leitura, as linhas escorregam para a página seguinte e voltariam repetidas (contadas duas
+ * vezes nos totais): fica a primeira vez que cada id aparece, mantendo a ordem da API (mais novas primeiro).
+ */
+export async function collectPages<T extends { id: string }>(
+  fetchPage: (offset: number) => Promise<Page<T>>,
+  pageSize: number,
+): Promise<T[]> {
+  const byId = new Map<string, T>()
+  for (let offset = 0; ; offset += pageSize) {
+    const page = await fetchPage(offset)
+    for (const item of page.items) if (!byId.has(item.id)) byId.set(item.id, item)
+    if (page.items.length < pageSize || offset + page.items.length >= page.total) return [...byId.values()]
   }
+}
+
+/** Todas as transações do período, página a página. */
+export function getAllTransactions(range: { from?: IsoDate; to?: IsoDate } = {}): Promise<Transaction[]> {
+  return collectPages((offset) => getTransactions({ ...range, limit: PAGE_LIMIT, offset }), PAGE_LIMIT)
 }
 
 export function getInvoices(params: { accountId?: string } = {}): Promise<Invoice[]> {

@@ -2,7 +2,15 @@ import { describe, expect, it } from "vitest"
 import type { Commitment } from "@/lib/api/planning"
 import type { Account, Invoice } from "@/lib/api/types"
 import { monthlyCashFlow } from "@/lib/finance/aggregate"
-import { cashFlowWindow, closingLabel, hasMovement, hasPeriodMovement, overviewDescription, upcomingDue } from "./model"
+import {
+  cashFlowWindow,
+  closingLabel,
+  hasMovement,
+  hasPeriodMovement,
+  installmentNumberOn,
+  overviewDescription,
+  upcomingDue,
+} from "./model"
 
 const flow = (month: string, inflow: number, outflow: number) => ({ month, inflow, outflow, net: inflow - outflow })
 
@@ -150,5 +158,49 @@ describe("overview/model — fatura nos vencimentos", () => {
       ["COMMITMENT", "2026-10-10", "Parcela 38 de 120 · Loteadora"],
       ["INVOICE", "2026-10-15", "Cartão · fecha hoje"],
     ])
+  })
+})
+
+describe("overview/model — número da parcela nos vencimentos", () => {
+  // Começou em 15/jul com vencimento dia 10: a 1ª vence em 10/ago (10/jul é antes do início).
+  const parcelado: Commitment = {
+    ...commitment,
+    id: "geladeira",
+    name: "Geladeira",
+    notes: null,
+    startsOn: "2026-07-15",
+    dayOfMonth: 10,
+    installments: { paid: 2, total: 3 },
+  }
+  const upcoming = (c: Commitment, today: string) =>
+    upcomingDue({ commitments: [c], invoices: [], accounts: [], today, horizonDays: 10 })
+
+  it("calcula N pela data do vencimento, contando a partir do 1º vencimento", () => {
+    expect(installmentNumberOn(parcelado, 3, "2026-07-10")).toBeNull()
+    expect(installmentNumberOn(parcelado, 3, "2026-08-10")).toBe(1)
+    expect(installmentNumberOn(parcelado, 3, "2026-10-10")).toBe(3)
+    expect(installmentNumberOn(parcelado, 3, "2026-11-10")).toBeNull()
+    // Dia 31 limitado ao fim do mês: a 1ª vence em 30/set, a 2ª em 31/out.
+    expect(installmentNumberOn({ startsOn: "2026-09-01", dayOfMonth: 31 }, 12, "2026-10-31")).toBe(2)
+  })
+
+  it("no dia do vencimento, a parcela de hoje é a próxima (pagas + 1)", () => {
+    expect(upcoming(parcelado, "2026-10-10").map((item) => item.detail)).toEqual(["Parcela 3 de 3"])
+  })
+
+  it("o \"pagas\" vindo da API não muda o número: nunca \"Parcela 4 de 3\"", () => {
+    const stale = { ...parcelado, installments: { paid: 3, total: 3 } }
+    expect(upcoming(stale, "2026-10-08").map((item) => item.detail)).toEqual(["Parcela 3 de 3"])
+  })
+
+  it("depois da última parcela, o compromisso sai da lista", () => {
+    expect(upcoming({ ...parcelado, endsOn: null }, "2026-11-01")).toEqual([])
+  })
+
+  it("antes do 1º vencimento, nada aparece", () => {
+    // Hoje 05/jul: o próximo dia 10 (10/jul) é antes do início; a 1ª só vence em agosto.
+    expect(upcoming(parcelado, "2026-07-05")).toEqual([])
+    // 1º/ago: o vencimento de 10/ago é a parcela 1.
+    expect(upcoming(parcelado, "2026-08-01").map((item) => item.detail)).toEqual(["Parcela 1 de 3"])
   })
 })

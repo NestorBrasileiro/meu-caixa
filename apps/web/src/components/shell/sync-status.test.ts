@@ -1,6 +1,13 @@
 import { describe, expect, it } from "vitest"
 import type { SyncRun } from "@/lib/api/types"
-import { findActiveRun, isInterruptedRun, summarizeSync, syncIndicatorView, type SyncSummary } from "./sync-status"
+import {
+  findActiveRun,
+  isInterruptedRun,
+  liveRunId,
+  summarizeSync,
+  syncIndicatorView,
+  type SyncSummary,
+} from "./sync-status"
 
 const NOW = "2026-10-08T12:00:00.000Z"
 
@@ -36,6 +43,20 @@ describe("shell/sync-status", () => {
     expect(findActiveRun([stuck], NOW)).toBeNull()
     const live = run("live", "RUNNING", "2026-10-08T11:59:00.000Z")
     expect(findActiveRun([live, stuck], NOW)?.id).toBe("live")
+  })
+
+  it("só a mais recente pode estar ativa: uma em andamento antiga, com outra mais nova terminada, caiu", () => {
+    const crashed = run("crashed", "RUNNING", "2026-10-08T11:50:00.000Z")
+    const newer = run("newer", "SUCCEEDED", "2026-10-08T11:55:00.000Z")
+    expect(findActiveRun([newer, crashed], NOW)).toBeNull()
+    expect(summarizeSync([newer, crashed], [], NOW).runningRunId).toBeNull()
+    expect(findActiveRun([], NOW)).toBeNull()
+  })
+
+  it("a execução que a tela abandonou não conta como rodando", () => {
+    expect(liveRunId("r", new Set(["r"]))).toBeNull()
+    expect(liveRunId("r", new Set(["outra"]))).toBe("r")
+    expect(liveRunId(null, new Set())).toBeNull()
   })
 
   it("resume: última com dados, como terminou a última e conexões com problema", () => {

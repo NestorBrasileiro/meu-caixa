@@ -2,13 +2,14 @@ import type { INestApplication } from '@nestjs/common';
 import request from 'supertest';
 import { addDays, today } from '../src/domain/dates.js';
 import type { Transaction } from '../src/domain/finance.js';
-import { monthOf, monthRange, shiftMonth } from '../src/domain/months.js';
+import { dueDate, monthOf, monthRange, shiftMonth } from '../src/domain/months.js';
 import { SyncService } from '../src/sync/sync.service.js';
 import { createTestApp, resetDatabase } from './app.js';
 import { InMemoryProvider } from './in-memory-provider.js';
 
 const TODAY = today('America/Sao_Paulo');
 const CURRENT_MONTH = monthOf(TODAY);
+const TODAY_DAY = Number(TODAY.slice(8, 10));
 /** Os 3 meses fechados que a projeção usa como base. */
 const CLOSED = [-3, -2, -1].map((offset) => shiftMonth(CURRENT_MONTH, offset));
 
@@ -123,14 +124,61 @@ describe('Planejamento (e2e)', () => {
     expect(after.body.commitments).toEqual([]);
   });
 
-  it('conta as parcelas pagas até hoje', async () => {
-    const startsOn = `${shiftMonth(CURRENT_MONTH, -2)}-01`;
+  it('conta as parcelas vencidas antes de hoje; a que vence hoje é a próxima', async () => {
+    // Vence todo dia de hoje desde dois meses atrás: pagas as de -2 e -1; a de
+    // hoje é a 3ª e última, então o fim derivado é hoje.
     const created = await http()
       .post('/api/planning/commitments')
-      .send({ ...terreno, startsOn, installmentsTotal: 10 })
+      .send({
+        ...terreno,
+        dayOfMonth: TODAY_DAY,
+        startsOn: `${shiftMonth(CURRENT_MONTH, -2)}-01`,
+        installmentsTotal: 3,
+      })
       .expect(201);
-    // Dia 1 de dois meses atrás, do mês passado e deste mês: 3 parcelas.
-    expect(created.body.installments).toEqual({ paid: 3, total: 10 });
+    expect(created.body).toMatchObject({ endsOn: TODAY, installments: { paid: 2, total: 3 } });
+
+    // Começa hoje e vence hoje: nenhuma paga ainda.
+    const startsToday = await http()
+      .post('/api/planning/commitments')
+      .send({ ...terreno, dayOfMonth: TODAY_DAY, startsOn: TODAY, installmentsTotal: 2 })
+      .expect(201);
+    expect(startsToday.body).toMatchObject({
+      endsOn: dueDate(shiftMonth(CURRENT_MONTH, 1), TODAY_DAY),
+      installments: { paid: 0, total: 2 },
+    });
+
+    // Começa amanhã: o 1º vencimento (dia de hoje) só no mês que vem.
+    const startsTomorrow = await http()
+      .post('/api/planning/commitments')
+      .send({
+        ...terreno,
+        dayOfMonth: TODAY_DAY,
+        startsOn: addDays(TODAY, 1),
+        installmentsTotal: 1,
+      })
+      .expect(201);
+    expect(startsTomorrow.body).toMatchObject({
+      endsOn: dueDate(shiftMonth(CURRENT_MONTH, 1), TODAY_DAY),
+      installments: { paid: 0, total: 1 },
+    });
+
+    // Dia 31 vence no último dia dos meses curtos. As de quatro meses atrás até
+    // o mês passado venceram; a deste mês vence no último dia (mesmo se for
+    // hoje, ainda não paga) e é a 5ª, então o fim é o último dia deste mês.
+    const dia31 = await http()
+      .post('/api/planning/commitments')
+      .send({
+        ...terreno,
+        dayOfMonth: 31,
+        startsOn: `${shiftMonth(CURRENT_MONTH, -4)}-01`,
+        installmentsTotal: 5,
+      })
+      .expect(201);
+    expect(dia31.body).toMatchObject({
+      endsOn: monthRange(CURRENT_MONTH).to,
+      installments: { paid: 4, total: 5 },
+    });
   });
 
   it.each([
@@ -144,6 +192,64 @@ describe('Planejamento (e2e)', () => {
       .post('/api/planning/commitments')
       .send({ ...terreno, ...patch })
       .expect(400);
+  });
+
+  it('rejeita null em campos obrigatórios ao editar (400, não 500)', async () => {
+    const commitment = await http().post('/api/planning/commitments').send(terreno).expect(201);
+    for (const field of ['name', 'amount', 'dayOfMonth', 'paymentMethod', 'startsOn']) {
+      await http()
+        .patch(`/api/planning/commitments/${commitment.body.id}`)
+        .send({ [field]: null })
+        .expect(400);
+    }
+    // Os opcionais continuam aceitando null para limpar.
+    await http()
+      .patch(`/api/planning/commitments/${commitment.body.id}`)
+      .send({ categoryId: null, endsOn: null, installmentsTotal: null, notes: null })
+      .expect(200);
+
+    const goal = await http()
+      .post('/api/planning/goals')
+      .send({ name: 'Carro', target: 100_00, targetDate: '2027-12-01', monthlyContribution: 10_00 })
+      .expect(201);
+    for (const field of ['name', 'target', 'saved', 'targetDate', 'monthlyContribution']) {
+      await http()
+        .patch(`/api/planning/goals/${goal.body.id}`)
+        .send({ [field]: null })
+        .expect(400);
+    }
+    await http().patch(`/api/planning/goals/${goal.body.id}`).send({ accountId: null }).expect(200);
+
+    const category = await http()
+      .post('/api/planning/categories')
+      .send({ name: 'Mercado', kind: 'ESSENTIAL' })
+      .expect(201);
+    for (const field of ['name', 'kind', 'sourceCategories', 'position']) {
+      await http()
+        .patch(`/api/planning/categories/${category.body.id}`)
+        .send({ [field]: null })
+        .expect(400);
+    }
+  });
+
+  it('orçamento da categoria: zero é inválido, null é sem teto', async () => {
+    await http()
+      .post('/api/planning/categories')
+      .send({ name: 'Lazer', kind: 'DISCRETIONARY', monthlyBudget: 0 })
+      .expect(400);
+    const category = await http()
+      .post('/api/planning/categories')
+      .send({ name: 'Lazer', kind: 'DISCRETIONARY', monthlyBudget: 500_00 })
+      .expect(201);
+    await http()
+      .patch(`/api/planning/categories/${category.body.id}`)
+      .send({ monthlyBudget: 0 })
+      .expect(400);
+    const cleared = await http()
+      .patch(`/api/planning/categories/${category.body.id}`)
+      .send({ monthlyBudget: null })
+      .expect(200);
+    expect(cleared.body.monthlyBudget).toBeNull();
   });
 
   it('valida categoria e conta inexistentes e solta o vínculo ao apagar a categoria', async () => {
@@ -230,6 +336,17 @@ describe('Planejamento (e2e)', () => {
         monthlyContribution: 1_500_00,
       })
       .expect(201);
+    // Faltam 8.000 a 1.500/mês: cinco aportes cheios e um último de 500.
+    await http()
+      .post('/api/planning/goals')
+      .send({
+        name: 'Viagem',
+        target: 10_000_00,
+        saved: 2_000_00,
+        targetDate: '2028-01-01',
+        monthlyContribution: 1_500_00,
+      })
+      .expect(201);
 
     const { body } = await http().get('/api/planning').expect(200);
 
@@ -245,13 +362,13 @@ describe('Planejamento (e2e)', () => {
     expect(body.projections.map((p: { commitments: number }) => p.commitments)).toEqual([
       2_600_00, 2_600_00, 2_300_00, 2_300_00, 2_300_00, 2_300_00,
     ]);
-    // Meta de 10.000 a 1.500/mês: 7 aportes, cobre os 6 meses.
-    expect(
-      body.projections.every(
-        (p: { goalContributions: number }) => p.goalContributions === 1_500_00,
-      ),
-    ).toBe(true);
-    expect(body.projections[2].projectedBalance).toBe(9_000_00 - 2_300_00 - 1_500_00 - 700_00);
+    // Carro (10.000 a 1.500/mês) aporta 1.500 nos 6 meses (o 7º seria 1.000);
+    // a viagem, 1.500 até o 5º mês e só os 500 que faltam no 6º.
+    expect(body.projections.map((p: { goalContributions: number }) => p.goalContributions)).toEqual(
+      [3_000_00, 3_000_00, 3_000_00, 3_000_00, 3_000_00, 2_000_00],
+    );
+    expect(body.projections[2].projectedBalance).toBe(9_000_00 - 2_300_00 - 3_000_00 - 700_00);
+    expect(body.projections[5].projectedBalance).toBe(9_000_00 - 2_300_00 - 2_000_00 - 700_00);
   });
 
   it('recategorização sobrevive à sincronização e pode ser desfeita', async () => {

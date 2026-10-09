@@ -2,7 +2,9 @@ import type { INestApplication } from '@nestjs/common';
 import request from 'supertest';
 import { addDays, today } from '../src/domain/dates.js';
 import type { Transaction } from '../src/domain/finance.js';
-import { SyncService } from '../src/sync/sync.service.js';
+import { DATABASE, type Database } from '../src/database/database.module.js';
+import { syncRuns } from '../src/database/schema.js';
+import { INTERRUPTED_RUN_ERROR, SyncService } from '../src/sync/sync.service.js';
 import { createTestApp, resetDatabase } from './app.js';
 import { InMemoryProvider } from './in-memory-provider.js';
 
@@ -252,6 +254,50 @@ describe('Sincronização (e2e)', () => {
     expect(runs.body).toEqual([
       expect.objectContaining({ id: started.body.id, status: 'SUCCEEDED' }),
     ]);
+  });
+
+  it('marca como falha a execução que ficou RUNNING ao iniciar a próxima', async () => {
+    // Processo que caiu no meio: a linha ficou RUNNING e o lock foi solto.
+    const [stale] = await app
+      .get<Database>(DATABASE)
+      .insert(syncRuns)
+      .values({
+        provider: 'test',
+        trigger: 'SCHEDULED',
+        status: 'RUNNING',
+        startedAt: new Date(Date.now() - 60 * 60 * 1000),
+      })
+      .returning();
+
+    const run = await sync.run('MANUAL');
+
+    expect(run.status).toBe('SUCCEEDED');
+    const runs = await http().get('/api/sync/runs').expect(200);
+    expect(runs.body).toEqual([
+      expect.objectContaining({ id: run.id, status: 'SUCCEEDED' }),
+      expect.objectContaining({
+        id: stale!.id,
+        status: 'FAILED',
+        finishedAt: expect.any(String),
+        errors: [INTERRUPTED_RUN_ERROR],
+      }),
+    ]);
+    expect(INTERRUPTED_RUN_ERROR).toBe('Interrompida: a sincronização anterior não terminou');
+  });
+
+  it('não mexe na execução em andamento quando a segunda é recusada', async () => {
+    let resume!: () => void;
+    provider.pause = new Promise((resolve) => (resume = resolve));
+
+    const started = await http().post('/api/sync').expect(202);
+    await http().post('/api/sync').expect(409);
+    const during = await http().get('/api/sync/runs').expect(200);
+    expect(during.body).toEqual([
+      expect.objectContaining({ id: started.body.id, status: 'RUNNING' }),
+    ]);
+
+    resume();
+    await sync.waitForIdle();
   });
 
   it('escapa curingas na busca', async () => {

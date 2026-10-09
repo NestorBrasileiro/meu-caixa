@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest"
 import type { SyncRun } from "@/lib/api/types"
-import { pollStep, runNotice, syncRequestErrorMessage, trackNotice } from "./sync-run"
+import { abandonsRun, pollStep, runNotice, syncRequestErrorMessage, trackNotice } from "./sync-run"
 
 const run = (id: string, status: SyncRun["status"], patch: Partial<SyncRun> = {}): SyncRun => ({
   id,
@@ -37,6 +37,21 @@ describe("shell/sync-run", () => {
       const latest = run("b", "PARTIAL")
       expect(pollStep([latest, run("a", "SUCCEEDED")], null)).toEqual({ done: true, run: latest })
       expect(pollStep([], null)).toEqual({ done: false, runId: null })
+    })
+
+    it("depois de um 409, só a mais recente conta: uma em andamento mais antiga ficou para trás", () => {
+      // A API caiu no meio de "old"; "new" já terminou depois dela. Não há nada rodando.
+      const latest = run("new", "SUCCEEDED")
+      expect(pollStep([latest, run("old", "RUNNING")], null)).toEqual({ done: true, run: latest })
+    })
+  })
+
+  describe("abandonsRun", () => {
+    it("qualquer fim sem ver a execução terminar abandona a execução", () => {
+      expect(abandonsRun({ kind: "timeout" })).toBe(true)
+      expect(abandonsRun({ kind: "error", message: "Sem conexão" })).toBe(true)
+      expect(abandonsRun({ kind: "unauthorized" })).toBe(true)
+      expect(abandonsRun({ kind: "finished", run: run("a", "SUCCEEDED") })).toBe(false)
     })
   })
 

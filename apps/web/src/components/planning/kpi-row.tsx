@@ -8,8 +8,10 @@ import { plural } from "./model"
 import { TIGHT_MARGIN } from "./styles"
 
 export interface PlanningKpis {
-  commitments: { total: Cents; count: number; incomeShare: number | null }
-  goals: { total: Cents; count: number }
+  /** Só os compromissos ativos no mês; `registered` conta todos os cadastrados. */
+  commitments: { total: Cents; count: number; registered: number; incomeShare: number | null }
+  /** Só as metas em andamento; `registered` conta todas, inclusive as já alcançadas. */
+  goals: { total: Cents; count: number; registered: number }
   variableSpending: Cents | null
   nextMonth: { label: string; balance: Cents; income: Cents } | null
   /**
@@ -84,7 +86,9 @@ export function KpiRow({ data }: { data: PlanningKpis }) {
         }
         hint={
           commitments.count === 0
-            ? "Nenhum compromisso cadastrado"
+            ? commitments.registered > 0
+              ? "Nenhum compromisso ativo neste mês"
+              : "Nenhum compromisso cadastrado"
             : commitments.incomeShare !== null
               ? `Por mês · ${formatPercent(commitments.incomeShare)} da renda prevista`
               : `Por mês · ${plural(commitments.count, "compromisso", "compromissos")}`
@@ -99,7 +103,13 @@ export function KpiRow({ data }: { data: PlanningKpis }) {
             <Money cents={goals.total} />
           </TileValue>
         }
-        hint={goals.count > 0 ? `Por mês · ${plural(goals.count, "meta", "metas")}` : "Nenhuma meta cadastrada"}
+        hint={
+          goals.count > 0
+            ? `Por mês · ${plural(goals.count, "meta", "metas")}`
+            : goals.registered > 0
+              ? "Nenhuma meta em andamento"
+              : "Nenhuma meta cadastrada"
+        }
       />
       <StatTile
         className={tileClass}

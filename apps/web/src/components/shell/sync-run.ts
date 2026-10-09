@@ -18,14 +18,16 @@ export type PollStep = { done: false; runId: string | null } | { done: true; run
 
 /**
  * Um passo do acompanhamento. Com `runId`, espera essa execução terminar. Sem ele (a API respondeu
- * 409: já havia uma rodando), adota a mais recente em andamento; se nenhuma está mais rodando, a que
- * estava terminou entre o clique e a consulta e o resultado é o da mais recente.
+ * 409: já havia uma rodando), adota a mais recente se ela está em andamento; se não está, a que
+ * estava rodando terminou entre o clique e a consulta e o resultado é o dela. Só a mais recente
+ * conta: uma em andamento mais antiga, com outra mais nova depois dela, ficou para trás (a API caiu
+ * no meio) e esperar por ela seria esperar para sempre.
  */
 export function pollStep(runs: SyncRun[], runId: string | null): PollStep {
   if (runId === null) {
-    const running = runs.find((run) => run.status === "RUNNING")
-    if (running) return { done: false, runId: running.id }
-    return runs[0] ? { done: true, run: runs[0] } : { done: false, runId: null }
+    const [latest] = runs
+    if (!latest) return { done: false, runId: null }
+    return latest.status === "RUNNING" ? { done: false, runId: latest.id } : { done: true, run: latest }
   }
   const run = runs.find((candidate) => candidate.id === runId)
   // Fora da lista (muitas execuções novas de uma vez) ou ainda rodando: continua esperando.
@@ -40,6 +42,15 @@ export type TrackResult =
   | { kind: "error"; message: string }
   /** Sessão expirou: o browser já está indo para o login, não há o que avisar. */
   | { kind: "unauthorized" }
+
+/**
+ * O acompanhamento terminou sem ver a execução acabar (tempo esgotado, API fora do ar, sessão
+ * expirada): a tela deixa essa execução de lado e não volta a esperar por ela, senão o botão e o
+ * cabeçalho ficariam em "Sincronizando…" até recarregar a página.
+ */
+export function abandonsRun(result: TrackResult): boolean {
+  return result.kind !== "finished"
+}
 
 export interface SyncNotice {
   tone: "success" | "info" | "warning" | "error"

@@ -14,13 +14,8 @@ import {
 } from '../database/schema.js';
 import { isIncome, isSpending } from '../domain/classify.js';
 import { today } from '../domain/dates.js';
-import {
-  monthOf,
-  monthRange,
-  occurrencesUntil,
-  shiftMonth,
-  type IsoMonth,
-} from '../domain/months.js';
+import { monthOf, monthRange, shiftMonth, type IsoMonth } from '../domain/months.js';
+import { contributionIn, isActiveIn, paidInstallments, scheduleEnd } from '../domain/planning.js';
 import type {
   CreateBudgetCategoryDto,
   CreateCommitmentDto,
@@ -263,10 +258,7 @@ export class PlanningService {
     return Array.from({ length: PROJECTION_MONTHS }, (_, i) => {
       const month = shiftMonth(currentMonth, i + 1);
       const committed = committedIn(commitmentRows, month);
-      const contributions = goalRows.reduce(
-        (sum, goal) => sum + (contributesIn(goal, i + 1) ? goal.monthlyContribution : 0),
-        0,
-      );
+      const contributions = goalRows.reduce((sum, goal) => sum + contributionIn(goal, i + 1), 0);
       return {
         month,
         expectedIncome: averageIncome,
@@ -328,14 +320,11 @@ function toCommitment(row: CommitmentRow, todayDate: string) {
     paymentMethod: row.paymentMethod,
     categoryId: row.categoryId,
     startsOn: row.startsOn,
-    endsOn: row.endsOn ?? lastInstallmentDate(row),
+    endsOn: scheduleEnd(row),
     installments:
       row.installmentsTotal === null
         ? null
-        : {
-            paid: Math.min(row.installmentsTotal, occurrencesUntil(row.startsOn, todayDate)),
-            total: row.installmentsTotal,
-          },
+        : { paid: paidInstallments(row, todayDate)!, total: row.installmentsTotal },
     notes: row.notes,
   };
 }
@@ -352,27 +341,9 @@ function toGoal(row: GoalRow) {
   };
 }
 
-/** Data da última parcela quando só o total de parcelas foi informado. */
-function lastInstallmentDate(row: CommitmentRow): string | null {
-  if (row.installmentsTotal === null) return null;
-  return `${shiftMonth(monthOf(row.startsOn), row.installmentsTotal - 1)}${row.startsOn.slice(7)}`;
-}
-
 /** Soma dos compromissos que têm vencimento no mês. */
 function committedIn(rows: CommitmentRow[], month: IsoMonth): number {
-  const { from, to } = monthRange(month);
-  return rows.reduce((sum, row) => {
-    const endsOn = row.endsOn ?? lastInstallmentDate(row);
-    const active = row.startsOn <= to && (endsOn === null || endsOn >= from);
-    return active ? sum + row.amount : sum;
-  }, 0);
-}
-
-/** A meta ainda recebe aporte daqui a `monthsAhead` meses? (para quando atinge o alvo) */
-function contributesIn(goal: GoalRow, monthsAhead: number): boolean {
-  if (goal.monthlyContribution <= 0) return false;
-  const remaining = goal.target - goal.saved;
-  return remaining > 0 && Math.ceil(remaining / goal.monthlyContribution) >= monthsAhead;
+  return rows.reduce((sum, row) => (isActiveIn(row, month) ? sum + row.amount : sum), 0);
 }
 
 function assertDateOrder(startsOn: string, endsOn: string | null | undefined): void {

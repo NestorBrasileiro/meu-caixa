@@ -9,9 +9,11 @@ import { GoalCard } from "@/components/planning/goal-card"
 import { PlanningHeaderActions } from "@/components/planning/header-actions"
 import { KpiRow } from "@/components/planning/kpi-row"
 import {
+  activeCommitments,
   budgetRows,
   budgetScaleMax,
   commitmentsTotal,
+  goalContributions,
   goalProgress,
   groupBudget,
   headerSummary,
@@ -53,18 +55,20 @@ export default async function Page() {
     getAccounts(),
   ])
 
-  // Compromissos fixos, do maior para o menor.
+  // Compromissos fixos: ativos do maior para o menor, depois os que vão começar e os encerrados.
+  // Só os ativos no mês atual somam no total.
   const categoryName = new Map(planning.categories.map((category) => [category.id, category.name]))
-  const commitments = sortCommitments(planning.commitments).map((commitment) => ({
+  const commitments = sortCommitments(planning.commitments, today).map((commitment) => ({
     ...commitment,
     categoryName: (commitment.categoryId && categoryName.get(commitment.categoryId)) || null,
   }))
-  const committed = commitmentsTotal(planning.commitments)
+  const active = activeCommitments(planning.commitments, today)
+  const committed = commitmentsTotal(active)
 
-  // Metas.
+  // Metas: as já alcançadas não recebem mais aporte.
   const goals = planning.goals.map((goal) => goalProgress(goal, today, accounts))
-  const activeGoals = goals.filter((goal) => !goal.done).length
-  const contributions = planning.goals.reduce((sum, goal) => sum + goal.monthlyContribution, 0)
+  const contributions = goalContributions(goals)
+  const activeGoals = contributions.count
 
   // Orçamento do último mês fechado.
   const spending = spendingByCategory(transactions, closedRange)
@@ -97,7 +101,7 @@ export default async function Page() {
       <div className="space-y-6">
         <PageHeader
           title="Planejamento"
-          description={headerSummary(committed, planning.commitments.length, activeGoals, formatMoney)}
+          description={headerSummary(committed, active.length, activeGoals, formatMoney)}
           actions={<PlanningHeaderActions />}
         />
 
@@ -105,10 +109,11 @@ export default async function Page() {
           data={{
             commitments: {
               total: committed,
-              count: planning.commitments.length,
+              count: active.length,
+              registered: planning.commitments.length,
               incomeShare: next && next.expectedIncome > 0 ? committed / next.expectedIncome : null,
             },
-            goals: { total: contributions, count: planning.goals.length },
+            goals: { total: contributions.total, count: contributions.count, registered: planning.goals.length },
             variableSpending: next?.expectedVariableSpending ?? null,
             nextMonth: next
               ? { label: monthName(next.month), balance: next.projectedBalance, income: next.expectedIncome }

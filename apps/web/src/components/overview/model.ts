@@ -38,6 +38,27 @@ function dayIn(month: string, dayOfMonth: number): IsoDate {
   return `${month}-${String(Math.min(dayOfMonth, lastDay)).padStart(2, "0")}`
 }
 
+function monthIndex(month: string): number {
+  const [year, m] = month.split("-").map(Number)
+  return year * 12 + (m - 1)
+}
+
+/**
+ * Número da parcela que vence em `date`, pela mesma regra da API (e de `planning/schedule.ts`): a 1ª
+ * vence no mês do início se o vencimento cai em `startsOn` ou depois, senão no mês seguinte; a n-ésima,
+ * n − 1 meses depois. null quando `date` é antes da 1ª ou depois da última.
+ */
+export function installmentNumberOn(
+  commitment: Pick<Commitment, "startsOn" | "dayOfMonth">,
+  total: number,
+  date: IsoDate,
+): number | null {
+  const firstDue = nextOccurrence(commitment.dayOfMonth, commitment.startsOn)
+  if (date < firstDue) return null
+  const n = monthIndex(date.slice(0, 7)) - monthIndex(firstDue.slice(0, 7)) + 1
+  return n >= 1 && n <= total ? n : null
+}
+
 /** Próxima data (a partir de `from`, inclusive) em que cai o dia `dayOfMonth`. */
 export function nextOccurrence(dayOfMonth: number, from: IsoDate): IsoDate {
   const month = from.slice(0, 7)
@@ -163,9 +184,14 @@ export function upcomingDue({
     const date = nextOccurrence(commitment.dayOfMonth, today)
     if (date > until || date < commitment.startsOn) continue
     if (commitment.endsOn && date > commitment.endsOn) continue
-    const installment = commitment.installments
-      ? `Parcela ${commitment.installments.paid + 1} de ${commitment.installments.total}`
-      : null
+    // Parcelado: o número sai da própria data (nunca "Parcela 4 de 3"); antes da 1ª ou depois da última, fora.
+    let installment: string | null = null
+    if (commitment.installments) {
+      const { total } = commitment.installments
+      const n = installmentNumberOn(commitment, total, date)
+      if (n === null) continue
+      installment = `Parcela ${n} de ${total}`
+    }
     const invoice = isChargedToCard(commitment) ? invoiceForCharge(invoices, date, today) : null
     const card = isChargedToCard(commitment) ? { invoiceDue: invoice?.dueDate ?? null } : null
     const cardDetail = card

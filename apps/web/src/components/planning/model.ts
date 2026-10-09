@@ -47,11 +47,46 @@ export function monthsBetween(from: string, to: string): number {
 
 // ------------------------------------------------------------ compromissos
 
-export function sortCommitments(commitments: Commitment[]): Commitment[] {
-  return [...commitments].sort((a, b) => b.amount - a.amount || a.name.localeCompare(b.name, "pt-BR"))
+/**
+ * Situação do compromisso no mês de `today`: ativo se começa até o fim do mês e
+ * não acabou antes do início dele (o `endsOn` da API já inclui o fim das parcelas).
+ */
+export type CommitmentStatus = "active" | "upcoming" | "ended"
+
+export function commitmentStatus(
+  commitment: Pick<Commitment, "startsOn" | "endsOn">,
+  today: IsoDate,
+): CommitmentStatus {
+  const month = today.slice(0, 7)
+  if (commitment.endsOn !== null && commitment.endsOn.slice(0, 7) < month) return "ended"
+  if (commitment.startsOn.slice(0, 7) > month) return "upcoming"
+  return "active"
 }
 
-export function commitmentsTotal(commitments: Commitment[]): Cents {
+/** Compromissos que contam no mês de `today` (os que acabaram ou ainda não começaram ficam de fora). */
+export function activeCommitments<T extends Pick<Commitment, "startsOn" | "endsOn">>(
+  commitments: T[],
+  today: IsoDate,
+): T[] {
+  return commitments.filter((commitment) => commitmentStatus(commitment, today) === "active")
+}
+
+const STATUS_ORDER: Record<CommitmentStatus, number> = { active: 0, upcoming: 1, ended: 2 }
+
+/** Ativos primeiro, depois os que vão começar e por fim os encerrados; em cada grupo, do maior para o menor. */
+export function sortCommitments<T extends Commitment>(
+  commitments: T[],
+  today: IsoDate,
+): (T & { status: CommitmentStatus })[] {
+  return commitments
+    .map((commitment) => ({ ...commitment, status: commitmentStatus(commitment, today) }))
+    .sort(
+      (a, b) =>
+        STATUS_ORDER[a.status] - STATUS_ORDER[b.status] || b.amount - a.amount || a.name.localeCompare(b.name, "pt-BR"),
+    )
+}
+
+export function commitmentsTotal(commitments: Pick<Commitment, "amount">[]): Cents {
   return commitments.reduce((sum, c) => sum + c.amount, 0)
 }
 
@@ -111,6 +146,15 @@ export function goalProgress(goal: Goal, today: IsoDate, accounts: Account[]): G
     done,
     accountName: account ? account.name : null,
   }
+}
+
+/** Aporte mensal das metas em andamento (as já alcançadas não recebem mais aporte). */
+export function goalContributions(goals: Pick<GoalProgress, "done" | "monthlyContribution">[]): {
+  total: Cents
+  count: number
+} {
+  const active = goals.filter((goal) => !goal.done)
+  return { total: active.reduce((sum, goal) => sum + goal.monthlyContribution, 0), count: active.length }
 }
 
 // --------------------------------------------------------------- orçamento
@@ -180,25 +224,46 @@ export const KIND_LABEL: Record<CategoryKind, string> = {
   DISCRETIONARY: "Não essenciais",
 }
 
-export interface BudgetGroup {
+/**
+ * Totais de um conjunto de linhas do orçamento. "Gasto de orçamento" compara só
+ * as categorias com teto; o gasto das sem teto fica à parte.
+ */
+export interface BudgetSummary {
+  /** Gasto das categorias com teto. */
+  actual: Cents
+  /** Soma dos tetos. */
+  budget: Cents
+  /** Soma dos estouros de cada categoria (uma abaixo do teto não compensa outra acima). */
+  over: Cents
+  /** Gasto das categorias sem teto. */
+  unlimited: Cents
+  /** Categorias sem teto que tiveram gasto. */
+  unlimitedNames: string[]
+}
+
+export function budgetSummary(rows: BudgetRow[]): BudgetSummary {
+  const budgeted = rows.filter((row) => row.budget !== null)
+  const unlimited = rows.filter((row) => row.budget === null)
+  return {
+    actual: budgeted.reduce((sum, row) => sum + row.actual, 0),
+    budget: budgeted.reduce((sum, row) => sum + (row.budget ?? 0), 0),
+    over: budgeted.reduce((sum, row) => sum + row.over, 0),
+    unlimited: unlimited.reduce((sum, row) => sum + row.actual, 0),
+    unlimitedNames: unlimited.filter((row) => row.actual > 0).map((row) => row.name),
+  }
+}
+
+export interface BudgetGroup extends BudgetSummary {
   kind: CategoryKind
   label: string
   rows: BudgetRow[]
-  actual: Cents
-  budget: Cents
 }
 
 export function groupBudget(rows: BudgetRow[]): BudgetGroup[] {
   return (["ESSENTIAL", "DISCRETIONARY"] as const)
     .map((kind) => {
       const groupRows = rows.filter((row) => row.kind === kind)
-      return {
-        kind,
-        label: KIND_LABEL[kind],
-        rows: groupRows,
-        actual: groupRows.reduce((sum, row) => sum + row.actual, 0),
-        budget: groupRows.reduce((sum, row) => sum + (row.budget ?? 0), 0),
-      }
+      return { kind, label: KIND_LABEL[kind], rows: groupRows, ...budgetSummary(groupRows) }
     })
     .filter((group) => group.rows.length > 0)
 }
