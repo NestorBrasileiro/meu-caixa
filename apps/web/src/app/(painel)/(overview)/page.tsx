@@ -6,18 +6,17 @@ import { LeaksCard } from "@/components/overview/leaks-card"
 import {
   addDays,
   cashFlowWindow,
+  leaksCardState,
   monthNameOf,
-  monthSpanLabel,
   nextOpenInvoice,
   overviewDescription,
   topCategories,
-  topLeaks,
   upcomingDue,
 } from "@/components/overview/model"
 import { SpendingCard } from "@/components/overview/spending-card"
 import { UpcomingCard } from "@/components/overview/upcoming-card"
+import { loadOrNull } from "@/components/shell/fail-soft"
 import {
-  ANALYSIS_IS_SAMPLE,
   getAccounts,
   getAllTransactions,
   getAnalysis,
@@ -56,7 +55,8 @@ export default async function Page() {
     getAllTransactions({ from: monthRange(months[0]).from, to: today }),
     getInvoices(),
     getPlanning(),
-    getAnalysis(),
+    // A análise é um cartão entre vários: se a API falhar nela, o cartão avisa e o resto da tela fica.
+    loadOrNull("a última análise", async () => ({ report: await getAnalysis() })),
   ])
 
   // KPIs
@@ -141,9 +141,7 @@ export default async function Page() {
           className="lg:col-span-2 lg:row-start-3 xl:col-span-1 xl:col-start-1 xl:row-start-2"
         />
         <LeaksCard
-          items={topLeaks(analysis.insights, TOP_LEAKS)}
-          periodLabel={monthSpanLabel(analysis.period.from, analysis.period.to)}
-          sample={ANALYSIS_IS_SAMPLE}
+          state={leaksCardState(analysis, TOP_LEAKS)}
           className="lg:col-start-2 lg:row-start-2"
         />
       </div>

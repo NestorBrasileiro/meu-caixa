@@ -2,6 +2,7 @@ import { Module, ValidationPipe } from '@nestjs/common';
 import { APP_PIPE } from '@nestjs/core';
 import { AccountsModule } from './accounts/accounts.module.js';
 import { AuthModule } from './auth/auth.module.js';
+import { ClaudeModule } from './claude/claude.module.js';
 import { ConfigModule } from './config/config.module.js';
 import { DatabaseModule } from './database/database.module.js';
 import { HealthController } from './health/health.controller.js';
@@ -24,6 +25,7 @@ import { TransactionsModule } from './transactions/transactions.module.js';
     SyncModule,
     InsightsModule,
     McpModule,
+    ClaudeModule,
   ],
   controllers: [HealthController],
   providers: [

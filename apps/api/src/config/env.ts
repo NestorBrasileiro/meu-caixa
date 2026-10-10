@@ -52,6 +52,16 @@ export const envSchema = z
      */
     MCP_ALLOWED_CLIENTS: commaSeparatedList.default([]),
 
+    /**
+     * Análise pela interface ("Gerar análise" e "Pergunte ao Claude"), paga
+     * por uso na API da Anthropic. Sem a chave, o app sobe normalmente e só
+     * esses recursos ficam desligados (503).
+     */
+    ANTHROPIC_API_KEY: z.string().min(1).optional(),
+    ANTHROPIC_MODEL: z.string().min(1).default('claude-opus-5-5'),
+    /** Opcional: outro endpoint da API (ex.: um mock local). O SDK também lê do ambiente. */
+    ANTHROPIC_BASE_URL: z.url().optional(),
+
     TIMEZONE: z.string().default('America/Sao_Paulo'),
 
     FINANCE_PROVIDER: z.enum(['pluggy', 'fake']).default('pluggy'),

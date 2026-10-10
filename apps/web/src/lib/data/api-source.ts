@@ -1,7 +1,7 @@
 import { cookies } from "next/headers"
 import { redirect } from "next/navigation"
 import { connection } from "next/server"
-import type { AnalysisReport } from "@/lib/api/analysis"
+import type { AnalysisStatus, ShownAnalysis, StoredAnalysis } from "@/lib/api/analysis"
 import type { PlanningOverview } from "@/lib/api/planning"
 import type {
   Account,
@@ -15,8 +15,6 @@ import type {
   Transaction,
   TransactionQuery,
 } from "@/lib/api/types"
-import { buildAnalysis } from "@/lib/mock/analysis"
-import { mockDataset } from "@/lib/mock/generator"
 
 /**
  * Fonte real: chama a API (servidor → servidor) repassando o cookie de sessão
@@ -39,13 +37,26 @@ export class ApiError extends Error {
   }
 }
 
-async function api<T>(path: string): Promise<T> {
+async function request(path: string): Promise<Response> {
   const cookieHeader = (await cookies()).toString()
   const response = await fetch(`${API_URL}${path}`, {
     headers: { accept: "application/json", ...(cookieHeader ? { cookie: cookieHeader } : {}) },
   })
   if (response.status === 401) redirect("/auth/login")
   if (response.status === 403) redirect("/sem-acesso")
+  return response
+}
+
+async function api<T>(path: string): Promise<T> {
+  const response = await request(path)
+  if (!response.ok) throw new ApiError(response.status, path)
+  return (await response.json()) as T
+}
+
+/** Como `api`, mas um 404 ("ainda não existe") vira `null` em vez de erro. */
+async function apiOrNull<T>(path: string): Promise<T | null> {
+  const response = await request(path)
+  if (response.status === 404) return null
   if (!response.ok) throw new ApiError(response.status, path)
   return (await response.json()) as T
 }
@@ -125,10 +136,13 @@ export function getPlanning(): Promise<PlanningOverview> {
   return api<PlanningOverview>("/api/planning")
 }
 
-/**
- * A análise do Claude chega com o MCP (marco de 100%). Até lá é um relatório
- * de exemplo — as telas o identificam como tal.
- */
-export async function getAnalysis(): Promise<AnalysisReport> {
-  return buildAnalysis(mockDataset())
+/** Última análise do Claude (via MCP ou gerada pelo app); null enquanto não houver nenhuma. */
+export async function getAnalysis(): Promise<ShownAnalysis | null> {
+  const report = await apiOrNull<StoredAnalysis>("/api/analysis/latest")
+  return report && { ...report, sample: false }
+}
+
+/** Se o app pode gerar análises e responder perguntas (ANTHROPIC_API_KEY) e a última geração. */
+export function getAnalysisStatus(): Promise<AnalysisStatus> {
+  return api<AnalysisStatus>("/api/analysis/status")
 }
