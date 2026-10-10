@@ -1,0 +1,7 @@
+# Produção: HTTPS automático (Let's Encrypt) para DOMAIN e AUTH_DOMAIN.
+# As variáveis {$...} vêm do deploy/.env (repassadas pelo docker-compose.yml).
+{
+	email {$ACME_EMAIL}
+}
+
+import sites.caddy

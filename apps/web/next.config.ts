@@ -4,6 +4,8 @@ import type { NextConfig } from "next"
 const API_URL = process.env.API_URL ?? "http://localhost:3000"
 
 const nextConfig: NextConfig = {
+  /** Servidor mínimo em `.next/standalone` para a imagem Docker (apps/web/Dockerfile). */
+  output: "standalone",
   cacheComponents: true,
   partialPrefetching: true,
   turbopack: {

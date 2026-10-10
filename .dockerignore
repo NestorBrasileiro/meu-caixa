@@ -1,0 +1,26 @@
+# Contexto de build das imagens (apps/api/Dockerfile e apps/web/Dockerfile).
+# As dependências são instaladas dentro da imagem a partir do pnpm-lock.yaml.
+**/node_modules
+**/dist
+**/.next
+**/coverage
+**/*.tsbuildinfo
+**/.turbo
+
+# Segredos e configuração local nunca entram na imagem.
+**/.env
+**/.env.*
+!**/.env.example
+
+# Nada disso é necessário para construir as imagens.
+.git
+.github
+**/.DS_Store
+deploy
+docker
+docs
+*.md
+apps/*/test
+apps/*/**/*.spec.ts
+apps/*/**/*.test.ts
+apps/*/**/*.test.tsx
