@@ -78,6 +78,6 @@ export async function createTestApp(
 export async function resetDatabase(app: INestApplication): Promise<void> {
   const db = app.get<Database>(DATABASE);
   await db.execute(
-    sql`truncate table sync_runs, invoices, transactions, accounts, connections, sessions, commitments, goals, budget_categories cascade`,
+    sql`truncate table sync_runs, invoices, transactions, accounts, connections, sessions, commitments, goals, budget_categories, analysis_reports cascade`,
   );
 }

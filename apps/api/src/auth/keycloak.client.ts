@@ -12,6 +12,11 @@ const rolesSchema = z.object({ roles: z.array(z.string()).optional() }).optional
 /** Claims que usamos da introspecção do Keycloak. */
 const introspectionSchema = z.object({
   sub: z.string(),
+  aud: z.union([z.string(), z.array(z.string())]).optional(),
+  azp: z.string().optional(),
+  client_id: z.string().optional(),
+  scope: z.string().optional(),
+  exp: z.number().optional(),
   preferred_username: z.string().optional(),
   name: z.string().optional(),
   email: z.string().optional(),
@@ -72,6 +77,14 @@ export class KeycloakClient {
 
   /** `null` quando o token não está mais ativo (expirado, revogado, logout). */
   async introspect(accessToken: string): Promise<AuthUser | null> {
+    return (await this.introspectToken(accessToken))?.user ?? null;
+  }
+
+  /**
+   * Introspecção com os dados do token além do usuário: audiência, client
+   * que o pediu, escopos e validade (usados para validar tokens do /mcp).
+   */
+  async introspectToken(accessToken: string): Promise<IntrospectedToken | null> {
     const config = await this.getConfiguration();
     const response = await oidc.tokenIntrospection(config, accessToken);
     if (!response.active) return null;
@@ -79,12 +92,23 @@ export class KeycloakClient {
     const claims = introspectionSchema.parse(response);
     const clientRoles = claims.resource_access?.[this.env.KEYCLOAK_CLIENT_ID]?.roles ?? [];
     return {
-      id: claims.sub,
-      username: claims.preferred_username ?? null,
-      name: claims.name ?? null,
-      email: claims.email ?? null,
-      roles: [...new Set([...(claims.realm_access?.roles ?? []), ...clientRoles])],
+      user: {
+        id: claims.sub,
+        username: claims.preferred_username ?? null,
+        name: claims.name ?? null,
+        email: claims.email ?? null,
+        roles: [...new Set([...(claims.realm_access?.roles ?? []), ...clientRoles])],
+      },
+      audience: claims.aud === undefined ? [] : ([] as string[]).concat(claims.aud),
+      clientId: claims.azp ?? claims.client_id ?? null,
+      scopes: claims.scope?.split(' ').filter(Boolean) ?? [],
+      expiresAt: claims.exp ?? null,
     };
+  }
+
+  /** Issuer do realm (vai nos metadados do recurso protegido do /mcp). */
+  async issuer(): Promise<string> {
+    return (await this.getConfiguration()).serverMetadata().issuer;
   }
 
   /** URL de logout no Keycloak (encerra também a sessão SSO). */
@@ -114,6 +138,17 @@ export class KeycloakClient {
       });
     return this.configuration;
   }
+}
+
+export interface IntrospectedToken {
+  user: AuthUser;
+  /** Claim `aud`, sempre como lista. */
+  audience: string[];
+  /** Client que pediu o token (`azp`). */
+  clientId: string | null;
+  scopes: string[];
+  /** Epoch em segundos. */
+  expiresAt: number | null;
 }
 
 function toSessionTokens(
