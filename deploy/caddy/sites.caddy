@@ -1,0 +1,61 @@
+# Sites atendidos pelo Caddy (importado por Caddyfile e Caddyfile.local).
+
+# Interface: tudo vai para o Next, que faz proxy de /api e /auth para a API.
+# MCP, metadados OAuth do recurso protegido e /health vão direto para a API,
+# sem passar pelo Next (respostas em streaming, sem compressão).
+{$DOMAIN} {
+	@api path /mcp /mcp/* /.well-known/oauth-protected-resource /.well-known/oauth-protected-resource/* /health
+	handle @api {
+		reverse_proxy api:3000 {
+			# Repassa cada pedaço da resposta na hora (streaming do MCP).
+			flush_interval -1
+		}
+	}
+
+	handle {
+		encode zstd gzip
+		reverse_proxy web:3000
+	}
+
+	header {
+		Strict-Transport-Security "max-age=31536000"
+		X-Content-Type-Options "nosniff"
+		X-Frame-Options "DENY"
+		Referrer-Policy "strict-origin-when-cross-origin"
+		-Server
+	}
+
+	log {
+		output stdout
+		format console
+	}
+}
+
+# Keycloak (login). O console de administração (/admin) fica bloqueado na
+# internet, a menos que KEYCLOAK_ADMIN_PUBLIC=true; o caminho recomendado é o
+# túnel SSH descrito em docs/deploy.md.
+{$AUTH_DOMAIN} {
+	@adminBlocked {
+		path /admin /admin/*
+		expression `"{$KEYCLOAK_ADMIN_PUBLIC:false}" != "true"`
+	}
+	respond @adminBlocked "Console de administração indisponível por este endereço." 404
+
+	# Descoberta OAuth/OIDC com o caminho do issuer inserido depois de
+	# /.well-known (RFC 8414), como clientes MCP procuram primeiro. O Keycloak só
+	# atende no formato /realms/<realm>/.well-known/..., então reescrevemos.
+	@wellKnownInserted path_regexp wk ^/\.well-known/(oauth-authorization-server|openid-configuration)/realms/([^/]+)$
+	rewrite @wellKnownInserted /realms/{re.wk.2}/.well-known/{re.wk.1}
+
+	reverse_proxy keycloak:8080
+
+	header {
+		Strict-Transport-Security "max-age=31536000"
+		-Server
+	}
+
+	log {
+		output stdout
+		format console
+	}
+}

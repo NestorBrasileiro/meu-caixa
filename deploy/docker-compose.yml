@@ -1,0 +1,217 @@
+# Produção num único Droplet da DigitalOcean (passo a passo em docs/deploy.md).
+#
+#   cd deploy
+#   cp .env.example .env   # e preencha
+#   docker compose up -d --build
+#
+# Só o Caddy publica portas na internet (80/443). Postgres, API, interface e
+# Keycloak ficam nas redes internas do Docker. O console do Keycloak escuta só
+# em 127.0.0.1:8180 do Droplet (acesso por túnel SSH).
+name: meu-caixa
+
+x-logging: &logging
+  driver: json-file
+  options:
+    max-size: 10m
+    max-file: '3'
+
+services:
+  postgres:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?defina POSTGRES_PASSWORD no deploy/.env}
+      # Usados só pelo postgres/init.sh, na primeira subida (volume vazio).
+      APP_DB_PASSWORD: ${APP_DB_PASSWORD:?defina APP_DB_PASSWORD no deploy/.env}
+      KEYCLOAK_DB_PASSWORD: ${KEYCLOAK_DB_PASSWORD:?defina KEYCLOAK_DB_PASSWORD no deploy/.env}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./postgres/init.sh:/docker-entrypoint-initdb.d/10-init.sh:ro
+    networks: [backend]
+    healthcheck:
+      # Por TCP: durante a inicialização o Postgres só escuta no socket local.
+      test: ['CMD-SHELL', 'pg_isready -h 127.0.0.1 -U postgres -d meu_caixa']
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+    deploy:
+      resources:
+        limits:
+          memory: 384M
+    logging: *logging
+
+  keycloak:
+    build:
+      context: ./keycloak
+      args:
+        KEYCLOAK_IMAGE: ${KEYCLOAK_IMAGE:-quay.io/keycloak/keycloak:26.3.4}
+    image: meu-caixa-keycloak:26.3.4
+    restart: unless-stopped
+    environment:
+      KC_DB: postgres
+      KC_DB_URL: jdbc:postgresql://postgres:5432/keycloak
+      KC_DB_USERNAME: keycloak
+      KC_DB_PASSWORD: ${KEYCLOAK_DB_PASSWORD}
+      # URL pública: é o "issuer" dos tokens e o endereço que o browser vê.
+      KC_HOSTNAME: https://${AUTH_DOMAIN:?defina AUTH_DOMAIN no deploy/.env}
+      # Console de administração: pelo túnel SSH (padrão) ou pelo AUTH_DOMAIN.
+      KC_HOSTNAME_ADMIN: ${KEYCLOAK_ADMIN_URL:-http://localhost:8180}
+      # TLS termina no Caddy; o Keycloak confia nos cabeçalhos X-Forwarded-*.
+      KC_HTTP_ENABLED: 'true'
+      KC_PROXY_HEADERS: xforwarded
+      KC_HEALTH_ENABLED: 'true'
+      # Admin temporário criado na primeira subida (veja docs/deploy.md).
+      KC_BOOTSTRAP_ADMIN_USERNAME: ${KEYCLOAK_ADMIN:-admin}
+      KC_BOOTSTRAP_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD:?defina KEYCLOAK_ADMIN_PASSWORD no deploy/.env}
+      # Limita o heap a metade do limite de memória do container.
+      JAVA_OPTS_KC_HEAP: -XX:MaxRAMPercentage=50 -XX:InitialRAMPercentage=25
+      # Lidos pelos placeholders do keycloak/realm.json na importação do realm.
+      DOMAIN: ${DOMAIN:?defina DOMAIN no deploy/.env}
+      KEYCLOAK_CLIENT_SECRET: ${KEYCLOAK_CLIENT_SECRET:?defina KEYCLOAK_CLIENT_SECRET no deploy/.env}
+    ports:
+      # Só na interface local do Droplet: ssh -L 8180:127.0.0.1:8180 ...
+      - '127.0.0.1:8180:8080'
+    networks: [backend, edge]
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      # A imagem do Keycloak não tem curl/wget: HTTP "na mão" pela porta de gerenciamento.
+      test:
+        - CMD
+        - bash
+        - -c
+        - "exec 3<>/dev/tcp/127.0.0.1/9000 && printf 'GET /health/ready HTTP/1.1\\r\\nHost: localhost\\r\\nConnection: close\\r\\n\\r\\n' >&3 && grep -q UP <&3"
+      interval: 15s
+      timeout: 5s
+      retries: 10
+      start_period: 120s
+    deploy:
+      resources:
+        limits:
+          memory: 1G
+    logging: *logging
+
+  api:
+    build:
+      context: ..
+      dockerfile: apps/api/Dockerfile
+      args:
+        NODE_IMAGE: ${NODE_IMAGE:-node:24-alpine}
+    image: meu-caixa-api
+    restart: unless-stopped
+    environment:
+      NODE_ENV: production
+      PORT: '3000'
+      DATABASE_URL: postgres://meu_caixa:${APP_DB_PASSWORD}@postgres:5432/meu_caixa
+      DATABASE_MIGRATE_ON_START: 'true'
+      # O browser chega na API pela interface (proxy de /api e /auth do Next).
+      APP_URL: https://${DOMAIN}
+      FRONTEND_URL: https://${DOMAIN}
+      SESSION_SECRET: ${SESSION_SECRET:?defina SESSION_SECRET no deploy/.env}
+      # Mesmo endereço que o browser vê, para o issuer dos tokens bater. Dentro
+      # do Docker, AUTH_DOMAIN resolve para o Caddy (alias de rede abaixo), então
+      # a API não depende de sair para a internet para falar com o Keycloak.
+      KEYCLOAK_URL: https://${AUTH_DOMAIN}
+      KEYCLOAK_REALM: meu-caixa
+      KEYCLOAK_CLIENT_ID: web
+      KEYCLOAK_CLIENT_SECRET: ${KEYCLOAK_CLIENT_SECRET}
+      KEYCLOAK_REQUIRED_ROLE: owner
+      TIMEZONE: ${TIMEZONE:-America/Sao_Paulo}
+      FINANCE_PROVIDER: ${FINANCE_PROVIDER:-pluggy}
+      PLUGGY_CLIENT_ID: ${PLUGGY_CLIENT_ID:-}
+      PLUGGY_CLIENT_SECRET: ${PLUGGY_CLIENT_SECRET:-}
+      PLUGGY_ITEM_IDS: ${PLUGGY_ITEM_IDS:-}
+      SYNC_ENABLED: ${SYNC_ENABLED:-true}
+      SYNC_INTERVAL_HOURS: ${SYNC_INTERVAL_HOURS:-6}
+      # Análise com o Claude e MCP (opcionais; vazias = recurso desligado).
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      ANTHROPIC_MODEL: ${ANTHROPIC_MODEL:-}
+      MCP_ACCESS_TOKEN: ${MCP_ACCESS_TOKEN:-}
+      MCP_ALLOWED_CLIENTS: ${MCP_ALLOWED_CLIENTS:-}
+    networks: [backend, edge]
+    depends_on:
+      postgres:
+        condition: service_healthy
+    deploy:
+      resources:
+        limits:
+          memory: 384M
+    logging: *logging
+
+  web:
+    build:
+      context: ..
+      dockerfile: apps/web/Dockerfile
+      args:
+        NODE_IMAGE: ${NODE_IMAGE:-node:24-alpine}
+        # Gravado no build: destino do proxy de /api e /auth (rewrites do Next).
+        API_URL: http://api:3000
+    image: meu-caixa-web
+    restart: unless-stopped
+    environment:
+      DATA_SOURCE: api
+      API_URL: http://api:3000
+      TIMEZONE: ${TIMEZONE:-America/Sao_Paulo}
+    networks: [edge]
+    depends_on:
+      api:
+        condition: service_healthy
+    deploy:
+      resources:
+        limits:
+          memory: 384M
+    logging: *logging
+
+  caddy:
+    image: caddy:2.10-alpine
+    restart: unless-stopped
+    environment:
+      DOMAIN: ${DOMAIN}
+      AUTH_DOMAIN: ${AUTH_DOMAIN}
+      ACME_EMAIL: ${ACME_EMAIL:?defina ACME_EMAIL no deploy/.env}
+      KEYCLOAK_ADMIN_PUBLIC: ${KEYCLOAK_ADMIN_PUBLIC:-false}
+    ports:
+      - '80:80'
+      - '443:443'
+      - '443:443/udp'
+    volumes:
+      - ./caddy:/etc/caddy:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    networks:
+      edge:
+        # A API fala com o Keycloak pela URL pública, resolvida aqui dentro.
+        aliases:
+          - ${AUTH_DOMAIN}
+    depends_on:
+      web:
+        condition: service_healthy
+      api:
+        condition: service_healthy
+      keycloak:
+        condition: service_started
+    healthcheck:
+      test: ['CMD', 'wget', '-q', '--spider', 'http://127.0.0.1:2019/config/']
+      interval: 30s
+      timeout: 5s
+      retries: 3
+    deploy:
+      resources:
+        limits:
+          memory: 128M
+    logging: *logging
+
+networks:
+  # Caddy, interface, API e Keycloak.
+  edge:
+  # Postgres e quem fala com ele (API e Keycloak). Interna: o Postgres não
+  # tem rota para a internet; API e Keycloak saem pela rede edge.
+  backend:
+    internal: true
+
+volumes:
+  pgdata:
+  caddy_data:
+  caddy_config:
