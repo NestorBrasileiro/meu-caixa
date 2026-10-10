@@ -1,4 +1,4 @@
-import type { Insight } from "@/lib/api/analysis"
+import type { Insight, ShownAnalysis } from "@/lib/api/analysis"
 import type { Commitment } from "@/lib/api/planning"
 import type { Account, Cents, Invoice, IsoDate } from "@/lib/api/types"
 import type { CategoryTotal } from "@/lib/finance/aggregate"
@@ -339,4 +339,32 @@ export function topLeaks(insights: Insight[], count: number): LeakItem[] {
       reason: firstSentence(insight.explanation),
       monthlySavings: insight.monthlySavings,
     }))
+}
+
+/** O que o cartão "Onde dá para economizar" mostra. */
+export type LeaksCardState =
+  /** `sample`: relatório de exemplo do modo mock (leva o selo "Exemplo"). */
+  | { kind: "report"; items: LeakItem[]; periodLabel: string; sample: boolean }
+  /** Ainda não há análise: o cartão convida a pedir a primeira. */
+  | { kind: "none" }
+  /** A API não respondeu: o resto da visão geral continua de pé. */
+  | { kind: "unavailable" }
+
+/**
+ * Estado do cartão a partir da última análise. `loaded` é null quando a consulta falhou; `report`
+ * null quando ela respondeu que ainda não há análise.
+ */
+export function leaksCardState(
+  loaded: { report: Pick<ShownAnalysis, "insights" | "period" | "sample"> | null } | null,
+  count: number,
+): LeaksCardState {
+  if (!loaded) return { kind: "unavailable" }
+  const { report } = loaded
+  if (!report) return { kind: "none" }
+  return {
+    kind: "report",
+    items: topLeaks(report.insights, count),
+    periodLabel: monthSpanLabel(report.period.from, report.period.to),
+    sample: report.sample,
+  }
 }

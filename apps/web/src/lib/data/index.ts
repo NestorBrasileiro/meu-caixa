@@ -29,7 +29,6 @@ export const getAllTransactions = source.getAllTransactions
 export const getInvoices = source.getInvoices
 export const getSyncRuns = source.getSyncRuns
 export const getPlanning = source.getPlanning
+/** Última análise; no modo mock, o relatório de exemplo (`sample: true`). */
 export const getAnalysis = source.getAnalysis
-
-/** O relatório da análise ainda é de exemplo (até o MCP, marco de 100%). */
-export const ANALYSIS_IS_SAMPLE = true
+export const getAnalysisStatus = source.getAnalysisStatus

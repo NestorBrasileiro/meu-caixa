@@ -1,4 +1,4 @@
-import type { Insight, InsightKind } from "@/lib/api/analysis"
+import type { AnalysisSource, Insight, InsightKind } from "@/lib/api/analysis"
 import type { Cents, IsoDate } from "@/lib/api/types"
 import { formatDateShort, formatDateTime, formatMonth, formatMonthShort } from "@/lib/format/date"
 import { formatMoney } from "@/lib/format/money"
@@ -125,18 +125,41 @@ export function balanceColumns(groups: InsightGroup[]): [InsightGroup[], Insight
 }
 
 /**
- * Partes da descrição da página, exibidas separadas por " · ". O relatório de
- * exemplo não diz quando nem como foi "gerado": ele não veio das transações do usuário.
+ * Nome legível do modelo: "claude-sonnet-4-5-20250929" → "Claude Sonnet 4.5". Formatos que não
+ * reconhecemos saem como vieram (melhor o id exato que um nome inventado).
  */
-export function reportDescription(report: { generatedAt: string; period: Period }, sample: boolean): string[] {
+export function modelLabel(model: string): string {
+  const match = /^claude-(opus|sonnet|haiku)-(\d+)(?:-(\d{1,2}))?(?:-\d{8})?$/.exec(model.trim())
+  if (!match) return model.trim()
+  const [, family, major, minor] = match
+  return `Claude ${family.charAt(0).toUpperCase()}${family.slice(1)} ${minor ? `${major}.${minor}` : major}`
+}
+
+export interface ReportOrigin {
+  generatedAt: string
+  period: Period
+  source: AnalysisSource
+  model: string | null
+  /** Relatório ilustrativo do modo mock. */
+  sample: boolean
+}
+
+/**
+ * Partes da descrição da página, exibidas separadas por " · ": quando e por quem a análise foi
+ * gerada, e o período. O relatório de exemplo não diz quando nem como foi "gerado": ele não veio
+ * das transações do usuário.
+ */
+export function reportDescription(report: ReportOrigin): string[] {
   const period = `período ${formatDateShort(report.period.from)} a ${formatDateShort(report.period.to)}`
-  if (sample) return ["Exemplo do relatório do Claude", period]
-  return [`Gerada em ${formatDateTime(report.generatedAt)}`, period, "via MCP"]
+  if (report.sample) return ["Exemplo do relatório do Claude", period]
+  const generated = `Gerada em ${formatDateTime(report.generatedAt)}`
+  if (report.source === "MCP") return [generated, "pelo seu Claude (MCP)", period]
+  return [generated, "pelo app", ...(report.model ? [modelLabel(report.model)] : []), period]
 }
 
 /** Nota de rodapé: o relatório de exemplo não afirma ter lido as transações do usuário. */
 export function reportFootnote(sample: boolean): string {
   return sample
-    ? "Quando a integração chegar, a análise será feita a partir das suas transações. Revise antes de agir: o Claude pode errar."
-    : "Análise gerada automaticamente a partir das suas transações. Revise antes de agir: o Claude pode errar."
+    ? "Relatório ilustrativo: com a API, o Claude analisa as transações das suas contas. Revise antes de agir: o Claude pode errar."
+    : "Análise gerada pelo Claude a partir das suas transações. Revise antes de agir: o Claude pode errar."
 }

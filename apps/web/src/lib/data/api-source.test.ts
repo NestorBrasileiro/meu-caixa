@@ -1,11 +1,12 @@
-import { describe, expect, it, vi } from "vitest"
+import { afterEach, describe, expect, it, vi } from "vitest"
 import type { Page } from "@/lib/api/types"
 
 vi.mock("next/headers", () => ({ cookies: vi.fn() }))
 vi.mock("next/navigation", () => ({ redirect: vi.fn() }))
 vi.mock("next/server", () => ({ connection: vi.fn() }))
 
-const { collectPages } = await import("./api-source")
+const { ApiError, collectPages, getAnalysis, getAnalysisStatus } = await import("./api-source")
+const { cookies } = await import("next/headers")
 
 type Row = { id: string }
 
@@ -39,5 +40,45 @@ describe("lib/data/api-source — collectPages", () => {
     const fetchPage = vi.fn(pagedSource([[]], 2))
     expect(await collectPages(fetchPage, 2)).toEqual([])
     expect(fetchPage).toHaveBeenCalledTimes(1)
+  })
+})
+
+describe("lib/data/api-source — análise", () => {
+  vi.mocked(cookies).mockResolvedValue({ toString: () => "connect.sid=abc" } as never)
+
+  afterEach(() => {
+    vi.unstubAllGlobals()
+  })
+
+  function respond(status: number, body: unknown = null) {
+    const fetchMock = vi.fn(async () => new Response(body === null ? null : JSON.stringify(body), { status }))
+    vi.stubGlobal("fetch", fetchMock)
+    return fetchMock
+  }
+
+  it("404 em /api/analysis/latest: ainda não há análise (null, não erro)", async () => {
+    const fetchMock = respond(404, { message: "Nenhuma análise" })
+    expect(await getAnalysis()).toBeNull()
+    expect(fetchMock).toHaveBeenCalledWith(
+      expect.stringMatching(/\/api\/analysis\/latest$/),
+      expect.objectContaining({ headers: expect.objectContaining({ cookie: "connect.sid=abc" }) }),
+    )
+  })
+
+  it("relatório da API é real (sample: false), com origem e modelo", async () => {
+    respond(200, { id: "r1", source: "APP", model: "claude-sonnet-4-5", insights: [] })
+    expect(await getAnalysis()).toMatchObject({ id: "r1", source: "APP", model: "claude-sonnet-4-5", sample: false })
+  })
+
+  it("outros erros sobem (a página mostra o erro)", async () => {
+    respond(500)
+    await expect(getAnalysis()).rejects.toBeInstanceOf(ApiError)
+  })
+
+  it("status", async () => {
+    const status = { app: { enabled: true, model: "claude-sonnet-4-5" }, latestRun: null }
+    const fetchMock = respond(200, status)
+    expect(await getAnalysisStatus()).toEqual(status)
+    expect(fetchMock).toHaveBeenCalledWith(expect.stringMatching(/\/api\/analysis\/status$/), expect.anything())
   })
 })

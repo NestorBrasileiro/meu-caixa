@@ -22,6 +22,7 @@ const formatters = {
     minute: "2-digit",
     timeZone: TIME_ZONE,
   }),
+  time: new Intl.DateTimeFormat("pt-BR", { hour: "2-digit", minute: "2-digit", timeZone: TIME_ZONE }),
 }
 
 /** Remove o ponto de abreviação ("out.") e o "de" ("01 de out"). */
@@ -61,6 +62,11 @@ export function formatMonthShort(month: string, withYear = false): string {
 /** Instante → "07 out, 09:12" no fuso de São Paulo. */
 export function formatDateTime(instant: IsoDateTime): string {
   return clean(formatters.dateTime.format(new Date(instant)))
+}
+
+/** Instante → "09:12" no fuso de São Paulo. */
+export function formatTime(instant: IsoDateTime): string {
+  return formatters.time.format(new Date(instant))
 }
 
 /** "há 3 h", "há 2 dias" — relativo a `now` (passado explicitamente; nunca o relógio no servidor). */
