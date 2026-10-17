@@ -9,5 +9,6 @@ import { PlanningService } from './planning.service.js';
 @Module({
   controllers: [PlanningController],
   providers: [PlanningService],
+  exports: [PlanningService],
 })
 export class PlanningModule {}

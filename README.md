@@ -14,6 +14,7 @@ Bancos → Open Finance → Meu Pluggy → integrations/pluggy (ACL) → Postgre
 - **Postgres é a fonte de verdade.** O módulo `sync` copia os dados do provedor para o banco a cada `SYNC_INTERVAL_HOURS` (e sob demanda em `POST /api/sync`, o botão "Sincronizar agora"). A API sempre lê do banco; se a Pluggy cair, as telas continuam funcionando com o último dado sincronizado.
 - **Login com Keycloak no backend (padrão BFF).** A API faz o fluxo OIDC (Authorization Code + PKCE) com o Keycloak e guarda os tokens numa sessão do `express-session` no Postgres. O browser só recebe um cookie `httpOnly`; os tokens nunca chegam ao frontend.
 - **O browser fala só com o Next.** O `next.config.ts` faz proxy de `/api/*` e `/auth/*` para a API, então o cookie de sessão é do mesmo site e não há CORS. As telas (Server Components) chamam a API direto do servidor repassando o cookie; as ações (salvar, sincronizar) saem do browser por `/api`.
+- **O Claude analisa via MCP.** A API expõe um servidor MCP em `/mcp` (também pelo proxy do Next) com ferramentas de leitura dos dados já agregados e uma para salvar o relatório da análise. Ver [Conectar no Claude (MCP)](#conectar-no-claude-mcp).
 - **O adapter trata o que um ORM de banco não precisa:** timeout por requisição, retry com backoff (rede, 429, 5xx, respeitando `Retry-After`), renovação automática da API key, paginação, cache em memória e validação do formato das respostas (mudança de contrato falha alto, em vez de gravar lixo).
 
 ## Estrutura
@@ -34,6 +35,8 @@ apps/api/                  NestJS 12 + TypeScript (ESM)
   src/accounts/            GET /api/connections, GET /api/accounts
   src/transactions/        transações (lista e recategorização) e faturas
   src/planning/            compromissos fixos, metas, categorias e projeção
+  src/insights/            dados para a análise do Claude (agregações, recorrências), ferramentas e relatórios salvos
+  src/mcp/                 servidor MCP em /mcp (Streamable HTTP) e autenticação OAuth do Claude
   drizzle/                 migrations SQL
   test/                    testes e2e contra Postgres real
 ```
@@ -110,10 +113,92 @@ Rotas de dados sob `/api`; `/health` e `/auth/*` ficam na raiz.
 | `POST/PATCH/DELETE /api/planning/commitments[/:id]` | Compromissos fixos (ex.: parcela do terreno); com `installmentsTotal`, o fim sai do total de parcelas |
 | `POST/PATCH/DELETE /api/planning/goals[/:id]` | Metas de economia (ex.: entrada do carro) |
 | `POST/PATCH/DELETE /api/planning/categories[/:id]` | Categorias de orçamento: agrupam categorias do agregador e têm um teto mensal |
+| `GET /api/analysis/latest` | Última análise do Claude (formato `AnalysisReport` da interface, mais `id`, `source` e `model`); 404 se ainda não houver |
+| `GET /api/analysis` | Análises salvas, da mais recente para a mais antiga; `limit` de 1 a 50 (padrão 10) |
 
 A projeção usa a média dos últimos 3 meses fechados: renda esperada menos compromissos ativos no mês, aportes das metas até serem atingidas e o gasto variável médio (gasto total menos os compromissos). Pagamento de fatura e transferência entre contas próprias não contam como renda nem gasto.
 
 Convenções: valores monetários em **centavos** (inteiros); transações negativas são saídas e positivas, entradas; datas `YYYY-MM-DD` no fuso `TIMEZONE` (padrão `America/Sao_Paulo`).
+
+## Conectar no Claude (MCP)
+
+A API tem um servidor [MCP](https://modelcontextprotocol.io) em `/mcp` (transporte Streamable HTTP, sem estado, respostas JSON) para o Claude ler os dados e analisar onde dá para cortar, os "gastos do pecado" (supérfluos recorrentes), vazamentos (assinaturas esquecidas, tarifas), gasto fixo vs. discricionário e o planejamento. O servidor manda instruções de análise para o Claude e, no fim, ele salva o relatório com `salvar_analise` — que aparece em `GET /api/analysis/latest`.
+
+URL do servidor: `https://<domínio>/mcp` (a interface faz proxy de `/mcp` e `/.well-known/oauth-protected-resource/*` para a API). Em desenvolvimento: `http://localhost:3001/mcp` (pelo Next) ou `http://localhost:3000/mcp` (direto na API).
+
+Peça, por exemplo: *"Analise minhas finanças dos últimos 3 meses: o que dá para cortar, quais são meus gastos do pecado e se tem assinatura esquecida. Salve a análise no Meu Caixa."*
+
+### Ferramentas
+
+| Ferramenta | O que devolve |
+| --- | --- |
+| `resumo_financeiro` | Saldo das contas, dívida e limite dos cartões, resultado do mês atual (parcial) e do anterior, conexões e última sincronização |
+| `listar_contas` | Contas e cartões com saldo, limite e ids |
+| `buscar_transacoes` | Transações com filtros (período, conta, categoria, texto, tipo `gastos`/`receitas`/`pagamentos_fatura`/`transferencias_proprias`), por data ou maior valor; até 200 itens, com a soma de todas as encontradas |
+| `gastos_por_categoria` | Total, quantidade, participação, média mensal, valor de cada mês e variação do último mês por categoria (padrão: 3 meses fechados) |
+| `fluxo_de_caixa` | Receitas, gastos, resultado e taxa de poupança mês a mês (até 24 meses) e a média dos meses fechados |
+| `recorrencias` | Gastos que se repetem: assinaturas e contas fixas, hábitos frequentes (delivery, corridas), parcelamentos e mensais variáveis — valor típico, meses com cobrança, se está ativa, custo mensal e anual |
+| `planejamento` | Compromissos fixos, metas (progresso e aporte necessário), tetos das categorias vs. gasto real, gasto essencial vs. discricionário e projeção de 6 meses |
+| `salvar_analise` | Salva o relatório (formato `AnalysisReport`: `headline`, `summary`, `period`, `monthlyFixed`, `monthlyDiscretionary`, `potentialMonthlySavings` e `insights` dos tipos `CUT`/`SIN`/`LEAK`/`SUGGESTION`); o servidor gera ids e data |
+| `ultima_analise` | Última análise salva |
+
+Valores saem em centavos e em reais (`{ "centavos": 5590, "brl": "R$ 55,90" }`) e toda resposta diz o período usado. As regras são as do app: pagamento de fatura e transferência entre contas próprias não contam como gasto nem renda, e vale a categoria escolhida pelo usuário. As ferramentas ficam em `src/insights/tools.ts` sem depender do MCP, para a análise feita pela interface (API da Anthropic) usar as mesmas.
+
+### Autenticação do /mcp
+
+São dados financeiros: o `/mcp` só aceita `Authorization: Bearer <token>` — o cookie de sessão da interface **não** vale lá. Sem token, a resposta é `401` com `WWW-Authenticate: Bearer resource_metadata="https://<domínio>/.well-known/oauth-protected-resource/mcp"`, e esses metadados (RFC 9728) apontam o realm do Keycloak como servidor de autorização. É o fluxo OAuth 2.1 da especificação de autorização do MCP: o cliente descobre o Keycloak, faz o login do usuário (Authorization Code + PKCE) e chama o `/mcp` com o access token.
+
+Um token do Keycloak vale quando (checado por introspecção a cada requisição):
+
+- está ativo e o usuário tem a role `KEYCLOAK_REQUIRED_ROLE` (`owner`) — sem ela, `403`;
+- foi emitido **para o servidor MCP**: a audiência (`aud`) inclui `${APP_URL}/mcp`. Assim um token do realm emitido para outra aplicação (inclusive o da sessão da interface, client `web`) é recusado com `401`. Se preferir confiar no client em vez da audiência, liste os clients aceitos em `MCP_ALLOWED_CLIENTS` (ex.: `claude`).
+
+Alternativa simples para o Claude Code/Desktop: defina `MCP_ACCESS_TOKEN` (segredo longo, `openssl rand -hex 32`) e mande-o no header `Authorization: Bearer ...`. Comparado em tempo constante; deixe vazio para desligar.
+
+#### Client "claude" no Keycloak
+
+O realm de desenvolvimento (`docker/keycloak/meu-caixa-realm.json`) já traz o client `claude`:
+
+- público (sem secret), só Standard Flow com PKCE `S256`;
+- redirect URIs: `https://claude.ai/api/mcp/auth_callback` e `https://claude.com/api/mcp/auth_callback` (conectores do claude.ai/Claude Desktop) e `http://localhost/*` e `http://127.0.0.1/*` para o Claude Code — o Keycloak ignora a porta em redirects de loopback `http` (RFC 8252), então `http://localhost:<qualquer porta>/callback` é aceito; `http://localhost:*/*` **não** funciona (o Keycloak não tem curinga de porta);
+- mapper de audiência `audiencia-mcp`, que põe `http://localhost:3001/mcp` no `aud` dos tokens;
+- escopo restrito (`fullScopeAllowed: false`) com só a role `owner` do client `web`.
+
+Em produção, troque a audiência do mapper para `https://<domínio>/mcp` (console do Keycloak → Clients → `claude` → Client scopes → `claude-dedicated` → `audiencia-mcp` → *Included Custom Audience*). O valor tem que ser igual a `${APP_URL}/mcp`. O claude.ai renova o token com o refresh token enquanto a sessão do Keycloak valer (*SSO Session Idle/Max* do realm); depois disso, pede o login de novo.
+
+### claude.ai e Claude Desktop
+
+O servidor e o Keycloak precisam estar na internet com HTTPS (o claude.ai conecta a partir dos servidores da Anthropic; não alcança `localhost`).
+
+1. Em **Configurações → Conectores → Adicionar conector personalizado**: nome `Meu Caixa`, URL `https://<domínio>/mcp`.
+2. Em **Configurações avançadas**, preencha **OAuth Client ID** com `claude` (deixe o secret vazio).
+3. Clique em **Conectar** e entre no Keycloak com o seu usuário. O conector fica disponível também no Claude Desktop logado na mesma conta.
+
+### Claude Code
+
+Com OAuth (abre o login do Keycloak no browser; a porta do callback é livre):
+
+```bash
+claude mcp add --transport http --client-id claude --callback-port 8765 meu-caixa https://<domínio>/mcp
+# dentro do Claude Code: /mcp → meu-caixa → Authenticate
+```
+
+Com o `MCP_ACCESS_TOKEN` (sem login):
+
+```bash
+claude mcp add --transport http meu-caixa https://<domínio>/mcp --header "Authorization: Bearer <MCP_ACCESS_TOKEN>"
+```
+
+Em desenvolvimento, troque a URL por `http://localhost:3001/mcp`.
+
+### Variáveis (`apps/api/.env`)
+
+| Variável | Para quê |
+| --- | --- |
+| `APP_URL` | URL pública da interface; o recurso MCP é `${APP_URL}/mcp` (vai nos metadados e é a audiência exigida) |
+| `MCP_ACCESS_TOKEN` | Opcional: segredo (mín. 32 caracteres) aceito como Bearer token no `/mcp` |
+| `MCP_ALLOWED_CLIENTS` | Opcional: clients do Keycloak (`azp`) aceitos mesmo sem a audiência do MCP, separados por vírgula |
+| `KEYCLOAK_REQUIRED_ROLE` | Role exigida também no `/mcp` (padrão `owner`) |
 
 ## Scripts (`apps/api`)
 
@@ -136,3 +221,4 @@ No `apps/web`: `pnpm dev`, `pnpm lint`, `pnpm typecheck`, `pnpm test` e `pnpm bu
 - [x] **50% — Interface completa, mocada:** telas em Next.js + shadcn/ui (visão geral, contas, transações, planejamento, análise), com dados mocados no formato da API, temas claro/escuro e layout para celular.
 - [x] **75% — Interface ligada no back-end:** telas lendo a API real (proxy do Next, sessão do Keycloak); módulo `planning` com compromissos fixos, metas, categorias e projeção, editáveis na interface; recategorização de transações; "Sincronizar agora". A análise do Claude segue como exemplo, identificado nas telas.
 - [ ] **100% — Análise via MCP e deploy:** MCP expondo os dados para o Claude; deploy na DigitalOcean.
+  - [x] Servidor MCP em `/mcp` com OAuth via Keycloak, ferramentas de análise e relatórios salvos (`/api/analysis`).

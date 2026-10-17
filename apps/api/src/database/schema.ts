@@ -228,3 +228,27 @@ export const sessions = pgTable(
   },
   (t) => [index('sessions_expires_at_idx').on(t.expiresAt)],
 );
+
+// ------------------------------------------------------------------ análise
+
+/** Quem gerou a análise: o Claude via MCP ou a própria interface (API da Anthropic). */
+export const ANALYSIS_SOURCES = ['MCP', 'APP'] as const;
+export const analysisSource = pgEnum('analysis_source', ANALYSIS_SOURCES);
+
+/** Relatórios de análise do Claude; o conteúdo segue `analysisReportSchema`. */
+export const analysisReports = pgTable(
+  'analysis_reports',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    generatedAt: timestamp('generated_at', { withTimezone: true }).notNull().defaultNow(),
+    source: analysisSource('source').notNull(),
+    model: text('model'),
+    periodFrom: date('period_from', { mode: 'string' }).notNull(),
+    periodTo: date('period_to', { mode: 'string' }).notNull(),
+    report: jsonb('report').notNull(),
+  },
+  (t) => [index('analysis_reports_generated_at_idx').on(t.generatedAt)],
+);
+
+export type AnalysisReportRow = typeof analysisReports.$inferSelect;
+export type AnalysisSource = (typeof ANALYSIS_SOURCES)[number];

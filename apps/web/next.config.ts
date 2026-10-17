@@ -34,6 +34,12 @@ const nextConfig: NextConfig = {
     return [
       { source: "/api/:path*", destination: `${API_URL}/api/:path*` },
       { source: "/auth/:path*", destination: `${API_URL}/auth/:path*` },
+      // Servidor MCP (Claude) e seus metadados OAuth (RFC 9728) na mesma origem pública.
+      { source: "/mcp", destination: `${API_URL}/mcp` },
+      {
+        source: "/.well-known/oauth-protected-resource/:path*",
+        destination: `${API_URL}/.well-known/oauth-protected-resource/:path*`,
+      },
     ]
   },
 }

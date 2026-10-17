@@ -4,6 +4,7 @@ import {
   Module,
   type NestModule,
   type OnApplicationShutdown,
+  RequestMethod,
 } from '@nestjs/common';
 import { APP_GUARD } from '@nestjs/core';
 import session from 'express-session';
@@ -31,6 +32,7 @@ import { PostgresSessionStore } from './session-store.js';
       useFactory: (db: Database) => new PostgresSessionStore(db),
     },
   ],
+  exports: [KeycloakClient],
 })
 export class AuthModule implements NestModule, OnApplicationShutdown {
   constructor(
@@ -58,6 +60,8 @@ export class AuthModule implements NestModule, OnApplicationShutdown {
         }),
         csrfOriginCheck([this.env.FRONTEND_URL, this.env.APP_URL]),
       )
+      // O /mcp só aceita Bearer token (src/mcp): nem lê o cookie de sessão.
+      .exclude({ path: 'mcp', method: RequestMethod.ALL })
       .forRoutes('*');
   }
 

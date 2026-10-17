@@ -14,6 +14,20 @@ export interface FakeUser {
 interface Grant {
   user: FakeUser;
   clientId: string;
+  /** Claim `aud` devolvido na introspecção. */
+  audience?: string[];
+  scope?: string;
+  /** Epoch em segundos. */
+  expiresAt?: number;
+}
+
+export interface MintOptions {
+  /** Client que pediu o token (`azp`); padrão `claude`. */
+  clientId?: string;
+  audience?: string[];
+  /** Sobrescreve campos do usuário (ex.: `clientRoles: []` para tirar a role). */
+  user?: Partial<FakeUser>;
+  scope?: string;
 }
 
 /**
@@ -93,6 +107,22 @@ export class FakeKeycloak {
       redirectUri: params.get('redirect_uri')!,
     });
     return { code, state: params.get('state')! };
+  }
+
+  /**
+   * Emite um access token direto (como se outro client, ex.: o "claude", tivesse
+   * feito o login), com audiência, client e roles escolhidos.
+   */
+  mintAccessToken(options: MintOptions = {}): string {
+    const token = randomUUID();
+    this.accessTokens.set(token, {
+      user: { ...this.user, ...options.user },
+      clientId: options.clientId ?? 'claude',
+      audience: options.audience ?? [],
+      scope: options.scope ?? 'profile email',
+      expiresAt: Math.floor(Date.now() / 1000) + this.accessTokenTtl,
+    });
+    return token;
   }
 
   /** Simula logout/revogação no Keycloak: todos os tokens deixam de valer. */
@@ -178,6 +208,10 @@ export class FakeKeycloak {
     const { user } = grant;
     json(res, 200, {
       active: true,
+      ...(grant.audience ? { aud: grant.audience } : {}),
+      ...(grant.scope ? { scope: grant.scope } : {}),
+      exp: grant.expiresAt ?? Math.floor(Date.now() / 1000) + this.accessTokenTtl,
+      azp: grant.clientId,
       sub: user.sub,
       preferred_username: user.username,
       name: user.name,

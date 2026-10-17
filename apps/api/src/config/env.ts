@@ -41,6 +41,17 @@ export const envSchema = z
     /** Role (de realm ou do client) exigida para acessar os dados financeiros. */
     KEYCLOAK_REQUIRED_ROLE: z.string().default('owner'),
 
+    /**
+     * Segredo opcional para clientes MCP sem OAuth (Claude Code/Desktop via
+     * header `Authorization: Bearer ...`). Gere com: openssl rand -hex 32
+     */
+    MCP_ACCESS_TOKEN: z.string().min(32, 'use ao menos 32 caracteres aleatórios').optional(),
+    /**
+     * Clients do Keycloak (`azp`) cujos tokens valem no /mcp mesmo sem a
+     * audiência `${APP_URL}/mcp`. Vazio (padrão): só tokens com essa audiência.
+     */
+    MCP_ALLOWED_CLIENTS: commaSeparatedList.default([]),
+
     TIMEZONE: z.string().default('America/Sao_Paulo'),
 
     FINANCE_PROVIDER: z.enum(['pluggy', 'fake']).default('pluggy'),
