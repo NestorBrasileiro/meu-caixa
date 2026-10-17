@@ -1,0 +1,10 @@
+# Somente para o teste local (deploy/docker-compose.local.yml): certificados da
+# CA interna do Caddy em vez do Let's Encrypt, HTTPS na porta 8443.
+{
+	local_certs
+	skip_install_trust
+	https_port 8443
+	http_port 8088
+}
+
+import sites.caddy

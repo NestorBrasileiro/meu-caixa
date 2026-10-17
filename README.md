@@ -214,6 +214,16 @@ Em desenvolvimento, troque a URL por `http://localhost:3001/mcp`.
 
 No `apps/web`: `pnpm dev`, `pnpm lint`, `pnpm typecheck`, `pnpm test` e `pnpm build`.
 
+## Deploy
+
+Produção num Droplet da DigitalOcean com Docker Compose: Postgres, Keycloak, API, interface e Caddy (HTTPS automático). Passo a passo completo, de criar o servidor a backups e conectar o Claude via MCP, em **[docs/deploy.md](docs/deploy.md)**. Arquivos em `deploy/`; as imagens saem de `apps/api/Dockerfile` e `apps/web/Dockerfile` (contexto: raiz do repositório).
+
+```bash
+deploy/smoke-local.sh                # na sua máquina: sobe e testa a pilha de produção inteira
+cd deploy && cp .env.example .env    # no servidor: preencha o .env e suba
+docker compose up -d --build
+```
+
 ## Roadmap
 
 - [x] **25% — Fundação e dados reais:** esqueleto Nest com os módulos e a `FinanceProvider`; adapter da Pluggy (contas, transações, faturas); Postgres modelado; `sync` gravando os dados; CI (lint, build, testes). Falta validar com 1 banco real usando as suas credenciais.

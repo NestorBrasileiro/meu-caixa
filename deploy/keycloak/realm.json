@@ -1,0 +1,89 @@
+{
+  "realm": "meu-caixa",
+  "displayName": "Meu Caixa",
+  "enabled": true,
+  "sslRequired": "external",
+  "registrationAllowed": false,
+  "loginWithEmailAllowed": true,
+  "duplicateEmailsAllowed": false,
+  "resetPasswordAllowed": false,
+  "rememberMe": false,
+  "bruteForceProtected": true,
+  "failureFactor": 10,
+  "passwordPolicy": "length(12) and notUsername and notEmail",
+  "internationalizationEnabled": true,
+  "supportedLocales": ["pt-BR", "en"],
+  "defaultLocale": "pt-BR",
+  "roles": {
+    "client": {
+      "web": [
+        {
+          "name": "owner",
+          "description": "Acesso aos dados financeiros do Meu Caixa"
+        }
+      ]
+    }
+  },
+  "clients": [
+    {
+      "clientId": "web",
+      "name": "Meu Caixa",
+      "description": "Interface e API (BFF). O segredo vem de KEYCLOAK_CLIENT_SECRET.",
+      "enabled": true,
+      "protocol": "openid-connect",
+      "publicClient": false,
+      "clientAuthenticatorType": "client-secret",
+      "secret": "${KEYCLOAK_CLIENT_SECRET}",
+      "standardFlowEnabled": true,
+      "implicitFlowEnabled": false,
+      "directAccessGrantsEnabled": false,
+      "serviceAccountsEnabled": false,
+      "consentRequired": false,
+      "fullScopeAllowed": true,
+      "rootUrl": "https://${DOMAIN}",
+      "baseUrl": "https://${DOMAIN}",
+      "redirectUris": ["https://${DOMAIN}/auth/callback"],
+      "webOrigins": ["https://${DOMAIN}"],
+      "attributes": {
+        "pkce.code.challenge.method": "S256",
+        "post.logout.redirect.uris": "https://${DOMAIN}##https://${DOMAIN}/*"
+      }
+    },
+    {
+      "clientId": "claude",
+      "name": "Claude (MCP)",
+      "description": "Conector MCP do Claude (OAuth 2.1 com PKCE, client público).",
+      "enabled": true,
+      "protocol": "openid-connect",
+      "publicClient": true,
+      "standardFlowEnabled": true,
+      "implicitFlowEnabled": false,
+      "directAccessGrantsEnabled": false,
+      "serviceAccountsEnabled": false,
+      "consentRequired": false,
+      "fullScopeAllowed": true,
+      "redirectUris": [
+        "https://claude.ai/api/mcp/auth_callback",
+        "https://claude.com/api/mcp/auth_callback"
+      ],
+      "webOrigins": ["https://claude.ai", "https://claude.com"],
+      "attributes": {
+        "pkce.code.challenge.method": "S256"
+      },
+      "protocolMappers": [
+        {
+          "name": "audience-mcp",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-audience-mapper",
+          "consentRequired": false,
+          "config": {
+            "included.custom.audience": "https://${DOMAIN}/mcp",
+            "access.token.claim": "true",
+            "id.token.claim": "false",
+            "introspection.token.claim": "true"
+          }
+        }
+      ]
+    }
+  ]
+}

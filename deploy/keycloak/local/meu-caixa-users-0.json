@@ -1,0 +1,15 @@
+{
+  "realm": "meu-caixa",
+  "users": [
+    {
+      "username": "teste",
+      "enabled": true,
+      "email": "teste@meucaixa.localhost",
+      "emailVerified": true,
+      "firstName": "Teste",
+      "lastName": "Local",
+      "credentials": [{ "type": "password", "value": "teste-local-123", "temporary": false }],
+      "clientRoles": { "web": ["owner"] }
+    }
+  ]
+}
