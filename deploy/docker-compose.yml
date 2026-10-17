@@ -110,6 +110,8 @@ services:
       APP_URL: https://${DOMAIN}
       FRONTEND_URL: https://${DOMAIN}
       SESSION_SECRET: ${SESSION_SECRET:?defina SESSION_SECRET no deploy/.env}
+      # Cifra os segredos cadastrados pela interface (Configurações → Open Finance).
+      SETTINGS_ENCRYPTION_KEY: ${SETTINGS_ENCRYPTION_KEY:?defina SETTINGS_ENCRYPTION_KEY no deploy/.env (openssl rand -hex 32)}
       # Mesmo endereço que o browser vê, para o issuer dos tokens bater. Dentro
       # do Docker, AUTH_DOMAIN resolve para o Caddy (alias de rede abaixo), então
       # a API não depende de sair para a internet para falar com o Keycloak.
@@ -119,7 +121,8 @@ services:
       KEYCLOAK_CLIENT_SECRET: ${KEYCLOAK_CLIENT_SECRET}
       KEYCLOAK_REQUIRED_ROLE: owner
       TIMEZONE: ${TIMEZONE:-America/Sao_Paulo}
-      FINANCE_PROVIDER: ${FINANCE_PROVIDER:-pluggy}
+      # Open Finance: vazias = configurado na interface; preenchidas vencem a tela.
+      FINANCE_PROVIDER: ${FINANCE_PROVIDER:-}
       PLUGGY_CLIENT_ID: ${PLUGGY_CLIENT_ID:-}
       PLUGGY_CLIENT_SECRET: ${PLUGGY_CLIENT_SECRET:-}
       PLUGGY_ITEM_IDS: ${PLUGGY_ITEM_IDS:-}

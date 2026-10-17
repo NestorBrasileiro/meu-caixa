@@ -3,6 +3,7 @@ import { redirect } from "next/navigation"
 import { connection } from "next/server"
 import type { AnalysisStatus, ShownAnalysis, StoredAnalysis } from "@/lib/api/analysis"
 import type { PlanningOverview } from "@/lib/api/planning"
+import type { OpenFinanceSettings } from "@/lib/api/settings"
 import type {
   Account,
   AuthUser,
@@ -145,4 +146,9 @@ export async function getAnalysis(): Promise<ShownAnalysis | null> {
 /** Se o app pode gerar análises e responder perguntas (ANTHROPIC_API_KEY) e a última geração. */
 export function getAnalysisStatus(): Promise<AnalysisStatus> {
   return api<AnalysisStatus>("/api/analysis/status")
+}
+
+/** Open Finance: fonte dos dados, credenciais da Pluggy (só se existem; o secret não sai da API) e bancos. */
+export function getOpenFinanceSettings(): Promise<OpenFinanceSettings> {
+  return api<OpenFinanceSettings>("/api/settings/open-finance")
 }

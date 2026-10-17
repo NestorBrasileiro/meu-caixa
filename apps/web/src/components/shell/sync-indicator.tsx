@@ -1,9 +1,11 @@
 "use client"
 
 import { CheckCircle2, CircleDashed, CircleX, RefreshCw, TriangleAlert, type LucideIcon } from "lucide-react"
+import Link from "next/link"
 import { useEffect } from "react"
+import { SETTINGS_HREF } from "@/components/settings/open-finance"
 import { cn } from "@/lib/utils"
-import { liveRunId, syncIndicatorView, type SyncSummary, type SyncTone } from "./sync-status"
+import { liveRunId, syncIndicatorHref, syncIndicatorView, type SyncSummary, type SyncTone } from "./sync-status"
 import { followRun, useSyncTracker } from "./sync-tracker"
 
 export type { SyncSummary } from "./sync-status"
@@ -18,6 +20,8 @@ const TONE_ICON: Record<SyncTone, { icon: LucideIcon; className: string }> = {
 
 const FRAME =
   "text-muted-foreground hover:bg-accent hover:text-accent-foreground flex h-8 min-w-0 items-center gap-1.5 rounded-md px-2 text-xs whitespace-nowrap transition-colors"
+/** O indicador é um link (Contas ou, sem nada sincronizado, Configurações). */
+const LINK = "focus-visible:ring-ring/50 outline-none focus-visible:ring-[3px]"
 
 /**
  * Estado da sincronização no cabeçalho: ícone + texto (nunca só cor). No celular cabe só o essencial
@@ -25,6 +29,8 @@ const FRAME =
  *
  * Também reflete o "Sincronizar agora" da tela de contas na hora do clique e, se o servidor viu uma
  * execução rodando, acompanha até o fim e atualiza os dados.
+ *
+ * Leva a Contas; sem nada sincronizado ainda (ou sem Open Finance configurado), às configurações.
  */
 export function SyncIndicator({ summary, className }: { summary: SyncSummary; className?: string }) {
   const tracker = useSyncTracker()
@@ -36,13 +42,15 @@ export function SyncIndicator({ summary, className }: { summary: SyncSummary; cl
     if (runningRunId) followRun(runningRunId, false)
   }, [runningRunId])
 
-  const view = syncIndicatorView({ ...summary, runningRunId }, tracker.phase !== "idle")
+  const busy = tracker.phase !== "idle"
+  const view = syncIndicatorView({ ...summary, runningRunId }, busy)
+  const href = syncIndicatorHref({ ...summary, runningRunId }, busy)
   const { icon: Icon, className: iconClass } = TONE_ICON[view.tone]
   // Problema (falha, erros, conexão pedindo atenção): o texto também ganha destaque, não só o ícone.
   const problem = view.tone === "warning" || view.tone === "critical"
 
   return (
-    <span className={cn(FRAME, className)}>
+    <Link href={href} className={cn(FRAME, LINK, className)}>
       <Icon className={cn("size-3.5 shrink-0", iconClass)} aria-hidden />
       {/* Celular: versão curta, só para quem vê. */}
       {view.compact && (
@@ -56,17 +64,18 @@ export function SyncIndicator({ summary, className }: { summary: SyncSummary; cl
         <span className={cn(problem && !view.attention && "text-foreground")}>{view.status}</span>
         {view.attention && <span className="text-foreground"> · {view.attention}</span>}
       </span>
-    </span>
+      {href === SETTINGS_HREF && <span className="sr-only"> — configurar Open Finance</span>}
+    </Link>
   )
 }
 
 /** Sem como saber a situação (API fora do ar): neutro, sem alarde; a página explica o problema. */
 export function SyncIndicatorUnavailable({ className }: { className?: string }) {
   return (
-    <span className={cn(FRAME, className)}>
+    <Link href="/contas" className={cn(FRAME, LINK, className)}>
       <CircleDashed className="size-3.5 shrink-0" aria-hidden />
       <span className="max-sm:sr-only">Sem dados da sincronização</span>
-    </span>
+    </Link>
   )
 }
 

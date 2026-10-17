@@ -1,9 +1,11 @@
 import type { AnalysisStatus, ShownAnalysis } from "@/lib/api/analysis"
 import type { PlanningOverview } from "@/lib/api/planning"
+import type { OpenFinanceItem, OpenFinanceSettings } from "@/lib/api/settings"
 import type {
   Account,
   AuthUser,
   Connection,
+  ConnectionStatus,
   Invoice,
   IsoDate,
   IsoDateTime,
@@ -94,4 +96,35 @@ export async function getAnalysis(): Promise<ShownAnalysis | null> {
 /** Sem API não há chave da Anthropic: gerar e perguntar ficam indisponíveis. */
 export async function getAnalysisStatus(): Promise<AnalysisStatus> {
   return { app: { enabled: false, model: null }, latestRun: null }
+}
+
+/** Status da Pluggy equivalente ao estado de cada conexão do dataset. */
+const ITEM_STATUS: Record<ConnectionStatus, string> = {
+  ACTIVE: "UPDATED",
+  UPDATING: "UPDATING",
+  ACTION_REQUIRED: "LOGIN_ERROR",
+  ERROR: "OUTDATED",
+}
+
+/**
+ * Estado de exemplo da tela de configurações: Meu Pluggy escolhido no app, credenciais salvas e um
+ * item por banco do dataset. As ações ficam desabilitadas (não há API para salvar).
+ */
+export async function getOpenFinanceSettings(): Promise<OpenFinanceSettings> {
+  const list: OpenFinanceItem[] = mockDataset().connections.map((connection, index) => ({
+    id: `0b7c2f4e-5a1d-4c3b-9e8f-00000000000${index + 1}`,
+    institutionName: connection.institutionName,
+    status: ITEM_STATUS[connection.status],
+    lastUpdatedAt: connection.lastRefreshedAt,
+    error:
+      connection.status === "ACTION_REQUIRED"
+        ? "A senha do banco mudou. Entre de novo no Meu Pluggy para reconectar."
+        : null,
+  }))
+  return {
+    mode: { value: "pluggy", source: "app" },
+    credentials: { configured: true, source: "app", clientIdHint: "1a2b3c4d…", updatedAt: "2026-09-02T14:20:00.000Z" },
+    items: { source: "app", list },
+    connectUrl: "https://meu.pluggy.ai",
+  }
 }

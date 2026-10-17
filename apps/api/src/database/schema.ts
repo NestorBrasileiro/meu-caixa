@@ -294,3 +294,17 @@ export const analysisRuns = pgTable(
 
 export type AnalysisRunRow = typeof analysisRuns.$inferSelect;
 export type AnalysisRunStatus = (typeof ANALYSIS_RUN_STATUSES)[number];
+
+// ------------------------------------------------------------ configurações
+
+/**
+ * Configurações editáveis pela interface (ex.: Open Finance), uma linha por
+ * chave. Segredos ficam cifrados dentro de `value` (src/settings/settings-cipher.ts).
+ */
+export const appSettings = pgTable('app_settings', {
+  key: text('key').primaryKey(),
+  value: jsonb('value').notNull(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+});
+
+export type AppSettingRow = typeof appSettings.$inferSelect;

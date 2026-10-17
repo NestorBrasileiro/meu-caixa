@@ -42,7 +42,7 @@ Você vai precisar de:
 
 - **Uma conta na DigitalOcean.**
 - **Um domínio** em que você consiga criar registros DNS (Registro.br, Cloudflare, o próprio DNS da DigitalOcean etc.). O exemplo usa `meucaixa.exemplo.com.br` para a interface e `auth.meucaixa.exemplo.com.br` para o login.
-- **As credenciais da Pluggy** (Client ID, Client Secret e os ids dos items), como no [README](../README.md#usando-seus-bancos-meu-pluggy). Dá para subir sem elas usando `FINANCE_PROVIDER=fake`, mas aí os dados são fictícios.
+- **As credenciais da Pluggy** (Client ID, Client Secret e os ids dos items), como no [README](../README.md#usando-seus-bancos-meu-pluggy). Não precisam ir no `.env`: depois de subir, cadastre tudo na interface, em **Configurações → Open Finance**. Para só experimentar, escolha lá os dados fictícios.
 - **Uma chave SSH** no seu computador (`ssh-keygen -t ed25519` se ainda não tiver).
 
 ## 2. Criar o Droplet
@@ -136,7 +136,8 @@ chmod 600 .env
 
 # Gera todas as senhas e segredos de uma vez (letras e números, 64 caracteres)
 for v in POSTGRES_PASSWORD APP_DB_PASSWORD KEYCLOAK_DB_PASSWORD \
-         KEYCLOAK_ADMIN_PASSWORD KEYCLOAK_CLIENT_SECRET SESSION_SECRET; do
+         KEYCLOAK_ADMIN_PASSWORD KEYCLOAK_CLIENT_SECRET SESSION_SECRET \
+         SETTINGS_ENCRYPTION_KEY; do
   sed -i "s|^$v=.*|$v=$(openssl rand -hex 32)|" .env
 done
 
@@ -146,10 +147,11 @@ nano .env
 No editor, preencha:
 
 - `DOMAIN`, `AUTH_DOMAIN` e `ACME_EMAIL`;
-- `FINANCE_PROVIDER=pluggy` com `PLUGGY_CLIENT_ID`, `PLUGGY_CLIENT_SECRET` e `PLUGGY_ITEM_IDS`;
 - o resto pode ficar como está. `ANTHROPIC_API_KEY`, `ANTHROPIC_MODEL` e `MCP_ACCESS_TOKEN` são opcionais.
 
-Guarde uma cópia do `.env` num gerenciador de senhas: sem ele, os backups do Keycloak e as sessões não se recuperam com as mesmas credenciais.
+As credenciais da Pluggy e os bancos ficam para a interface (passo 10). Se preferir deixá-los no servidor, preencha `PLUGGY_CLIENT_ID`, `PLUGGY_CLIENT_SECRET` e `PLUGGY_ITEM_IDS` (e, se quiser travar a origem, `FINANCE_PROVIDER=pluggy`): o que vier do `.env` vence a tela, que passa a mostrar esses itens só para leitura.
+
+`SETTINGS_ENCRYPTION_KEY` (obrigatória) cifra o Client Secret da Pluggy cadastrado pela interface antes de ele ir para o banco. Guarde uma cópia do `.env` num gerenciador de senhas: sem ele, os backups do Keycloak e as sessões não se recuperam com as mesmas credenciais, e sem a `SETTINGS_ENCRYPTION_KEY` o segredo da Pluggy guardado no backup não pode ser lido (aí é só cadastrá-lo de novo na tela).
 
 > **Importante:** as senhas do Postgres e o segredo do client `web` são gravados **na primeira subida** (no volume do banco e no realm do Keycloak). Mudar o `.env` depois não muda esses valores; veja [Trocar senhas e domínio](#trocar-senhas-e-domínio).
 
@@ -170,7 +172,7 @@ O que acontece na primeira subida:
 
 1. O Postgres cria os bancos `meu_caixa` e `keycloak` (`postgres/init.sh`).
 2. O Keycloak importa o realm `meu-caixa` (`keycloak/realm.json`), com os clients `web` e `claude` já apontando para o seu domínio, e cria o admin temporário (`KEYCLOAK_ADMIN`).
-3. A API aplica as migrations e faz a primeira sincronização com a Pluggy.
+3. A API aplica as migrations e faz a primeira sincronização (sem o Open Finance configurado, ela termina sem dados; os bancos entram no passo 10).
 4. O Caddy pede os certificados ao Let's Encrypt para os dois domínios.
 
 Teste: `curl https://meucaixa.exemplo.com.br/health` deve responder `{"status":"ok","database":"up"}`.
@@ -215,13 +217,15 @@ Recomendado: no realm **master**, crie um admin definitivo (Users → Create, ro
 
 Abra `https://meucaixa.exemplo.com.br`: você vai para o login do Keycloak e, depois, para a visão geral.
 
-A API já sincroniza na subida e depois a cada `SYNC_INTERVAL_HOURS` horas. Para forçar, use **Sincronizar agora** na interface. Para conferir pelo servidor:
+Em **Configurações → Open Finance**: cole o Client ID e o Client Secret da sua aplicação na Pluggy (a API confere na hora com a Pluggy e guarda o segredo cifrado) e adicione os bancos pelo id de cada item do Meu Pluggy (também conferido na hora). Cada banco adicionado já dispara uma sincronização. Lá também dá para trocar entre seus bancos e os dados fictícios — a troca apaga os dados sincronizados da outra origem (o planejamento fica). As mudanças ficam no log da API (`docker compose logs api | grep OpenFinance`), sem o segredo.
+
+A API sincroniza na subida e depois a cada `SYNC_INTERVAL_HOURS` horas. Para forçar, use **Sincronizar agora** na interface. Para conferir pelo servidor:
 
 ```bash
 docker compose logs api | grep SyncService
 ```
 
-Mudou alguma credencial da Pluggy no `.env`? Rode `docker compose up -d` (recria só o que mudou) e sincronize de novo. Se a sincronização falhar, a mensagem aparece nesse log e também em `GET /api/sync/runs`.
+Mudou alguma credencial da Pluggy no `.env`? Rode `docker compose up -d` (recria só o que mudou) e sincronize de novo. Cadastradas pela interface, valem na hora. Se a sincronização falhar, a mensagem aparece nesse log e também em `GET /api/sync/runs`.
 
 ## 11. Conectar o Claude (MCP)
 
@@ -334,7 +338,10 @@ Os logs são rotacionados pelo Docker (3 arquivos de 10 MB por container).
 : Falta a role `owner` (client `web`) no seu usuário; passo 9.
 
 **Container reiniciando** (`docker compose ps` mostra `Restarting`)
-: `docker compose logs <serviço>`. A API recusa subir com configuração inválida e diz qual variável falta (ex.: credenciais da Pluggy com `FINANCE_PROVIDER=pluggy`).
+: `docker compose logs <serviço>`. A API recusa subir com configuração inválida e diz qual variável falta (ex.: `SETTINGS_ENCRYPTION_KEY` vazia, ou só uma das duas credenciais da Pluggy).
+
+**"Open Finance não configurado" na sincronização**
+: A origem escolhida é a Pluggy, mas não há credenciais: cadastre o Client ID e o Client Secret em **Configurações → Open Finance** (ou no `.env`). Se elas tinham sido cadastradas e sumiram, a `SETTINGS_ENCRYPTION_KEY` mudou (o log da API avisa); cadastre de novo.
 
 **Memória**
 : `docker stats`. Se o Droplet ficar sem memória (Keycloak lento, containers mortos por OOM), confirme o swap (`swapon --show`) ou passe para 4 GB (Droplet → Resize).
@@ -349,6 +356,7 @@ Os logs são rotacionados pelo Docker (3 arquivos de 10 MB por container).
   ```
 - **`KEYCLOAK_CLIENT_SECRET`:** gere um novo no console (client `web` → *Credentials* → *Regenerate*) e copie para o `.env`; `docker compose up -d`.
 - **`SESSION_SECRET`:** basta trocar no `.env` e `docker compose up -d` (todo mundo precisa entrar de novo).
+- **`SETTINGS_ENCRYPTION_KEY`:** troque no `.env`, `docker compose up -d` e cadastre de novo o Client ID e o Client Secret em **Configurações → Open Finance** (o segredo antigo, cifrado com a chave anterior, passa a ser ignorado com um aviso no log). Os bancos e os dados sincronizados ficam.
 - **Domínio:** troque `DOMAIN`/`AUTH_DOMAIN` no `.env`, crie os registros DNS novos, ajuste as URLs dos clients `web` e `claude` (audiência) no console do Keycloak e rode `docker compose up -d`.
 
 ## Decisões deste deploy

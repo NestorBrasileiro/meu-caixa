@@ -19,6 +19,13 @@ export const pluggyItemSchema = z.object({
     name: z.string(),
     imageUrl: z.string().nullish(),
   }),
+  /** Motivo do último erro de atualização (ex.: senha trocada no banco). */
+  error: z
+    .object({
+      code: z.string().nullish(),
+      message: z.string().nullish(),
+    })
+    .nullish(),
 });
 
 export const pluggyIdentitySchema = z.object({

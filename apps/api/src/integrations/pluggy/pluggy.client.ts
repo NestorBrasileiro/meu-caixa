@@ -71,6 +71,16 @@ export class PluggyClient {
     this.now = options.now ?? Date.now;
   }
 
+  /**
+   * Confere as credenciais com a Pluggy (`POST /auth`), sempre pedindo uma
+   * API key nova. Lança `PluggyApiError` (status 401/403 = credenciais
+   * recusadas; sem status ou 5xx = Pluggy fora do alcance).
+   */
+  async verifyCredentials(): Promise<void> {
+    this.apiKey = null;
+    await this.authenticate();
+  }
+
   async getItem(itemId: string): Promise<PluggyItem> {
     return this.get(`/items/${encodeURIComponent(itemId)}`, {}, pluggyItemSchema);
   }

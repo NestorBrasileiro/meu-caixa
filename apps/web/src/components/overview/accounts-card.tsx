@@ -1,11 +1,12 @@
-import { ArrowRight, Landmark } from "lucide-react"
+import { ArrowRight, Landmark, Settings } from "lucide-react"
 import Link from "next/link"
 import { ACCOUNT_TYPE } from "@/components/finance/account-type"
 import { ConnectionStatusBadge } from "@/components/finance/connection-status"
 import { Money } from "@/components/finance/money"
+import { SETTINGS_HREF } from "@/components/settings/open-finance"
 import { Button } from "@/components/ui/button"
 import { Card, CardAction, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
-import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from "@/components/ui/empty"
+import { Empty, EmptyContent, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from "@/components/ui/empty"
 import type { Account, IsoDate } from "@/lib/api/types"
 import { formatDateShort } from "@/lib/format/date"
 import { HEADER_ACTION_CLASS, HEADER_DESCRIPTION_CLASS } from "./styles"
@@ -48,6 +49,14 @@ export function AccountsCard({ accounts, today }: { accounts: Account[]; today: 
               <EmptyTitle className="text-base">Nenhuma conta conectada</EmptyTitle>
               <EmptyDescription>Conecte um banco para ver saldos, faturas e limites aqui.</EmptyDescription>
             </EmptyHeader>
+            <EmptyContent>
+              <Button variant="outline" size="sm" asChild>
+                <Link href={SETTINGS_HREF}>
+                  <Settings aria-hidden />
+                  Configurar Open Finance
+                </Link>
+              </Button>
+            </EmptyContent>
           </Empty>
         ) : (
           <ul className="divide-y @md:grid @md:grid-cols-2 @md:gap-3 @md:divide-y-0 @5xl:grid-cols-4">

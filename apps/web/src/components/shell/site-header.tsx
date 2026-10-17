@@ -1,6 +1,5 @@
 "use client"
 
-import Link from "next/link"
 import { usePathname } from "next/navigation"
 import { Separator } from "@/components/ui/separator"
 import { SidebarTrigger } from "@/components/ui/sidebar"
@@ -19,12 +18,8 @@ export function SiteHeader({ syncStatus }: { syncStatus: React.ReactNode }) {
       <Separator orientation="vertical" className="mr-1 data-[orientation=vertical]:h-4" />
       <span className="truncate text-sm font-medium">{current?.title ?? "Meu Caixa"}</span>
       <div className="ml-auto flex min-w-0 items-center gap-1">
-        <Link
-          href="/contas"
-          className="focus-visible:ring-ring/50 min-w-0 rounded-md outline-none focus-visible:ring-[3px]"
-        >
-          {syncStatus}
-        </Link>
+        {/* O indicador é o próprio link (Contas ou, sem nada sincronizado, Configurações). */}
+        <div className="flex min-w-0">{syncStatus}</div>
         <ThemeToggle />
       </div>
     </header>

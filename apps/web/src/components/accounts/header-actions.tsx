@@ -1,16 +1,17 @@
 "use client"
 
-import { ExternalLink, RefreshCw } from "lucide-react"
+import { RefreshCw, Settings } from "lucide-react"
+import Link from "next/link"
 import { useEffect, type ReactElement } from "react"
+import { SETTINGS_HREF } from "@/components/settings/open-finance"
 import { followRun, startSync, useSyncTracker } from "@/components/shell/sync-tracker"
 import { Button } from "@/components/ui/button"
 import { Spinner } from "@/components/ui/spinner"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
 import { READ_ONLY_HINT } from "@/lib/data/mode"
 import { cn } from "@/lib/utils"
-import { MEU_PLUGGY_URL } from "./format"
 
-/** Ações do cabeçalho: conectar banco (link externo) e sincronizar agora. */
+/** Ações do cabeçalho: configurar o Open Finance (credenciais e bancos) e sincronizar agora. */
 export function AccountsHeaderActions({
   readOnly,
   runningRunId,
@@ -23,11 +24,10 @@ export function AccountsHeaderActions({
   return (
     <>
       <Button variant="outline" size="sm" asChild>
-        <a href={MEU_PLUGGY_URL} target="_blank" rel="noopener noreferrer">
-          <ExternalLink aria-hidden />
-          Conectar banco
-          <span className="sr-only">(abre o Meu Pluggy em nova aba)</span>
-        </a>
+        <Link href={SETTINGS_HREF}>
+          <Settings aria-hidden />
+          Configurar Open Finance
+        </Link>
       </Button>
       {readOnly ? (
         <ReadOnlyHint>

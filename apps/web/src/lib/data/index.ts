@@ -32,3 +32,5 @@ export const getPlanning = source.getPlanning
 /** Última análise; no modo mock, o relatório de exemplo (`sample: true`). */
 export const getAnalysis = source.getAnalysis
 export const getAnalysisStatus = source.getAnalysisStatus
+/** Open Finance (Meu Pluggy): fonte dos dados, credenciais e bancos; no modo mock, um estado de exemplo. */
+export const getOpenFinanceSettings = source.getOpenFinanceSettings

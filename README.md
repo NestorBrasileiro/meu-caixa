@@ -30,7 +30,8 @@ apps/web/                  Next.js 16 + shadcn/ui (interface)
 apps/api/                  NestJS 12 + TypeScript (ESM)
   src/auth/                login com Keycloak, sessão, guard global e CSRF
   src/domain/              modelo próprio: Conta, Transação, Fatura, Conexão
-  src/integrations/        FinanceProvider + adapters (pluggy, fake) + cache
+  src/integrations/        FinanceProvider + adapters (pluggy, fake) + cache; registry que escolhe o provedor pela configuração
+  src/settings/            Configurações → Open Finance (credenciais da Pluggy, bancos, modo) em app_settings, segredo cifrado
   src/database/            schema Drizzle (Postgres)
   src/sync/                sincronização provedor → Postgres
   src/accounts/            GET /api/connections, GET /api/accounts
@@ -59,7 +60,7 @@ pnpm --filter web dev                # interface em :3001
 
 Abra http://localhost:3001 e entre com `dev` / `dev` (realm `meu-caixa` importado de `docker/keycloak`). O console do Keycloak fica em http://localhost:8080 (`admin` / `admin`).
 
-Com `FINANCE_PROVIDER=fake` (padrão do `.env.example`) a API sobe com dados fictícios, sem credenciais da Pluggy.
+A API sobe sem nenhuma credencial da Pluggy: o Open Finance se configura pela interface, em **Configurações → Open Finance** — seus bancos (Meu Pluggy) ou dados fictícios para demonstração. Enquanto nada estiver configurado, a sincronização não faz nada e as telas convidam a configurar. Para fixar os dados fictícios pelo ambiente, `FINANCE_PROVIDER=fake` no `apps/api/.env`.
 
 ### Interface
 
@@ -77,7 +78,21 @@ Na API, `APP_URL` e `FRONTEND_URL` apontam para a interface (`http://localhost:3
 
 1. Crie a conta no [Meu Pluggy](https://meu.pluggy.ai) e conecte seus bancos (gratuito para uso pessoal, até 5 conexões do mesmo titular).
 2. No [dashboard da Pluggy](https://dashboard.pluggy.ai), pegue o Client ID e o Client Secret da sua aplicação e os ids dos items (um por banco conectado).
-3. No `apps/api/.env`: `FINANCE_PROVIDER=pluggy`, `PLUGGY_CLIENT_ID`, `PLUGGY_CLIENT_SECRET` e `PLUGGY_ITEM_IDS` (separados por vírgula).
+3. No app, em **Configurações → Open Finance**: cole o Client ID e o Client Secret e adicione cada banco pelo id do item. A API confere tudo na hora com a Pluggy (credenciais em `POST /auth`, cada item em `GET /items/{id}`, mostrando o nome do banco e o status) e cada banco adicionado já dispara uma sincronização.
+
+- **Seguro:** o Client Secret é gravado cifrado (AES-256-GCM, chave derivada de `SETTINGS_ENCRYPTION_KEY`) na tabela `app_settings` e nunca volta em nenhuma resposta nem aparece em log — a tela só mostra o começo do Client ID. As mudanças deixam uma linha de auditoria no log da API (quem alterou). Trocar a `SETTINGS_ENCRYPTION_KEY` invalida o segredo gravado: a API avisa no log e trata como não configurado; é só cadastrar de novo.
+- **Trocar a origem** (seus bancos ↔ dados fictícios) apaga o que foi sincronizado da outra origem — conexões, contas, transações, faturas e recategorizações — e mantém o planejamento (metas ligadas a uma conta apagada perdem só o vínculo). Remover um banco apaga os dados dele. Dados fictícios que tenham sobrado (ex.: de um `FINANCE_PROVIDER=fake` antigo) somem sozinhos na primeira sincronização da Pluggy que trouxer bancos; dados reais só saem por uma troca explícita.
+- **O `.env` continua valendo e vence a tela:** `FINANCE_PROVIDER` fixa a origem, `PLUGGY_CLIENT_ID`/`PLUGGY_CLIENT_SECRET` as credenciais e `PLUGGY_ITEM_IDS` (separados por vírgula) os bancos. O que vier do ambiente aparece na tela só para leitura (a API responde 409 a mudanças).
+- **Sem configuração** (nenhuma origem escolhida e sem credenciais), a sincronização termina `SUCCEEDED` sem dados. Com a Pluggy escolhida e sem credenciais, termina `FAILED` com "Open Finance não configurado".
+- **Testar sem conta na Pluggy:** aponte `PLUGGY_BASE_URL` para um mock local da API da Pluggy (os testes e2e usam `test/fake-pluggy.ts`) e use `PLUGGY_MAX_RETRIES=0`.
+
+| Variável (`apps/api/.env`) | Para quê |
+| --- | --- |
+| `SETTINGS_ENCRYPTION_KEY` | Cifra os segredos cadastrados pela interface. **Obrigatória em produção** (mín. 32 caracteres; `openssl rand -hex 32`). Vazia em desenvolvimento: chave fixa de dev, com um aviso no log |
+| `FINANCE_PROVIDER` | Opcional: `pluggy` ou `fake` fixam a origem (vencem a tela). Vazio: escolhida na tela |
+| `PLUGGY_CLIENT_ID` / `PLUGGY_CLIENT_SECRET` | Opcionais, os dois juntos: credenciais pelo ambiente (vencem as da tela) |
+| `PLUGGY_ITEM_IDS` | Opcional: bancos pelo ambiente, separados por vírgula (vencem os da tela) |
+| `PLUGGY_BASE_URL` | Opcional: outro endpoint da API da Pluggy (ex.: um mock local). Vazio = `https://api.pluggy.ai` |
 
 As credenciais ficam só no backend; a interface conversa apenas com esta API.
 
@@ -94,7 +109,7 @@ Fluxo igual ao do cronoflow: a API é o cliente confidencial do Keycloak e a int
 
 - Todas as rotas, exceto `/health` e `/auth/login|callback|logout`, exigem sessão válida e a role `KEYCLOAK_REQUIRED_ROLE` (padrão `owner`, do client ou do realm). A cada requisição o token é validado por introspecção no Keycloak e renovado com o refresh token quando está para expirar.
 - Respostas: `401` sem sessão (a interface redireciona para `/auth/login`), `403` sem a role (a interface mostra `/sem-acesso`), `503` se o Keycloak estiver fora do ar.
-- Requisições mutantes (`POST`, `PATCH`, `DELETE`) de uma origem diferente de `FRONTEND_URL`/`APP_URL` levam `403` (proteção CSRF por `Origin`).
+- Requisições mutantes (`POST`, `PUT`, `PATCH`, `DELETE`) de uma origem diferente de `FRONTEND_URL`/`APP_URL` levam `403` (proteção CSRF por `Origin`).
 - O cookie é `SameSite=Lax`: API e interface ficam no mesmo site porque o Next faz proxy de `/auth` e `/api`. Em produção, `APP_URL` e `FRONTEND_URL` são a URL pública da interface.
 
 ## API
@@ -111,6 +126,12 @@ Rotas de dados sob `/api`; `/health` e `/auth/*` ficam na raiz.
 | `GET /api/invoices` | Faturas de cartão; filtro `accountId` |
 | `POST /api/sync` | Dispara uma sincronização (202); 409 se já houver uma rodando |
 | `GET /api/sync/runs` | Histórico das sincronizações, com contagens e erros |
+| `GET /api/settings/open-finance` | Configuração do Open Finance: `mode` (`pluggy`/`fake`/`none` e a origem `env`/`app`/`default`), `credentials` (`configured`, `source`, `clientIdHint`, `updatedAt` — nunca o segredo), `items` (`source` e a lista com `institutionName`, `status` da Pluggy, `lastUpdatedAt`, `error`) e `connectUrl` |
+| `PUT /api/settings/open-finance/mode` | `{ mode: "pluggy" \| "fake" }`: troca a origem, apaga os dados sincronizados da outra e sincroniza em background; 409 se `FINANCE_PROVIDER` estiver no ambiente |
+| `PUT /api/settings/open-finance/credentials` | `{ clientId, clientSecret }`, conferidos na Pluggy: 400 se recusados ou malformados, 502 se a Pluggy não responder, 409 se vierem do ambiente |
+| `DELETE /api/settings/open-finance/credentials` | Apaga as credenciais do app; 409 se vierem do ambiente |
+| `POST /api/settings/open-finance/items` | `{ itemId }` de um banco do Meu Pluggy, conferido na Pluggy (400 não encontrado/inválido, 409 sem credenciais, repetido ou bancos no ambiente, 502 Pluggy fora); sincroniza em background |
+| `DELETE /api/settings/open-finance/items/:itemId` | Remove o banco e os dados sincronizados dele; 404 se não estiver na lista, 409 se os bancos vierem do ambiente |
 | `GET /api/planning` | Categorias de orçamento, compromissos fixos (com parcelas pagas), metas e a projeção dos próximos 6 meses |
 | `POST/PATCH/DELETE /api/planning/commitments[/:id]` | Compromissos fixos (ex.: parcela do terreno); com `installmentsTotal`, o fim sai do total de parcelas |
 | `POST/PATCH/DELETE /api/planning/goals[/:id]` | Metas de economia (ex.: entrada do carro) |
@@ -268,3 +289,4 @@ docker compose up -d --build
 - [x] **75% — Interface ligada no back-end:** telas lendo a API real (proxy do Next, sessão do Keycloak); módulo `planning` com compromissos fixos, metas, categorias e projeção, editáveis na interface; recategorização de transações; "Sincronizar agora". A análise do Claude segue como exemplo, identificado nas telas.
 - [ ] **100% — Análise via MCP e deploy:** MCP expondo os dados para o Claude; deploy na DigitalOcean.
   - [x] Servidor MCP em `/mcp` com OAuth via Keycloak, ferramentas de análise e relatórios salvos (`/api/analysis`).
+- [x] **Open Finance pela interface:** credenciais da Pluggy e bancos do Meu Pluggy cadastrados em Configurações → Open Finance (conferidos na hora, segredo cifrado), troca entre seus bancos e dados fictícios; o `.env` continua valendo e vence a tela.

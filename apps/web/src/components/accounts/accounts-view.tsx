@@ -1,7 +1,9 @@
-import { ExternalLink, Landmark } from "lucide-react"
+import { ExternalLink, Landmark, Settings } from "lucide-react"
+import Link from "next/link"
 import type { Account, Connection, Invoice, IsoDate, IsoDateTime, SyncRun } from "@/lib/api/types"
 import { findActiveRun } from "@/components/shell/sync-status"
 import { PageHeader } from "@/components/page-header"
+import { SETTINGS_HREF } from "@/components/settings/open-finance"
 import { Button } from "@/components/ui/button"
 import { Empty, EmptyContent, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from "@/components/ui/empty"
 import { cn } from "@/lib/utils"
@@ -77,16 +79,22 @@ export function AccountsView({
               <h2>Nenhum banco conectado</h2>
             </EmptyTitle>
             <EmptyDescription>
-              Conecte seus bancos no Meu Pluggy e depois use “Sincronizar agora” para trazer contas, saldos e
-              faturas para cá.
+              Conecte seus bancos no Meu Pluggy e adicione-os nas configurações do Open Finance: a sincronização traz
+              contas, saldos e faturas para cá.
             </EmptyDescription>
           </EmptyHeader>
-          <EmptyContent>
+          <EmptyContent className="flex-row flex-wrap justify-center gap-2">
+            <Button size="sm" asChild>
+              <Link href={SETTINGS_HREF}>
+                <Settings aria-hidden />
+                Configurar Open Finance
+              </Link>
+            </Button>
             <Button variant="outline" size="sm" asChild>
               <a href={MEU_PLUGGY_URL} target="_blank" rel="noopener noreferrer">
                 <ExternalLink aria-hidden />
-                Conectar banco
-                <span className="sr-only">(abre o Meu Pluggy em nova aba)</span>
+                Abrir o Meu Pluggy
+                <span className="sr-only">(abre em nova aba)</span>
               </a>
             </Button>
           </EmptyContent>

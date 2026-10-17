@@ -1,4 +1,5 @@
 import type { Connection, IsoDateTime, SyncRun } from "@/lib/api/types"
+import { SETTINGS_HREF } from "@/components/settings/open-finance"
 import { formatRelative } from "@/lib/format/date"
 
 /**
@@ -49,10 +50,17 @@ export interface SyncSummary {
   attention: { count: number; critical: boolean }
   /** Referência para "há 3 h". */
   now: IsoDateTime
+  /** Open Finance sem fonte escolhida (`mode: none`): a sincronização não faz nada até configurar. */
+  notConfigured: boolean
 }
 
 /** Resume as execuções (mais recentes primeiro, como a API devolve) e as conexões. */
-export function summarizeSync(runs: SyncRun[], connections: Pick<Connection, "status">[], now: IsoDateTime): SyncSummary {
+export function summarizeSync(
+  runs: SyncRun[],
+  connections: Pick<Connection, "status">[],
+  now: IsoDateTime,
+  options: { notConfigured?: boolean } = {},
+): SyncSummary {
   const finished = runs.filter((run) => run.status !== "RUNNING")
   const lastWithData = finished.find((run) => run.status === "SUCCEEDED" || run.status === "PARTIAL")
   const problems = connections.filter(needsAttention)
@@ -62,6 +70,7 @@ export function summarizeSync(runs: SyncRun[], connections: Pick<Connection, "st
     lastStatus: (finished[0]?.status as SyncSummary["lastStatus"] | undefined) ?? null,
     attention: { count: problems.length, critical: problems.some((c) => c.status === "ERROR") },
     now,
+    notConfigured: options.notConfigured ?? false,
   }
 }
 
@@ -95,7 +104,9 @@ export function syncIndicatorView(summary: SyncSummary, busy = false): SyncIndic
 
   const when = summary.lastSyncAt ? formatRelative(summary.lastSyncAt, summary.now) : null
   let primary: { tone: SyncTone; status: string; compact: string | null }
-  if (summary.lastStatus === "FAILED") {
+  if (summary.notConfigured) {
+    primary = { tone: "neutral", status: "Open Finance não configurado", compact: "Não configurado" }
+  } else if (summary.lastStatus === "FAILED") {
     primary = { tone: "critical", status: "Falha na sincronização", compact: "Falha na sincronização" }
   } else if (when === null) {
     primary = { tone: "neutral", status: "Nunca sincronizado", compact: "Nunca sincronizado" }
@@ -114,4 +125,14 @@ export function syncIndicatorView(summary: SyncSummary, busy = false): SyncIndic
     attention,
     compact: attention,
   }
+}
+
+/**
+ * Para onde o indicador leva: sem nada sincronizado ainda (ou sem Open Finance configurado), para as
+ * configurações, onde se conectam os bancos; senão, para Contas, onde está o histórico.
+ */
+export function syncIndicatorHref(summary: SyncSummary, busy = false): string {
+  if (busy || summary.runningRunId) return "/contas"
+  const neverSynced = summary.lastSyncAt === null && summary.lastStatus !== "FAILED"
+  return summary.notConfigured || neverSynced ? SETTINGS_HREF : "/contas"
 }

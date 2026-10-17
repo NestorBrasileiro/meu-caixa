@@ -51,11 +51,17 @@ KEYCLOAK_CLIENT_SECRET=$(secret)
 KEYCLOAK_ADMIN_URL=http://localhost:8180
 KEYCLOAK_ADMIN_PUBLIC=false
 SESSION_SECRET=$(secret)
+SETTINGS_ENCRYPTION_KEY=$(secret)
 FINANCE_PROVIDER=fake
 TIMEZONE=America/Sao_Paulo
 BACKUP_DIR=$PWD/.backups-local
 BACKUP_RETENTION_DAYS=1
 EOF
+fi
+
+# .env.local gerado antes de SETTINGS_ENCRYPTION_KEY existir: completa.
+if ! grep -q '^SETTINGS_ENCRYPTION_KEY=' "$ENV_FILE"; then
+  echo "SETTINGS_ENCRYPTION_KEY=$(openssl rand -hex 24)" >> "$ENV_FILE"
 fi
 
 step "Validando o compose"

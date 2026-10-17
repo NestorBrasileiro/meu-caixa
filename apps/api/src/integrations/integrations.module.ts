@@ -1,43 +1,24 @@
 import { Module } from '@nestjs/common';
-import { ENV } from '../config/config.module.js';
-import type { Env } from '../config/env.js';
-import { CachedFinanceProvider } from './cache/cached-finance-provider.js';
-import { FakeFinanceProvider } from './fake/fake-finance-provider.js';
-import { FINANCE_PROVIDER, type FinanceProvider } from './finance-provider.js';
-import { PluggyClient } from './pluggy/pluggy.client.js';
-import { PluggyProvider } from './pluggy/pluggy.provider.js';
+import { AppSettingsModule } from '../settings/app-settings.module.js';
+import { FINANCE_PROVIDER } from './finance-provider.js';
+import { FinanceProviderRegistry } from './open-finance/finance-provider.registry.js';
+import { OpenFinanceConfigStore } from './open-finance/open-finance-config.store.js';
 
 /**
- * Escolhe a implementação de `FinanceProvider` conforme `FINANCE_PROVIDER`.
- * Trocar de agregador = escrever um novo adapter e registrar aqui.
+ * Origem dos dados bancários. O `FinanceProviderRegistry` escolhe a
+ * implementação de `FinanceProvider` a cada uso, conforme o ambiente e a tela
+ * Configurações → Open Finance. Trocar de agregador = escrever um novo
+ * adapter e registrá-lo no registry.
  */
-export function createFinanceProvider(env: Env): FinanceProvider {
-  const provider = createBaseProvider(env);
-  const ttlMs = env.PROVIDER_CACHE_TTL_SECONDS * 1000;
-  return ttlMs > 0 ? new CachedFinanceProvider(provider, ttlMs) : provider;
-}
-
-function createBaseProvider(env: Env): FinanceProvider {
-  switch (env.FINANCE_PROVIDER) {
-    case 'pluggy':
-      return new PluggyProvider(
-        new PluggyClient({
-          baseUrl: env.PLUGGY_BASE_URL,
-          // Presença garantida pela validação do env quando FINANCE_PROVIDER=pluggy.
-          clientId: env.PLUGGY_CLIENT_ID!,
-          clientSecret: env.PLUGGY_CLIENT_SECRET!,
-          timeoutMs: env.PLUGGY_TIMEOUT_MS,
-          maxRetries: env.PLUGGY_MAX_RETRIES,
-        }),
-        { itemIds: env.PLUGGY_ITEM_IDS, timeZone: env.TIMEZONE },
-      );
-    case 'fake':
-      return new FakeFinanceProvider({ timeZone: env.TIMEZONE });
-  }
-}
-
 @Module({
-  providers: [{ provide: FINANCE_PROVIDER, inject: [ENV], useFactory: createFinanceProvider }],
-  exports: [FINANCE_PROVIDER],
+  imports: [AppSettingsModule],
+  providers: [
+    OpenFinanceConfigStore,
+    FinanceProviderRegistry,
+    // Sem provedor fixo: o registry decide. Os testes e2e sobrescrevem com um
+    // provedor em memória (`overrideProvider(FINANCE_PROVIDER)`).
+    { provide: FINANCE_PROVIDER, useValue: null },
+  ],
+  exports: [FinanceProviderRegistry, OpenFinanceConfigStore],
 })
 export class IntegrationsModule {}

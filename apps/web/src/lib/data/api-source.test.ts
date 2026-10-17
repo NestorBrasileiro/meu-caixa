@@ -5,7 +5,7 @@ vi.mock("next/headers", () => ({ cookies: vi.fn() }))
 vi.mock("next/navigation", () => ({ redirect: vi.fn() }))
 vi.mock("next/server", () => ({ connection: vi.fn() }))
 
-const { ApiError, collectPages, getAnalysis, getAnalysisStatus } = await import("./api-source")
+const { ApiError, collectPages, getAnalysis, getAnalysisStatus, getOpenFinanceSettings } = await import("./api-source")
 const { cookies } = await import("next/headers")
 
 type Row = { id: string }
@@ -80,5 +80,28 @@ describe("lib/data/api-source — análise", () => {
     const fetchMock = respond(200, status)
     expect(await getAnalysisStatus()).toEqual(status)
     expect(fetchMock).toHaveBeenCalledWith(expect.stringMatching(/\/api\/analysis\/status$/), expect.anything())
+  })
+})
+
+describe("lib/data/api-source — Open Finance", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals()
+  })
+
+  it("lê GET /api/settings/open-finance repassando o cookie", async () => {
+    vi.mocked(cookies).mockResolvedValue({ toString: () => "connect.sid=abc" } as never)
+    const settings = {
+      mode: { value: "none", source: "default" },
+      credentials: { configured: false, source: null, clientIdHint: null, updatedAt: null },
+      items: { source: "app", list: [] },
+      connectUrl: "https://meu.pluggy.ai",
+    }
+    const fetchMock = vi.fn(async () => new Response(JSON.stringify(settings), { status: 200 }))
+    vi.stubGlobal("fetch", fetchMock)
+    expect(await getOpenFinanceSettings()).toEqual(settings)
+    expect(fetchMock).toHaveBeenCalledWith(
+      expect.stringMatching(/\/api\/settings\/open-finance$/),
+      expect.objectContaining({ headers: expect.objectContaining({ cookie: "connect.sid=abc" }) }),
+    )
   })
 })

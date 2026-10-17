@@ -254,4 +254,39 @@ describe('PluggyClient', () => {
 
     await expect(client.getIdentity('item-1')).resolves.toBeNull();
   });
+  it('verifyCredentials sempre pede uma API key nova', async () => {
+    const { fetchFn, calls } = fakeFetch({
+      'POST /auth': [auth('key-1'), auth('key-2')],
+      'GET /items/item-1': [
+        (_url, init) => {
+          expect(new Headers(init.headers).get('X-API-KEY')).toBe('key-2');
+          return json({ id: 'item-1', status: 'UPDATED', connector: { name: 'Banco' } });
+        },
+      ],
+    });
+    const { client } = createClient(fetchFn);
+    await client.verifyCredentials();
+    await client.verifyCredentials();
+    await expect(client.getItem('item-1')).resolves.toMatchObject({ id: 'item-1' });
+    expect(calls.filter((call) => call.path === '/auth')).toHaveLength(2);
+  });
+
+  it('verifyCredentials devolve o status da recusa e não manda o segredo em lugar nenhum além do corpo', async () => {
+    const { fetchFn } = fakeFetch({
+      'POST /auth': [
+        (_url, init) => {
+          expect(JSON.parse(String(init.body))).toEqual({
+            clientId: 'client-id',
+            clientSecret: 'client-secret',
+          });
+          return json({ message: 'invalid' }, { status: 401 });
+        },
+      ],
+    });
+    const { client } = createClient(fetchFn);
+    const error = await client.verifyCredentials().catch((e: unknown) => e);
+    expect(error).toBeInstanceOf(PluggyApiError);
+    expect((error as PluggyApiError).status).toBe(401);
+    expect((error as PluggyApiError).message).not.toContain('client-secret');
+  });
 });

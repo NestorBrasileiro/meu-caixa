@@ -10,7 +10,8 @@ import type {
 /**
  * Porta de entrada dos dados financeiros. O resto do sistema depende só desta
  * interface; a implementação concreta (Pluggy, fake, outro agregador) é
- * escolhida por configuração em `IntegrationsModule`.
+ * escolhida a cada uso pelo `FinanceProviderRegistry`, conforme o ambiente e a
+ * tela Configurações → Open Finance.
  *
  * Os ids recebidos e devolvidos aqui são os do provedor (`externalId`).
  */
@@ -24,6 +25,10 @@ export interface FinanceProvider {
   getInvoices(accountId: string): Promise<Invoice[]>;
 }
 
+/**
+ * Provedor fixo, que ignora a configuração (usado pelos testes e2e). Vale
+ * `null` em produção: quem decide é o `FinanceProviderRegistry`.
+ */
 export const FINANCE_PROVIDER = Symbol('FINANCE_PROVIDER');
 
 /** Falha ao falar com o provedor, já traduzida para um erro nosso. */

@@ -9,12 +9,15 @@ import type {
 } from '../../domain/finance.js';
 import type { FinanceProvider } from '../finance-provider.js';
 import type { PluggyClient } from './pluggy.client.js';
+import type { PluggyItem } from './pluggy.schemas.js';
 import { mapAccount, mapBill, mapIdentity, mapItem, mapTransaction } from './pluggy.mapper.js';
 
 export interface PluggyProviderOptions {
   /** Ids dos items (bancos conectados) no Meu Pluggy. */
   itemIds: string[];
   timeZone: string;
+  /** Recebe o estado bruto dos items a cada consulta (status, erro), para a tela de configurações. */
+  onItems?: (items: PluggyItem[]) => void;
 }
 
 const EMPTY_PROFILE: Profile = { fullName: null, document: null, email: null };
@@ -38,6 +41,7 @@ export class PluggyProvider implements FinanceProvider {
 
   async getConnections(): Promise<Connection[]> {
     const items = await Promise.all(this.options.itemIds.map((id) => this.client.getItem(id)));
+    this.options.onItems?.(items);
     return items.map(mapItem);
   }
 

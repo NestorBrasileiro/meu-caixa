@@ -1,4 +1,4 @@
-import { ArrowLeftRight, Landmark, LayoutDashboard, Sparkles, Target, type LucideIcon } from "lucide-react"
+import { ArrowLeftRight, Landmark, LayoutDashboard, Settings, Sparkles, Target, type LucideIcon } from "lucide-react"
 
 export interface NavItem {
   title: string
@@ -37,6 +37,12 @@ export const NAV_ITEMS: NavItem[] = [
     href: "/analise",
     icon: Sparkles,
     description: "O que cortar, gastos do pecado e sugestões",
+  },
+  {
+    title: "Configurações",
+    href: "/configuracoes",
+    icon: Settings,
+    description: "Open Finance: fonte dos dados, credenciais da Pluggy e bancos",
   },
 ]
 

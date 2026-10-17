@@ -34,6 +34,13 @@ export const envSchema = z
       .min(32)
       .default(() => randomBytes(32).toString('hex')),
 
+    /**
+     * Chave que cifra os segredos guardados no banco pela tela de
+     * configurações (ex.: Client Secret da Pluggy). Obrigatória em produção
+     * (validado em validateEnv). Gere com: openssl rand -hex 32
+     */
+    SETTINGS_ENCRYPTION_KEY: z.string().min(32, 'use ao menos 32 caracteres aleatórios').optional(),
+
     KEYCLOAK_URL: z.url().default('http://localhost:8080'),
     KEYCLOAK_REALM: z.string().default('meu-caixa'),
     KEYCLOAK_CLIENT_ID: z.string().default('web'),
@@ -64,10 +71,20 @@ export const envSchema = z
 
     TIMEZONE: z.string().default('America/Sao_Paulo'),
 
-    FINANCE_PROVIDER: z.enum(['pluggy', 'fake']).default('pluggy'),
+    /**
+     * Força a origem dos dados bancários: `pluggy` (seus bancos) ou `fake`
+     * (dados fictícios). Ausente (padrão): decidido na tela Configurações →
+     * Open Finance; o env, quando definido, sempre vence a escolha do app.
+     */
+    FINANCE_PROVIDER: z.enum(['pluggy', 'fake']).optional(),
     PROVIDER_CACHE_TTL_SECONDS: z.coerce.number().int().min(0).default(300),
 
     PLUGGY_BASE_URL: z.url().default('https://api.pluggy.ai'),
+    /**
+     * Credenciais e items da Pluggy pelo ambiente. Opcionais: também dá para
+     * cadastrar na tela Configurações → Open Finance. Quando definidos aqui,
+     * valem no lugar dos cadastrados no app (e a tela fica só leitura).
+     */
     PLUGGY_CLIENT_ID: z.string().optional(),
     PLUGGY_CLIENT_SECRET: z.string().optional(),
     PLUGGY_ITEM_IDS: commaSeparatedList.default([]),
@@ -80,24 +97,14 @@ export const envSchema = z
     SYNC_OVERLAP_DAYS: z.coerce.number().int().min(0).default(7),
   })
   .superRefine((env, ctx) => {
-    if (env.FINANCE_PROVIDER === 'pluggy') {
-      const required = ['PLUGGY_CLIENT_ID', 'PLUGGY_CLIENT_SECRET'] as const;
-      for (const key of required) {
-        if (!env[key]) {
-          ctx.addIssue({
-            code: 'custom',
-            path: [key],
-            message: `obrigatório quando FINANCE_PROVIDER=pluggy`,
-          });
-        }
-      }
-      if (env.PLUGGY_ITEM_IDS.length === 0) {
-        ctx.addIssue({
-          code: 'custom',
-          path: ['PLUGGY_ITEM_IDS'],
-          message: 'informe ao menos um item (conexão) do Meu Pluggy',
-        });
-      }
+    // Só uma das duas não serve para nada: provavelmente um erro de digitação.
+    if (Boolean(env.PLUGGY_CLIENT_ID) !== Boolean(env.PLUGGY_CLIENT_SECRET)) {
+      ctx.addIssue({
+        code: 'custom',
+        path: [env.PLUGGY_CLIENT_ID ? 'PLUGGY_CLIENT_SECRET' : 'PLUGGY_CLIENT_ID'],
+        message:
+          'defina PLUGGY_CLIENT_ID e PLUGGY_CLIENT_SECRET juntos (ou deixe os dois vazios e cadastre na tela Configurações → Open Finance)',
+      });
     }
   });
 
@@ -116,6 +123,11 @@ export function validateEnv(raw: Record<string, unknown>): Env {
   if (result.data.NODE_ENV === 'production' && !input.SESSION_SECRET) {
     throw new Error(
       'Configuração inválida:\n✖ SESSION_SECRET é obrigatório em produção (mín. 32 caracteres)',
+    );
+  }
+  if (result.data.NODE_ENV === 'production' && !input.SETTINGS_ENCRYPTION_KEY) {
+    throw new Error(
+      'Configuração inválida:\n✖ SETTINGS_ENCRYPTION_KEY é obrigatório em produção (mín. 32 caracteres; gere com: openssl rand -hex 32)',
     );
   }
   return result.data;

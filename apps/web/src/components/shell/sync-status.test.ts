@@ -5,6 +5,7 @@ import {
   isInterruptedRun,
   liveRunId,
   summarizeSync,
+  syncIndicatorHref,
   syncIndicatorView,
   type SyncSummary,
 } from "./sync-status"
@@ -28,6 +29,7 @@ const summary = (patch: Partial<SyncSummary> = {}): SyncSummary => ({
   lastStatus: "SUCCEEDED",
   attention: { count: 0, critical: false },
   now: NOW,
+  notConfigured: false,
   ...patch,
 })
 
@@ -72,6 +74,7 @@ describe("shell/sync-status", () => {
       lastStatus: "FAILED",
       attention: { count: 1, critical: false },
       now: NOW,
+      notConfigured: false,
     })
   })
 
@@ -82,7 +85,9 @@ describe("shell/sync-status", () => {
       lastStatus: null,
       attention: { count: 0, critical: false },
       now: NOW,
+      notConfigured: false,
     })
+    expect(summarizeSync([], [], NOW, { notConfigured: true }).notConfigured).toBe(true)
   })
 
   it("nunca sincronizado não é um check verde", () => {
@@ -127,5 +132,30 @@ describe("shell/sync-status", () => {
     expect(syncIndicatorView(summary({ lastStatus: "FAILED", attention: { count: 1, critical: false } })).tone).toBe(
       "critical",
     )
+  })
+
+  it("Open Finance não configurado: diz isso, em vez de só \"nunca sincronizado\"", () => {
+    expect(syncIndicatorView(summary({ notConfigured: true, lastSyncAt: null, lastStatus: null }))).toEqual({
+      tone: "neutral",
+      status: "Open Finance não configurado",
+      attention: null,
+      compact: "Não configurado",
+    })
+    // Rodando vence (acabou de escolher a fonte e a sincronização começou).
+    expect(syncIndicatorView(summary({ notConfigured: true, runningRunId: "r" })).tone).toBe("running")
+  })
+})
+
+describe("components/shell/sync-status — para onde o indicador leva", () => {
+  it("nada sincronizado ainda ou Open Finance não configurado: configurações", () => {
+    expect(syncIndicatorHref(summary({ lastSyncAt: null, lastStatus: null }))).toBe("/configuracoes")
+    expect(syncIndicatorHref(summary({ notConfigured: true }))).toBe("/configuracoes")
+  })
+
+  it("com histórico, falha ou sincronização rodando: Contas", () => {
+    expect(syncIndicatorHref(summary())).toBe("/contas")
+    expect(syncIndicatorHref(summary({ lastSyncAt: null, lastStatus: "FAILED" }))).toBe("/contas")
+    expect(syncIndicatorHref(summary({ lastSyncAt: null, lastStatus: null, runningRunId: "r" }))).toBe("/contas")
+    expect(syncIndicatorHref(summary({ lastSyncAt: null, lastStatus: null }), true)).toBe("/contas")
   })
 })

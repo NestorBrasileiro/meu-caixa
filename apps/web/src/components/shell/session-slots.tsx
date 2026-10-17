@@ -1,6 +1,6 @@
 import { Skeleton } from "@/components/ui/skeleton"
 import type { AuthUser } from "@/lib/api/types"
-import { getConnections, getCurrentUser, getNow, getSyncRuns } from "@/lib/data"
+import { getConnections, getCurrentUser, getNow, getOpenFinanceSettings, getSyncRuns } from "@/lib/data"
 import { loadOrNull } from "./fail-soft"
 import { SyncIndicator, SyncIndicatorUnavailable } from "./sync-indicator"
 import { summarizeSync } from "./sync-status"
@@ -39,10 +39,13 @@ export function UserMenuSkeleton() {
 
 /** Indicador do cabeçalho. Lê as execuções e as conexões aqui; o resto da regra está em `sync-status.ts`. */
 export async function SessionSyncStatus() {
-  const data = await loadOrNull("a situação da sincronização", () =>
-    Promise.all([getSyncRuns(), getConnections(), getNow()]),
-  )
+  const [data, openFinance] = await Promise.all([
+    loadOrNull("a situação da sincronização", () => Promise.all([getSyncRuns(), getConnections(), getNow()])),
+    // Só refina o texto ("Open Finance não configurado"): sem ele, o indicador continua.
+    loadOrNull("as configurações do Open Finance", getOpenFinanceSettings),
+  ])
   if (!data) return <SyncIndicatorUnavailable />
   const [runs, connections, now] = data
-  return <SyncIndicator summary={summarizeSync(runs, connections, now)} />
+  const notConfigured = openFinance?.mode.value === "none"
+  return <SyncIndicator summary={summarizeSync(runs, connections, now, { notConfigured })} />
 }

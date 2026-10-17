@@ -45,8 +45,13 @@ export interface TestAppOptions {
   anthropic?: unknown;
 }
 
+/**
+ * `provider`: provedor fixo (ex.: `InMemoryProvider`), que ignora a
+ * configuração do Open Finance; `null` usa o `FinanceProviderRegistry` de
+ * verdade (ambiente + tela de configurações).
+ */
 export async function createTestApp(
-  provider: FinanceProvider,
+  provider: FinanceProvider | null,
   options: TestAppOptions = {},
 ): Promise<INestApplication> {
   let builder = Test.createTestingModule({ imports: [AppModule] })
@@ -56,7 +61,6 @@ export async function createTestApp(
         NODE_ENV: 'test',
         DATABASE_URL: TEST_DATABASE_URL,
         DATABASE_MIGRATE_ON_START: 'true',
-        FINANCE_PROVIDER: 'fake',
         SYNC_ENABLED: 'false',
         APP_URL: 'http://api.test',
         FRONTEND_URL,
@@ -84,6 +88,6 @@ export async function createTestApp(
 export async function resetDatabase(app: INestApplication): Promise<void> {
   const db = app.get<Database>(DATABASE);
   await db.execute(
-    sql`truncate table sync_runs, invoices, transactions, accounts, connections, sessions, commitments, goals, budget_categories, analysis_runs, analysis_reports cascade`,
+    sql`truncate table sync_runs, invoices, transactions, accounts, connections, sessions, commitments, goals, budget_categories, analysis_runs, analysis_reports, app_settings cascade`,
   );
 }

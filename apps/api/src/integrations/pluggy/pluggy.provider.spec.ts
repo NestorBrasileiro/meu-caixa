@@ -75,4 +75,23 @@ describe('PluggyProvider', () => {
       email: null,
     });
   });
+  it('repassa o estado bruto dos items para a tela de configurações', async () => {
+    const item = (id: string) => ({
+      id,
+      status: id === 'item-2' ? 'LOGIN_ERROR' : 'UPDATED',
+      connector: { name: `Banco ${id}` },
+      error: id === 'item-2' ? { code: 'INVALID_CREDENTIALS', message: 'Senha alterada' } : null,
+    });
+    const getItem = vi.fn(async (id: string) => item(id));
+    const onItems = vi.fn();
+    const provider = new PluggyProvider({ getItem } as unknown as PluggyClient, {
+      itemIds: ['item-1', 'item-2'],
+      timeZone: 'America/Sao_Paulo',
+      onItems,
+    });
+
+    const connections = await provider.getConnections();
+    expect(connections.map((c) => c.status)).toEqual(['ACTIVE', 'ACTION_REQUIRED']);
+    expect(onItems).toHaveBeenCalledWith([item('item-1'), item('item-2')]);
+  });
 });
