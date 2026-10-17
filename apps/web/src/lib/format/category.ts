@@ -21,6 +21,10 @@ const LABELS: Record<string, string> = {
   Shopping: "Compras",
   "Online shopping": "Compras online",
   "Credit card payment": "Pagamento de fatura",
+  Utilities: "Contas de consumo",
+  "Same person transfer": "Transferência entre contas próprias",
+  "Same person transfer - PIX": "Pix entre contas próprias",
+  "Same person transfer - TED": "TED entre contas próprias",
 }
 
 export function categoryLabel(category: string | null): string {

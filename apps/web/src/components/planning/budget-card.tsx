@@ -1,12 +1,13 @@
 import { AlertTriangle, CheckCircle2, ReceiptText, XCircle } from "lucide-react"
 import { Card, CardAction, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card"
-import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from "@/components/ui/empty"
+import { Empty, EmptyContent, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from "@/components/ui/empty"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Tabs, TabsContent } from "@/components/ui/tabs"
 import type { Cents } from "@/lib/api/types"
 import { formatMoney, formatPercent } from "@/lib/format/money"
 import { cn } from "@/lib/utils"
-import { listJoin, plural, type BudgetGroup, type BudgetRow } from "./model"
+import { AddButton, BudgetCategoriesMenu, RowActions } from "./actions"
+import { budgetSummary, listJoin, plural, type BudgetGroup, type BudgetRow, type BudgetSummary } from "./model"
 import { HEADER_ACTION_CLASS, HEADER_DESCRIPTION_CLASS, PANEL_FOCUS_CLASS } from "./styles"
 import { ViewToggle } from "./view-toggle"
 
@@ -70,17 +71,40 @@ function rowSummary(row: BudgetRow, monthName: string): string {
   return `${row.name}: ${formatMoney(row.actual)} de ${formatMoney(row.budget)} (${formatPercent(row.ratio ?? 0)}), ${status}.${includes}`
 }
 
-/** Rótulo do grupo com o total; um grupo acima do orçamento ganha o mesmo selo das linhas. */
+/**
+ * Gasto contra o teto ("R$ 900,00 de R$ 1.000,00"), só das categorias com teto;
+ * o gasto das sem teto vem à parte ("+ R$ 120,00 sem teto").
+ */
+function BudgetTotal({ summary, strong }: { summary: BudgetSummary; strong: string }) {
+  if (summary.budget === 0) {
+    return (
+      <>
+        <span className={strong}>{formatMoney(summary.unlimited)}</span>
+        <span className="text-muted-foreground"> sem teto</span>
+      </>
+    )
+  }
+  return (
+    <>
+      <span className={strong}>{formatMoney(summary.actual)}</span>
+      <span className="text-muted-foreground"> de {formatMoney(summary.budget)}</span>
+      {summary.unlimited > 0 && (
+        <span className="text-muted-foreground"> + {formatMoney(summary.unlimited)} sem teto</span>
+      )}
+    </>
+  )
+}
+
+/** Rótulo do grupo com o total; o selo soma o estouro das categorias que passaram do teto. */
 function GroupHeader({ group }: { group: BudgetGroup }) {
   return (
     <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-0.5 border-b pb-1.5 text-xs">
       <span className="flex items-center gap-2">
         <h3 className="font-medium">{group.label}</h3>
-        {group.actual > group.budget && <OverLabel over={group.actual - group.budget} className="font-medium" />}
+        {group.over > 0 && <OverLabel over={group.over} className="font-medium" />}
       </span>
-      <span className="ml-auto whitespace-nowrap tabular-nums">
-        <span className="font-medium">{formatMoney(group.actual)}</span>
-        <span className="text-muted-foreground"> de {formatMoney(group.budget)}</span>
+      <span className="ml-auto text-right tabular-nums">
+        <BudgetTotal summary={group} strong="font-medium" />
       </span>
     </div>
   )
@@ -154,23 +178,26 @@ function TableView({ groups }: { groups: BudgetGroup[] }) {
             <GroupHeader group={group} />
             <ul className="divide-y">
               {group.rows.map((row) => (
-                <li key={row.id} className="space-y-0.5 py-3 text-sm first:pt-0 last:pb-0">
-                  <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-0.5">
-                    <span className="font-medium">{row.name}</span>
-                    <span className="ml-auto text-right">
-                      <Situation row={row} />
-                    </span>
+                <li key={row.id} className="flex items-start gap-2 py-3 text-sm first:pt-0 last:pb-0">
+                  <div className="min-w-0 flex-1 space-y-0.5">
+                    <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-0.5">
+                      <span className="font-medium">{row.name}</span>
+                      <span className="ml-auto text-right">
+                        <Situation row={row} />
+                      </span>
+                    </div>
+                    <p className="text-muted-foreground tabular-nums">
+                      {formatMoney(row.actual)}
+                      {row.budget !== null && (
+                        <>
+                          {" "}
+                          de {formatMoney(row.budget)} · {formatPercent(row.ratio ?? 0)} usado
+                        </>
+                      )}
+                    </p>
+                    {sourcesOf(row) && <p className="text-muted-foreground text-xs">{sourcesOf(row)}</p>}
                   </div>
-                  <p className="text-muted-foreground tabular-nums">
-                    {formatMoney(row.actual)}
-                    {row.budget !== null && (
-                      <>
-                        {" "}
-                        de {formatMoney(row.budget)} · {formatPercent(row.ratio ?? 0)} usado
-                      </>
-                    )}
-                  </p>
-                  {sourcesOf(row) && <p className="text-muted-foreground text-xs">{sourcesOf(row)}</p>}
+                  <RowActions kind="category" id={row.id} name={row.name} className="-mt-1.5 -mr-2 shrink-0" />
                 </li>
               ))}
             </ul>
@@ -190,13 +217,16 @@ function WideTable({ groups }: { groups: BudgetGroup[] }) {
           <TableHead className="text-right">Gasto</TableHead>
           <TableHead className="text-right">Orçamento</TableHead>
           <TableHead className="text-right">Usado</TableHead>
-          <TableHead className="pr-0 text-right">Situação</TableHead>
+          <TableHead className="text-right">Situação</TableHead>
+          <TableHead className="w-10 pr-0 pl-2">
+            <span className="sr-only">Ações</span>
+          </TableHead>
         </TableRow>
       </TableHeader>
       <TableBody>
         {groups.map((group) => [
           <TableRow key={group.kind} className="hover:bg-transparent">
-            <TableHead scope="colgroup" colSpan={5} className="text-muted-foreground h-8 pl-0 text-xs">
+            <TableHead scope="colgroup" colSpan={6} className="text-muted-foreground h-8 pl-0 text-xs">
               {group.label}
             </TableHead>
           </TableRow>,
@@ -213,8 +243,11 @@ function WideTable({ groups }: { groups: BudgetGroup[] }) {
               <TableCell className="text-right tabular-nums">
                 {row.ratio !== null ? formatPercent(row.ratio) : "—"}
               </TableCell>
-              <TableCell className="pr-0 text-right">
+              <TableCell className="text-right">
                 <Situation row={row} />
+              </TableCell>
+              <TableCell className="py-0 pr-0 pl-2 text-right">
+                <RowActions kind="category" id={row.id} name={row.name} />
               </TableCell>
             </TableRow>
           )),
@@ -247,8 +280,7 @@ export function BudgetCard({
   className?: string
 }) {
   const rows = groups.flatMap((group) => group.rows)
-  const actual = rows.reduce((sum, row) => sum + row.actual, 0)
-  const budget = rows.reduce((sum, row) => sum + (row.budget ?? 0), 0)
+  const summary = budgetSummary(rows)
   const overCount = rows.filter((row) => row.over > 0).length
 
   return (
@@ -258,12 +290,13 @@ export function BudgetCard({
           <CardTitle className="text-balance">
             <h2>Orçamento por categoria</h2>
           </CardTitle>
-          <CardDescription className={HEADER_DESCRIPTION_CLASS}>
+          <CardDescription className={cn(rows.length > 0 && HEADER_DESCRIPTION_CLASS)}>
             Gasto em {monthLabel}, o último mês fechado, contra o orçamento de cada categoria.
           </CardDescription>
           {rows.length > 0 && (
-            <CardAction className={HEADER_ACTION_CLASS}>
+            <CardAction className={cn("flex items-center gap-2", HEADER_ACTION_CLASS)}>
               <ViewToggle />
+              <BudgetCategoriesMenu categories={rows.map(({ id, name }) => ({ id, name }))} />
             </CardAction>
           )}
         </CardHeader>
@@ -276,9 +309,13 @@ export function BudgetCard({
                 </EmptyMedia>
                 <EmptyTitle className="text-base">Nenhuma categoria no orçamento</EmptyTitle>
                 <EmptyDescription>
-                  Quando o orçamento tiver categorias com limite mensal, o gasto de cada uma aparece aqui.
+                  Agrupe as categorias do banco (mercado, delivery, transporte…) e defina um teto por mês para
+                  comparar com o gasto de {monthName}.
                 </EmptyDescription>
               </EmptyHeader>
+              <EmptyContent>
+                <AddButton kind="category">Adicionar categoria</AddButton>
+              </EmptyContent>
             </Empty>
           ) : (
             <>
@@ -301,16 +338,20 @@ export function BudgetCard({
                     <span aria-hidden>·</span>
                     <span className="inline-flex items-center gap-1">
                       <XCircle className="text-status-critical size-3.5 shrink-0" aria-hidden />
-                      {plural(overCount, "categoria acima", "categorias acima")}
+                      {plural(overCount, "categoria acima", "categorias acima")} ({formatMoney(summary.over)})
                     </span>
                   </>
                 )}
               </span>
-              <span className="ml-auto whitespace-nowrap">
-                <span className="font-semibold tabular-nums">{formatMoney(actual)}</span>
-                <span className="text-muted-foreground tabular-nums"> de {formatMoney(budget)}</span>
+              <span className="ml-auto text-right tabular-nums">
+                <BudgetTotal summary={summary} strong="font-semibold" />
               </span>
             </div>
+            {summary.budget > 0 && summary.unlimitedNames.length > 0 && (
+              <p className="text-muted-foreground text-xs">
+                Sem teto: {formatMoney(summary.unlimited)} em {listJoin(summary.unlimitedNames)}.
+              </p>
+            )}
             {unbudgeted.total > 0 && (
               <p className="text-muted-foreground text-xs">
                 Fora do orçamento: {formatMoney(unbudgeted.total)} em {unbudgeted.labels.join(", ")}.

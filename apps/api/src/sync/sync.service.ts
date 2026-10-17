@@ -23,6 +23,7 @@ import { FINANCE_PROVIDER, type FinanceProvider } from '../integrations/finance-
 /** Chave do advisory lock que garante uma sincronização por vez. */
 const SYNC_LOCK_KEY = 7_206_845_215_331_841;
 const UPSERT_BATCH_SIZE = 500;
+export const INTERRUPTED_RUN_ERROR = 'Interrompida: a sincronização anterior não terminou';
 
 export class SyncInProgressError extends Error {
   constructor() {
@@ -64,6 +65,7 @@ export class SyncService {
       );
       locked = rows[0]?.locked === true;
       if (!locked) throw new SyncInProgressError();
+      await this.failInterruptedRuns();
 
       const [run] = await this.db
         .insert(syncRuns)
@@ -108,6 +110,21 @@ export class SyncService {
       .orderBy(desc(syncRuns.startedAt))
       .limit(1);
     return run;
+  }
+
+  /**
+   * Execuções que ficaram RUNNING (o processo caiu no meio). Só é chamado com o
+   * lock em mãos, o que prova que nenhuma delas está viva.
+   */
+  private async failInterruptedRuns(): Promise<void> {
+    const interrupted = await this.db
+      .update(syncRuns)
+      .set({ status: 'FAILED', finishedAt: new Date(), errors: [INTERRUPTED_RUN_ERROR] })
+      .where(eq(syncRuns.status, 'RUNNING'))
+      .returning({ id: syncRuns.id });
+    for (const { id } of interrupted) {
+      this.logger.warn(`Sincronização ${id} marcada como falha: não terminou`);
+    }
   }
 
   private async execute(run: SyncRunRow): Promise<SyncRunRow> {

@@ -29,7 +29,7 @@
       "implicitFlowEnabled": false,
       "directAccessGrantsEnabled": false,
       "serviceAccountsEnabled": false,
-      "redirectUris": ["http://localhost:3000/auth/callback"],
+      "redirectUris": ["http://localhost:3001/auth/callback"],
       "webOrigins": ["http://localhost:3001"],
       "attributes": {
         "pkce.code.challenge.method": "S256",

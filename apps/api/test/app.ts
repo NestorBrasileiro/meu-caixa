@@ -3,6 +3,7 @@ import { Test } from '@nestjs/testing';
 import { sql } from 'drizzle-orm';
 import type { Request } from 'express';
 import { AppModule } from '../src/app.module.js';
+import { configureApp } from '../src/app.setup.js';
 import { AuthGuard } from '../src/auth/auth.guard.js';
 import type { AuthUser } from '../src/auth/auth.types.js';
 import { ENV } from '../src/config/config.module.js';
@@ -69,6 +70,7 @@ export async function createTestApp(
 
   const moduleRef = await builder.compile();
   const app = moduleRef.createNestApplication({ logger: false });
+  configureApp(app);
   await app.init();
   return app;
 }
@@ -76,6 +78,6 @@ export async function createTestApp(
 export async function resetDatabase(app: INestApplication): Promise<void> {
   const db = app.get<Database>(DATABASE);
   await db.execute(
-    sql`truncate table sync_runs, invoices, transactions, accounts, connections, sessions cascade`,
+    sql`truncate table sync_runs, invoices, transactions, accounts, connections, sessions, commitments, goals, budget_categories cascade`,
   );
 }

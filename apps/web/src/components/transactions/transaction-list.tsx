@@ -44,21 +44,25 @@ export function TransactionList({
   groups,
   today,
   accountsById,
-  originals,
   categories,
   outOfFilter,
   focusTarget,
+  saving,
+  readOnly,
   onCategoryChange,
 }: {
   groups: DayGroup[]
   today: IsoDate
   accountsById: Map<string, AccountOption>
-  originals: Map<string, string | null>
+  /** Opções do menu de categoria (filtradas por lançamento em `categoryOptionsFor`). */
   categories: CategoryOption[]
   /** Linhas editadas que só continuam na lista por terem sido editadas com os filtros atuais. */
   outOfFilter: Map<string, OutOfFilterReason>
   focusTarget: string | null
-  onCategoryChange: (transactionId: string, category: string | null) => void
+  /** Lançamentos com a categoria sendo salva. */
+  saving: ReadonlySet<string>
+  readOnly: boolean
+  onCategoryChange: (tx: Transaction, category: string | null) => void
 }) {
   return (
     <div className="@container/list">
@@ -96,10 +100,11 @@ export function TransactionList({
                   key={tx.id}
                   tx={tx}
                   account={accountsById.get(tx.accountId)}
-                  original={originals.get(tx.id) ?? null}
                   categories={categories}
                   outOfFilter={outOfFilter.get(tx.id) ?? null}
                   focusable={tx.id === focusTarget}
+                  saving={saving.has(tx.id)}
+                  readOnly={readOnly}
                   onCategoryChange={onCategoryChange}
                 />
               ))}
@@ -114,20 +119,22 @@ export function TransactionList({
 function TransactionRow({
   tx,
   account,
-  original,
   categories,
   outOfFilter,
   focusable,
+  saving,
+  readOnly,
   onCategoryChange,
 }: {
   tx: Transaction
   account: AccountOption | undefined
-  original: string | null
   categories: CategoryOption[]
   outOfFilter: OutOfFilterReason | null
   /** Alvo do foco programático (primeira linha revelada pelo "Mostrar mais"). */
   focusable: boolean
-  onCategoryChange: (transactionId: string, category: string | null) => void
+  saving: boolean
+  readOnly: boolean
+  onCategoryChange: (tx: Transaction, category: string | null) => void
 }) {
   const counterparty =
     tx.counterpartyName && normalizeText(tx.counterpartyName) !== normalizeText(tx.description)
@@ -182,10 +189,13 @@ function TransactionRow({
       <div className="flex min-w-0 flex-wrap items-center gap-1.5 [grid-area:tags]">
         <CategoryMenu
           category={tx.category}
-          original={original}
-          options={categoryOptionsFor(categories, tx, original, account)}
+          original={tx.originalCategory}
+          options={readOnly ? [] : categoryOptionsFor(categories, tx, account)}
           description={tx.description}
-          onChange={(category) => onCategoryChange(tx.id, category)}
+          pending={saving}
+          pendingTransaction={tx.status === "PENDING"}
+          readOnly={readOnly}
+          onChange={(category) => onCategoryChange(tx, category)}
         />
         <RowBadges tx={tx} className="flex @3xl/list:hidden" />
       </div>

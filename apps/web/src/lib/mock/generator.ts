@@ -361,6 +361,7 @@ function generateTransactions(): Transaction[] {
         amount,
         status: date > pendingFrom ? "PENDING" : "POSTED",
         category: rule.category,
+        originalCategory: rule.category,
         paymentMethod: rule.paymentMethod,
         counterpartyName: rule.counterpartyName,
         installment: rule.installmentsOf
@@ -382,6 +383,7 @@ function generateTransactions(): Transaction[] {
       amount: -invoice.total,
       status: "POSTED",
       category: "Credit card payment",
+      originalCategory: "Credit card payment",
       paymentMethod: "OTHER",
       counterpartyName: "Cartão Exemplo",
       installment: null,

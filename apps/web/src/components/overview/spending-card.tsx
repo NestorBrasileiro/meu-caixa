@@ -4,13 +4,7 @@ import { ReceiptText } from "lucide-react"
 import { Bar, BarChart, LabelList, XAxis, YAxis } from "recharts"
 import { Card, CardAction, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card"
 import { ChartContainer, ChartTooltip, ChartTooltipContent, type ChartConfig } from "@/components/ui/chart"
-import {
-  Empty,
-  EmptyDescription,
-  EmptyHeader,
-  EmptyMedia,
-  EmptyTitle,
-} from "@/components/ui/empty"
+import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from "@/components/ui/empty"
 import { Table, TableBody, TableCaption, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Tabs, TabsContent } from "@/components/ui/tabs"
 import type { Cents } from "@/lib/api/types"
@@ -26,6 +20,11 @@ const chartConfig = {
 
 /** Altura mínima por categoria; no desktop o gráfico cresce até a altura da linha do grid. */
 const BAR_ROW_HEIGHT = 34
+/**
+ * Até onde cada categoria pode crescer: com poucas categorias (histórico
+ * curto), as barras não se espalham pela altura toda do cartão.
+ */
+const MAX_BAR_ROW_HEIGHT = 60
 
 /**
  * Rótulo de categoria numa linha só (o <Text> do Recharts quebra palavras
@@ -53,12 +52,15 @@ export function SpendingCard({
   rows,
   total,
   month,
+  hasHistory,
   className,
 }: {
   rows: CategoryBar[]
   total: Cents
   /** Mês fechado, `YYYY-MM`. */
   month: string
+  /** Há alguma transação sincronizada (sem nenhuma, o vazio fala da primeira sincronização). */
+  hasHistory: boolean
   className?: string
 }) {
   const monthLabel = formatMonth(month)
@@ -80,13 +82,19 @@ export function SpendingCard({
         </CardHeader>
         <CardContent className="flex flex-1 flex-col">
           {rows.length === 0 ? (
-            <Empty className="border p-6 md:p-8">
+            <Empty className="min-h-70 border p-6 md:p-8">
               <EmptyHeader>
                 <EmptyMedia variant="icon">
                   <ReceiptText aria-hidden />
                 </EmptyMedia>
-                <EmptyTitle className="text-base">Nenhum gasto em {monthLabel}</EmptyTitle>
-                <EmptyDescription>Quando houver compras ou contas pagas no mês, elas aparecem aqui por categoria.</EmptyDescription>
+                <EmptyTitle className="text-base">
+                  {hasHistory ? `Nenhum gasto em ${monthLabel}` : "Ainda sem gastos para mostrar"}
+                </EmptyTitle>
+                <EmptyDescription>
+                  {hasHistory
+                    ? "Quando houver compras ou contas pagas no mês, elas aparecem aqui por categoria."
+                    : "Depois da primeira sincronização, os gastos do último mês fechado aparecem aqui por categoria."}
+                </EmptyDescription>
               </EmptyHeader>
             </Empty>
           ) : (
@@ -95,7 +103,10 @@ export function SpendingCard({
                 <ChartContainer
                   config={chartConfig}
                   className="aspect-auto w-full flex-1 [&_.recharts-label-list_text]:fill-foreground"
-                  style={{ minHeight: rows.length * BAR_ROW_HEIGHT + 8 }}
+                  style={{
+                    minHeight: rows.length * BAR_ROW_HEIGHT + 8,
+                    maxHeight: rows.length * MAX_BAR_ROW_HEIGHT + 8,
+                  }}
                 >
                   <BarChart
                     data={rows}

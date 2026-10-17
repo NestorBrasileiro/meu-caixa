@@ -1,3 +1,4 @@
+import { installmentsPaid } from "@/components/planning/schedule"
 import type { BudgetCategory, Commitment, Goal, MonthProjection, PlanningOverview } from "@/lib/api/planning"
 import type { Cents } from "@/lib/api/types"
 import { lastMonths, monthRange } from "@/lib/finance/aggregate"
@@ -63,11 +64,12 @@ export const BUDGET_CATEGORIES: BudgetCategory[] = [
   },
 ]
 
-/** Parcelas mensais já vencidas desde `startsOn` (inclusive) até hoje. */
-function paidSince(startsOn: string): number {
-  const [y0, m0, d0] = startsOn.split("-").map(Number)
-  const [y1, m1, d1] = MOCK_TODAY.split("-").map(Number)
-  return (y1 - y0) * 12 + (m1 - m0) + (d1 >= d0 ? 1 : 0)
+/**
+ * Parcelas já pagas hoje, com a mesma regra da API: vencimento no `dayOfMonth`
+ * (limitado ao fim do mês) e paga só se venceu antes de hoje.
+ */
+export function paidSince(startsOn: string, dayOfMonth: number, total: number): number {
+  return installmentsPaid(startsOn, dayOfMonth, total, MOCK_TODAY)
 }
 
 export const COMMITMENTS: Commitment[] = [
@@ -80,7 +82,7 @@ export const COMMITMENTS: Commitment[] = [
     categoryId: "cat-moradia",
     startsOn: "2023-09-10",
     endsOn: "2033-08-10",
-    installments: { paid: paidSince("2023-09-10"), total: 120 },
+    installments: { paid: paidSince("2023-09-10", 10, 120), total: 120 },
     notes: "Loteadora Exemplo",
   },
   {

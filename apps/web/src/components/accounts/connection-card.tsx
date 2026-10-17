@@ -8,6 +8,7 @@ import { formatDateShort, formatRelative } from "@/lib/format/date"
 import { formatMoney } from "@/lib/format/money"
 import { CreditLimitMeter } from "./credit-limit-meter"
 import { daysBetween, formatDayMonth, institutionInitials } from "./format"
+import { hasClosed } from "./invoices"
 
 /** Sincronização com mais de N dias de atraso é sinalizada mesmo com a conexão ativa. */
 const STALE_AFTER_DAYS = 2
@@ -121,7 +122,7 @@ function AccountItem({
         </div>
       </div>
 
-      {isCard && <CardDetails account={account} openInvoice={openInvoice} />}
+      {isCard && <CardDetails account={account} openInvoice={openInvoice} today={today} />}
 
       <SyncedThrough
         date={account.transactionsSyncedThrough}
@@ -135,7 +136,15 @@ function AccountItem({
   )
 }
 
-function CardDetails({ account, openInvoice }: { account: Account; openInvoice: OpenInvoice | null }) {
+function CardDetails({
+  account,
+  openInvoice,
+  today,
+}: {
+  account: Account
+  openInvoice: OpenInvoice | null
+  today: IsoDate
+}) {
   const limit = account.creditLimit
   const used = limit !== null && account.availableCredit !== null ? limit - account.availableCredit : account.balance
 
@@ -153,7 +162,9 @@ function CardDetails({ account, openInvoice }: { account: Account; openInvoice: 
           <>
             {openInvoice.closingDate && (
               <>
-                <dt className="text-muted-foreground">Fatura fecha em</dt>
+                <dt className="text-muted-foreground">
+                  {hasClosed(openInvoice, today) ? "Fatura fechou em" : "Fatura fecha em"}
+                </dt>
                 <dd className="text-right">{formatDateShort(openInvoice.closingDate)}</dd>
               </>
             )}

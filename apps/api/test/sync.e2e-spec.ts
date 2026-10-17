@@ -2,7 +2,9 @@ import type { INestApplication } from '@nestjs/common';
 import request from 'supertest';
 import { addDays, today } from '../src/domain/dates.js';
 import type { Transaction } from '../src/domain/finance.js';
-import { SyncService } from '../src/sync/sync.service.js';
+import { DATABASE, type Database } from '../src/database/database.module.js';
+import { syncRuns } from '../src/database/schema.js';
+import { INTERRUPTED_RUN_ERROR, SyncService } from '../src/sync/sync.service.js';
 import { createTestApp, resetDatabase } from './app.js';
 import { InMemoryProvider } from './in-memory-provider.js';
 
@@ -125,12 +127,12 @@ describe('Sincronização (e2e)', () => {
       },
     });
 
-    const connections = await http().get('/connections').expect(200);
+    const connections = await http().get('/api/connections').expect(200);
     expect(connections.body).toEqual([
       expect.objectContaining({ institutionName: 'Banco Teste', status: 'ACTIVE' }),
     ]);
 
-    const accounts = await http().get('/accounts').expect(200);
+    const accounts = await http().get('/api/accounts').expect(200);
     expect(
       accounts.body.map((a: { name: string; balance: number }) => [a.name, a.balance]),
     ).toEqual([
@@ -138,7 +140,7 @@ describe('Sincronização (e2e)', () => {
       ['Cartão', 500_00],
     ]);
 
-    const transactions = await http().get('/transactions').expect(200);
+    const transactions = await http().get('/api/transactions').expect(200);
     expect(transactions.body.total).toBe(4);
     expect(transactions.body.items.map((t: { description: string }) => t.description)).toEqual([
       'pendente',
@@ -154,14 +156,14 @@ describe('Sincronização (e2e)', () => {
 
     const checking = accounts.body.find((a: { type: string }) => a.type === 'CHECKING');
     const filtered = await http()
-      .get('/transactions')
+      .get('/api/transactions')
       .query({ accountId: checking.id, from: day(-15) })
       .expect(200);
     expect(filtered.body.items.map((t: { description: string }) => t.description)).toEqual([
       'Parcela terreno',
     ]);
 
-    const invoices = await http().get('/invoices').expect(200);
+    const invoices = await http().get('/api/invoices').expect(200);
     expect(invoices.body).toEqual([
       expect.objectContaining({ dueDate: day(10), total: 500_00, minimumPayment: 75_00 }),
     ]);
@@ -179,9 +181,9 @@ describe('Sincronização (e2e)', () => {
     const second = await sync.run('MANUAL');
 
     expect(second.stats).toMatchObject({ removedPendingTransactions: 1 });
-    const accounts = await http().get('/accounts').expect(200);
+    const accounts = await http().get('/api/accounts').expect(200);
     expect(accounts.body[0].balance).toBe(250_00);
-    const transactions = await http().get('/transactions').expect(200);
+    const transactions = await http().get('/api/transactions').expect(200);
     expect(transactions.body.total).toBe(4);
     expect(transactions.body.items.map((t: { description: string }) => t.description)).toContain(
       'efetivada',
@@ -208,7 +210,10 @@ describe('Sincronização (e2e)', () => {
 
     await sync.run('MANUAL');
 
-    const transactions = await http().get('/transactions').query({ search: 'salário' }).expect(200);
+    const transactions = await http()
+      .get('/api/transactions')
+      .query({ search: 'salário' })
+      .expect(200);
     expect(transactions.body.total).toBe(1);
   });
 
@@ -220,7 +225,7 @@ describe('Sincronização (e2e)', () => {
     expect(run.status).toBe('PARTIAL');
     expect(run.errors).toEqual(['Transações de "Cartão": banco fora do ar']);
     expect(run.stats).toMatchObject({ transactions: 2, invoices: 1 });
-    const accounts = await http().get('/accounts').expect(200);
+    const accounts = await http().get('/api/accounts').expect(200);
     const card = accounts.body.find((a: { type: string }) => a.type === 'CREDIT_CARD');
     expect(card.transactionsSyncedThrough).toBeNull();
   });
@@ -231,7 +236,7 @@ describe('Sincronização (e2e)', () => {
     const run = await sync.run('MANUAL');
 
     expect(run).toMatchObject({ status: 'FAILED', errors: ['Pluggy fora do ar'] });
-    const runs = await http().get('/sync/runs').expect(200);
+    const runs = await http().get('/api/sync/runs').expect(200);
     expect(runs.body).toEqual([expect.objectContaining({ id: run.id, status: 'FAILED' })]);
   });
 
@@ -239,16 +244,60 @@ describe('Sincronização (e2e)', () => {
     let resume!: () => void;
     provider.pause = new Promise((resolve) => (resume = resolve));
 
-    const started = await http().post('/sync').expect(202);
+    const started = await http().post('/api/sync').expect(202);
     expect(started.body).toMatchObject({ status: 'RUNNING', trigger: 'MANUAL' });
-    await http().post('/sync').expect(409);
+    await http().post('/api/sync').expect(409);
 
     resume();
     await sync.waitForIdle();
-    const runs = await http().get('/sync/runs').expect(200);
+    const runs = await http().get('/api/sync/runs').expect(200);
     expect(runs.body).toEqual([
       expect.objectContaining({ id: started.body.id, status: 'SUCCEEDED' }),
     ]);
+  });
+
+  it('marca como falha a execução que ficou RUNNING ao iniciar a próxima', async () => {
+    // Processo que caiu no meio: a linha ficou RUNNING e o lock foi solto.
+    const [stale] = await app
+      .get<Database>(DATABASE)
+      .insert(syncRuns)
+      .values({
+        provider: 'test',
+        trigger: 'SCHEDULED',
+        status: 'RUNNING',
+        startedAt: new Date(Date.now() - 60 * 60 * 1000),
+      })
+      .returning();
+
+    const run = await sync.run('MANUAL');
+
+    expect(run.status).toBe('SUCCEEDED');
+    const runs = await http().get('/api/sync/runs').expect(200);
+    expect(runs.body).toEqual([
+      expect.objectContaining({ id: run.id, status: 'SUCCEEDED' }),
+      expect.objectContaining({
+        id: stale!.id,
+        status: 'FAILED',
+        finishedAt: expect.any(String),
+        errors: [INTERRUPTED_RUN_ERROR],
+      }),
+    ]);
+    expect(INTERRUPTED_RUN_ERROR).toBe('Interrompida: a sincronização anterior não terminou');
+  });
+
+  it('não mexe na execução em andamento quando a segunda é recusada', async () => {
+    let resume!: () => void;
+    provider.pause = new Promise((resolve) => (resume = resolve));
+
+    const started = await http().post('/api/sync').expect(202);
+    await http().post('/api/sync').expect(409);
+    const during = await http().get('/api/sync/runs').expect(200);
+    expect(during.body).toEqual([
+      expect.objectContaining({ id: started.body.id, status: 'RUNNING' }),
+    ]);
+
+    resume();
+    await sync.waitForIdle();
   });
 
   it('escapa curingas na busca', async () => {
@@ -260,7 +309,7 @@ describe('Sincronização (e2e)', () => {
     );
     await sync.run('MANUAL');
 
-    const result = await http().get('/transactions').query({ search: '50%' }).expect(200);
+    const result = await http().get('/api/transactions').query({ search: '50%' }).expect(200);
     expect(result.body.items.map((t: { description: string }) => t.description)).toEqual([
       '50% off',
     ]);

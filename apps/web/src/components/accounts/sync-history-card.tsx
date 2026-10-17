@@ -1,17 +1,25 @@
-import { CheckCircle2, CircleX, History, RefreshCw, TriangleAlert, type LucideIcon } from "lucide-react"
-import type { SyncRun, SyncRunStatus, SyncTrigger } from "@/lib/api/types"
+import { CheckCircle2, CircleSlash, CircleX, History, RefreshCw, TriangleAlert, type LucideIcon } from "lucide-react"
+import type { IsoDateTime, SyncRun, SyncTrigger } from "@/lib/api/types"
+import { isInterruptedRun } from "@/components/shell/sync-status"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
-import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from "@/components/ui/empty"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { formatDateTime } from "@/lib/format/date"
 import { cn } from "@/lib/utils"
 import { durationSeconds, formatDuration } from "./format"
 
-const RUN_STATUS: Record<SyncRunStatus, { label: string; icon: LucideIcon; className: string }> = {
+/** Situação exibida: a da API, mais "interrompida" para a que ficou "em andamento" para trás. */
+type RunDisplayStatus = SyncRun["status"] | "INTERRUPTED"
+
+const RUN_STATUS: Record<RunDisplayStatus, { label: string; icon: LucideIcon; className: string }> = {
   SUCCEEDED: { label: "Concluída", icon: CheckCircle2, className: "text-status-good" },
   PARTIAL: { label: "Parcial", icon: TriangleAlert, className: "text-status-warning" },
   FAILED: { label: "Falhou", icon: CircleX, className: "text-status-critical" },
-  RUNNING: { label: "Em andamento", icon: RefreshCw, className: "text-muted-foreground" },
+  RUNNING: { label: "Em andamento", icon: RefreshCw, className: "text-muted-foreground animate-spin" },
+  INTERRUPTED: { label: "Interrompida", icon: CircleSlash, className: "text-status-warning" },
+}
+
+function displayStatus(run: SyncRun, now: IsoDateTime): RunDisplayStatus {
+  return isInterruptedRun(run, now) ? "INTERRUPTED" : run.status
 }
 
 const RUN_TRIGGER: Record<SyncTrigger, string> = {
@@ -25,7 +33,7 @@ const COUNT = new Intl.NumberFormat("pt-BR")
 /** A API devolve até 20 execuções; a tela mostra as mais recentes para o card não dominar a página. */
 const MAX_RUNS = 8
 
-function RunStatus({ status }: { status: SyncRunStatus }) {
+function RunStatus({ status }: { status: RunDisplayStatus }) {
   const { label, icon: Icon, className } = RUN_STATUS[status]
   return (
     <span className="inline-flex items-center gap-1.5">
@@ -60,7 +68,7 @@ function count(value: number | undefined): string {
 }
 
 /** Execuções recentes da sincronização: quando, por quê, como terminou e o que trouxe. */
-export function SyncHistoryCard({ runs: allRuns }: { runs: SyncRun[] }) {
+export function SyncHistoryCard({ runs: allRuns, now }: { runs: SyncRun[]; now: IsoDateTime }) {
   const runs = allRuns.slice(0, MAX_RUNS)
   return (
     <Card>
@@ -78,15 +86,17 @@ export function SyncHistoryCard({ runs: allRuns }: { runs: SyncRun[] }) {
           o card fica estreito mesmo em telas largas. A tabela precisa de ~34rem; abaixo de 36rem, lista. */}
       <CardContent className="@container/sync">
         {runs.length === 0 ? (
-          <Empty className="border">
-            <EmptyHeader>
-              <EmptyMedia variant="icon">
-                <History aria-hidden />
-              </EmptyMedia>
-              <EmptyTitle>Nenhuma sincronização ainda</EmptyTitle>
-              <EmptyDescription>A primeira execução roda assim que a API inicia.</EmptyDescription>
-            </EmptyHeader>
-          </Empty>
+          // Compacto: numa instalação nova, o vazio principal da página já é o dos bancos.
+          <div className="text-muted-foreground flex items-start gap-3 rounded-lg border border-dashed p-4 text-sm">
+            <History className="mt-0.5 size-4 shrink-0" aria-hidden />
+            <div className="space-y-1">
+              <p className="text-foreground font-medium">Nenhuma sincronização ainda</p>
+              <p className="text-pretty">
+                Ela roda sozinha de tempos em tempos; para não esperar, use “Sincronizar agora”. Cada execução
+                aparece aqui com o que trouxe.
+              </p>
+            </div>
+          </div>
         ) : (
           <>
             {/* Card largo: tabela. */}
@@ -110,7 +120,7 @@ export function SyncHistoryCard({ runs: allRuns }: { runs: SyncRun[] }) {
                         <TableCell>{formatDateTime(run.startedAt)}</TableCell>
                         <TableCell>{RUN_TRIGGER[run.trigger]}</TableCell>
                         <TableCell>
-                          <RunStatus status={run.status} />
+                          <RunStatus status={displayStatus(run, now)} />
                         </TableCell>
                         <TableCell className="text-right tabular-nums">{duration(run)}</TableCell>
                         <TableCell className="text-right tabular-nums">{count(run.stats?.transactions)}</TableCell>
@@ -138,7 +148,7 @@ export function SyncHistoryCard({ runs: allRuns }: { runs: SyncRun[] }) {
                 <li key={run.id} className="space-y-1.5 py-3 first:pt-0 last:pb-0">
                   <div className="flex items-center justify-between gap-3 text-sm">
                     <span className="font-medium">
-                      <RunStatus status={run.status} />
+                      <RunStatus status={displayStatus(run, now)} />
                     </span>
                     <span className="text-muted-foreground text-xs">{formatDateTime(run.startedAt)}</span>
                   </div>

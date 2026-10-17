@@ -1,5 +1,6 @@
 import { Card, CardContent, CardFooter, CardHeader } from "@/components/ui/card"
 import { Skeleton } from "@/components/ui/skeleton"
+import { ANALYSIS_IS_SAMPLE } from "@/lib/data"
 
 /** Mesma grade da página: coluna flexível + coluna lateral de 22rem no desktop. */
 const COLUMNS = "grid grid-cols-1 xl:grid-cols-[minmax(0,1fr)_22rem]"
@@ -39,6 +40,9 @@ export default function Loading() {
         <Skeleton className="h-7 w-52" />
         <Skeleton className="h-4 w-80 max-w-full" />
       </div>
+
+      {/* Aviso de relatório de exemplo */}
+      {ANALYSIS_IS_SAMPLE && <Skeleton className="h-[4.5rem] w-full rounded-lg" />}
 
       {/* Herói + "Para onde vai o dinheiro" */}
       <div className={`${COLUMNS} gap-4`}>

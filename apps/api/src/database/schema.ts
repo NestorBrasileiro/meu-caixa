@@ -103,6 +103,8 @@ export const transactions = pgTable(
     installmentNumber: integer('installment_number'),
     installmentTotal: integer('installment_total'),
     invoiceExternalId: text('invoice_external_id'),
+    /** Categoria escolhida pelo usuário; o sync nunca sobrescreve. */
+    userCategory: text('user_category'),
     ...timestamps,
   },
   (t) => [
@@ -156,11 +158,63 @@ export const syncRuns = pgTable(
   (t) => [index('sync_runs_started_at_idx').on(t.startedAt)],
 );
 
+// ------------------------------------------------------------- planejamento
+
+export const BUDGET_CATEGORY_KINDS = ['ESSENTIAL', 'DISCRETIONARY'] as const;
+export const budgetCategoryKind = pgEnum('budget_category_kind', BUDGET_CATEGORY_KINDS);
+
+/** Categoria de orçamento: agrupa categorias do agregador e tem um teto mensal. */
+export const budgetCategories = pgTable('budget_categories', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  name: text('name').notNull(),
+  kind: budgetCategoryKind('kind').notNull(),
+  /** Categorias do agregador (ex.: "Groceries") que caem aqui. */
+  sourceCategories: jsonb('source_categories').$type<string[]>().notNull().default([]),
+  monthlyBudget: money('monthly_budget'),
+  position: integer('position').notNull().default(0),
+  ...timestamps,
+});
+
+/** Compromisso fixo recorrente (ex.: parcela do terreno). */
+export const commitments = pgTable(
+  'commitments',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    name: text('name').notNull(),
+    amount: money('amount').notNull(),
+    dayOfMonth: integer('day_of_month').notNull(),
+    paymentMethod: paymentMethod('payment_method').notNull(),
+    categoryId: uuid('category_id').references(() => budgetCategories.id, { onDelete: 'set null' }),
+    startsOn: date('starts_on', { mode: 'string' }).notNull(),
+    endsOn: date('ends_on', { mode: 'string' }),
+    /** Total de parcelas, para financiamentos; as pagas são derivadas da data. */
+    installmentsTotal: integer('installments_total'),
+    notes: text('notes'),
+    ...timestamps,
+  },
+  (t) => [index('commitments_category_id_idx').on(t.categoryId)],
+);
+
+/** Meta de economia (ex.: entrada do carro). */
+export const goals = pgTable('goals', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  name: text('name').notNull(),
+  target: money('target').notNull(),
+  saved: money('saved').notNull().default(0),
+  targetDate: date('target_date', { mode: 'string' }).notNull(),
+  monthlyContribution: money('monthly_contribution').notNull(),
+  accountId: uuid('account_id').references(() => accounts.id, { onDelete: 'set null' }),
+  ...timestamps,
+});
+
 export type ConnectionRow = typeof connections.$inferSelect;
 export type AccountRow = typeof accounts.$inferSelect;
 export type TransactionRow = typeof transactions.$inferSelect;
 export type InvoiceRow = typeof invoices.$inferSelect;
 export type SyncRunRow = typeof syncRuns.$inferSelect;
+export type BudgetCategoryRow = typeof budgetCategories.$inferSelect;
+export type CommitmentRow = typeof commitments.$inferSelect;
+export type GoalRow = typeof goals.$inferSelect;
 export type SyncStatus = (typeof SYNC_RUN_STATUSES)[number];
 export type SyncTrigger = (typeof SYNC_TRIGGERS)[number];
 

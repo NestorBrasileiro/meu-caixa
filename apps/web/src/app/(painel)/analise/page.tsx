@@ -1,14 +1,15 @@
 import type { Metadata } from "next"
 import { Info } from "lucide-react"
+import { Fragment } from "react"
 import { AskClaudeCard } from "@/components/analysis/ask-claude-card"
 import { HeroCard } from "@/components/analysis/hero-card"
 import { InsightGroups } from "@/components/analysis/insight-section"
-import { groupInsights, periodLabel, savingsRows } from "@/components/analysis/model"
+import { groupInsights, periodLabel, reportDescription, reportFootnote, savingsRows } from "@/components/analysis/model"
+import { SampleNotice } from "@/components/analysis/sample-notice"
 import { SavingsCard } from "@/components/analysis/savings-card"
 import { SpendingSplitCard } from "@/components/analysis/spending-split-card"
 import { PageHeader } from "@/components/page-header"
-import { getAnalysis } from "@/lib/data"
-import { formatDateShort, formatDateTime } from "@/lib/format/date"
+import { ANALYSIS_IS_SAMPLE, getAnalysis } from "@/lib/data"
 
 export const metadata: Metadata = { title: "Análise do Claude" }
 
@@ -24,18 +25,15 @@ export default async function Page() {
     <div className="space-y-6">
       <PageHeader
         title="Análise do Claude"
-        description={
-          <>
-            <span className="whitespace-nowrap">Gerada em {formatDateTime(report.generatedAt)}</span>
-            {" · "}
-            <span className="whitespace-nowrap">
-              período {formatDateShort(period.from)} a {formatDateShort(period.to)}
-            </span>
-            {" · "}
-            <span className="whitespace-nowrap">via MCP</span>
-          </>
-        }
+        description={reportDescription(report, ANALYSIS_IS_SAMPLE).map((part, index) => (
+          <Fragment key={part}>
+            {index > 0 && " · "}
+            <span className="whitespace-nowrap">{part}</span>
+          </Fragment>
+        ))}
       />
+
+      {ANALYSIS_IS_SAMPLE && <SampleNotice />}
 
       <div className={`${COLUMNS} gap-4`}>
         <HeroCard
@@ -43,6 +41,7 @@ export default async function Page() {
           opportunities={savings.length}
           headline={report.headline}
           summary={report.summary}
+          sample={ANALYSIS_IS_SAMPLE}
         />
         <SpendingSplitCard
           fixed={report.monthlyFixed}
@@ -60,7 +59,7 @@ export default async function Page() {
 
       <p className="text-muted-foreground flex items-start gap-2 text-xs">
         <Info className="mt-px size-3.5 shrink-0" aria-hidden />
-        Análise gerada automaticamente a partir das suas transações. Revise antes de agir: o Claude pode errar.
+        {reportFootnote(ANALYSIS_IS_SAMPLE)}
       </p>
     </div>
   )

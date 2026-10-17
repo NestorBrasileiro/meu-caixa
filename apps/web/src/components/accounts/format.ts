@@ -27,8 +27,9 @@ export function durationSeconds(startedAt: IsoDateTime, finishedAt: IsoDateTime 
   return Math.max(0, Math.round((Date.parse(finishedAt) - Date.parse(startedAt)) / 1000))
 }
 
-/** "41 s", "2 min 05 s" */
+/** "< 1 s", "41 s", "2 min 05 s" */
 export function formatDuration(seconds: number): string {
+  if (seconds < 1) return "< 1 s"
   if (seconds < 60) return `${seconds} s`
   const minutes = Math.floor(seconds / 60)
   return `${minutes} min ${String(seconds % 60).padStart(2, "0")} s`

@@ -1,16 +1,20 @@
 "use client"
 
-import { AlertTriangle, CheckCircle2, LineChart } from "lucide-react"
+import { AlertTriangle, CheckCircle2, History, Info, LineChart } from "lucide-react"
+import Link from "next/link"
 import type { CSSProperties } from "react"
 import { Bar, BarChart, CartesianGrid, Cell, LabelList, ReferenceLine, XAxis, YAxis, type LabelProps } from "recharts"
 import { Money } from "@/components/finance/money"
+import { Button } from "@/components/ui/button"
 import { Card, CardAction, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { ChartContainer, ChartTooltip, ChartTooltipContent, type ChartConfig } from "@/components/ui/chart"
-import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from "@/components/ui/empty"
+import { Empty, EmptyContent, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from "@/components/ui/empty"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Tabs, TabsContent } from "@/components/ui/tabs"
+import type { Cents } from "@/lib/api/types"
 import { formatAxisMoney, formatMoney } from "@/lib/format/money"
 import { cn } from "@/lib/utils"
+import { extremeLabelIndexes, niceAxis } from "./chart-axis"
 import { capitalize, type ProjectionRow } from "./model"
 import { CHART_AXIS_CLASS, HEADER_ACTION_CLASS, HEADER_DESCRIPTION_CLASS, PANEL_FOCUS_CLASS } from "./styles"
 import { ViewToggle } from "./view-toggle"
@@ -39,28 +43,62 @@ function Swatch({ color }: { color: string }) {
 }
 
 /**
- * Valor escrito só nos meses destacados: acima da barra positiva, abaixo da
- * negativa. O último mês alinha o texto pela borda direita da barra para não
- * ser cortado na ponta do gráfico.
+ * Valor escrito só nos extremos: acima da barra positiva, abaixo da negativa.
+ * A primeira e a última barra alinham o texto pela borda de fora para não
+ * invadir o eixo nem ser cortado na ponta do gráfico.
  */
 function ExtremeLabel(props: LabelProps & { highlight: Set<number>; lastIndex: number }) {
   const { x, y, width, height, value, index, highlight, lastIndex } = props
   if (index === undefined || !highlight.has(index)) return null
   const amount = Number(value)
-  const isLast = index === lastIndex
-  const anchorX = isLast ? Number(x) + Number(width) : Number(x) + Number(width) / 2
+  const anchor = index === lastIndex ? "end" : index === 0 ? "start" : "middle"
+  const anchorX =
+    anchor === "end" ? Number(x) + Number(width) : anchor === "start" ? Number(x) : Number(x) + Number(width) / 2
   const top = Math.min(Number(y), Number(y) + Number(height))
   const bottom = Math.max(Number(y), Number(y) + Number(height))
   return (
     <text
       x={anchorX}
       y={amount < 0 ? bottom + 14 : top - 6}
-      textAnchor={isLast ? "end" : "middle"}
+      textAnchor={anchor}
       fontSize={12}
+      // Halo na cor do cartão: o texto continua legível quando cruza uma linha de grade.
+      stroke="var(--card)"
+      strokeWidth={3}
+      paintOrder="stroke"
       className="fill-foreground font-medium"
     >
       {formatMoney(amount)}
     </text>
+  )
+}
+
+/** Sem nenhum mês fechado com transações: explica em vez de desenhar barras negativas iguais. */
+function NoHistory({ fixedOutflow }: { fixedOutflow: Cents }) {
+  return (
+    <Empty className="h-full border p-6 md:p-8">
+      <EmptyHeader>
+        <EmptyMedia variant="icon">
+          <History aria-hidden />
+        </EmptyMedia>
+        <EmptyTitle className="text-base">Ainda sem histórico para projetar</EmptyTitle>
+        <EmptyDescription>
+          A projeção usa a média dos últimos 3 meses fechados. Sincronize suas contas para ver a sobra prevista.
+        </EmptyDescription>
+      </EmptyHeader>
+      <EmptyContent>
+        <Button variant="outline" size="sm" asChild>
+          <Link href="/contas">Ir para Contas</Link>
+        </Button>
+        {fixedOutflow > 0 && (
+          <p className="text-muted-foreground text-xs">
+            Por enquanto, compromissos e aportes em metas já somam{" "}
+            <span className="text-foreground font-medium whitespace-nowrap">{formatMoney(fixedOutflow)}</span> por
+            mês.
+          </p>
+        )}
+      </EmptyContent>
+    </Empty>
   )
 }
 
@@ -127,6 +165,8 @@ export function ProjectionCard({
   rows,
   callout,
   thinMarginNote,
+  historyNote,
+  noHistory,
   className,
 }: {
   rows: ProjectionRow[]
@@ -134,16 +174,21 @@ export function ProjectionCard({
   callout: string | null
   /** Frase sobre os meses de sobra positiva mas apertada (null se nenhum). */
   thinMarginNote: string | null
+  /** Aviso de histórico incompleto (só parte dos 3 meses tem transações). */
+  historyNote: string | null
+  /** Nenhum dos 3 meses tem transações: no lugar do gráfico, a explicação. */
+  noHistory: { fixedOutflow: Cents } | null
   className?: string
 }) {
   const balances = rows.map((row) => row.projectedBalance)
-  const maxIndex = balances.indexOf(Math.max(...balances))
   const lastIndex = balances.length - 1
-  // Rótulos seletivos: as pontas (primeiro e último mês), o maior e os meses no vermelho.
-  const highlight = new Set(
-    balances.flatMap((value, i) => (i === 0 || i === lastIndex || value < 0 || i === maxIndex ? [i] : [])),
-  )
+  // Rótulos seletivos: só os extremos, sem sobreposição; o resto fica no tooltip e na tabela.
+  const highlight = new Set(extremeLabelIndexes(balances))
+  // Domínio com o zero e ticks redondos e distintos (mesmo com todas as barras iguais).
+  const axis = niceAxis(balances)
   const hasNegative = balances.some((value) => value < 0)
+  const hasPositive = balances.some((value) => value >= 0)
+  const showChart = rows.length > 0 && !noHistory
 
   return (
     <Card className={cn("@container/projection", className)}>
@@ -152,10 +197,11 @@ export function ProjectionCard({
           <CardTitle className="text-balance">
             <h2>Projeção dos próximos 6 meses</h2>
           </CardTitle>
-          <CardDescription className={cn("col-start-1", HEADER_DESCRIPTION_CLASS)}>
+          {/* Sem o alternador, o col-span criaria uma coluna implícita e espremeria o título. */}
+          <CardDescription className={cn("col-start-1", showChart && HEADER_DESCRIPTION_CLASS)}>
             Renda prevista menos compromissos, aportes em metas e gasto variável médio.
           </CardDescription>
-          {rows.length > 0 && (
+          {showChart && (
             // Com o cartão largo (≥ 64rem) gráfico e tabela ficam lado a lado e o alternador some.
             <CardAction className={cn(HEADER_ACTION_CLASS, "@5xl/projection:hidden")}>
               <ViewToggle />
@@ -163,7 +209,9 @@ export function ProjectionCard({
           )}
         </CardHeader>
         <CardContent className="flex flex-1 flex-col gap-4">
-          {rows.length === 0 ? (
+          {noHistory ? (
+            <NoHistory fixedOutflow={noHistory.fixedOutflow} />
+          ) : rows.length === 0 ? (
             <Empty className="h-full border p-6 md:p-8">
               <EmptyHeader>
                 <EmptyMedia variant="icon">
@@ -189,10 +237,12 @@ export function ProjectionCard({
                     className="text-muted-foreground flex flex-wrap items-center gap-x-4 gap-y-1 text-xs"
                     aria-hidden
                   >
-                    <span className="inline-flex items-center gap-1.5">
-                      <Swatch color="var(--chart-1)" />
-                      Sobra
-                    </span>
+                    {hasPositive && (
+                      <span className="inline-flex items-center gap-1.5">
+                        <Swatch color="var(--chart-1)" />
+                        Sobra
+                      </span>
+                    )}
                     {hasNegative && (
                       <span className="inline-flex items-center gap-1.5">
                         <Swatch color="var(--chart-8)" />
@@ -209,6 +259,10 @@ export function ProjectionCard({
                         tickLine={false}
                         width={52}
                         tickMargin={4}
+                        domain={axis.domain}
+                        ticks={axis.ticks}
+                        interval={0}
+                        allowDataOverflow
                         tickFormatter={(value: number) => formatAxisMoney(value)}
                       />
                       <ReferenceLine y={0} stroke="var(--chart-axis)" />
@@ -276,6 +330,12 @@ export function ProjectionCard({
                   <ProjectionTable rows={rows} />
                 </TabsContent>
               </div>
+              {historyNote && (
+                <p className="text-muted-foreground flex items-start gap-2 text-sm">
+                  <Info className="mt-0.5 size-4 shrink-0" aria-hidden />
+                  {historyNote}
+                </p>
+              )}
               {callout ? (
                 <p className="bg-muted/50 flex items-start gap-2 rounded-lg px-3 py-2.5 text-sm">
                   <AlertTriangle className="text-status-warning mt-0.5 size-4 shrink-0" aria-hidden />

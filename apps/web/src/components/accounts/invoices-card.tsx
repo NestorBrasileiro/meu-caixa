@@ -245,7 +245,10 @@ function InvoiceLegend({ history }: { history: InvoiceHistory }) {
         <li className="flex items-center gap-1.5">
           <span className="bg-chart-1 size-2.5 shrink-0 rounded-[2px]" aria-hidden />
           Fatura em aberto
-          {history.open.closingDate && `, ainda recebe compras até ${formatDateShort(history.open.closingDate)}`}
+          {history.open.closingDate &&
+            (history.openHasClosed
+              ? `, fechou em ${formatDateShort(history.open.closingDate)}`
+              : `, ainda recebe compras até ${formatDateShort(history.open.closingDate)}`)}
         </li>
       )}
       <li className="flex items-center gap-1.5">

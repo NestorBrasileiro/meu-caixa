@@ -1,7 +1,8 @@
 import { ArrowRight, Droplets, Flame, Sparkles } from "lucide-react"
 import Link from "next/link"
+import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
-import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card"
+import { Card, CardAction, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card"
 import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from "@/components/ui/empty"
 import { formatMoney } from "@/lib/format/money"
 import type { LeakItem } from "./model"
@@ -14,11 +15,17 @@ const KIND = {
 export function LeaksCard({
   items,
   periodLabel,
+  sample,
   className,
 }: {
   items: LeakItem[]
   /** "jul a set" */
   periodLabel: string
+  /**
+   * O relatório ainda é de exemplo (até a integração MCP): o cartão se
+   * apresenta como exemplo e não soma a economia como se fosse dinheiro do usuário.
+   */
+  sample: boolean
   className?: string
 }) {
   const total = items.reduce((sum, item) => sum + (item.monthlySavings ?? 0), 0)
@@ -29,8 +36,17 @@ export function LeaksCard({
         <CardTitle>
           <h2>Onde dá para economizar</h2>
         </CardTitle>
+        {sample && (
+          <CardAction>
+            <Badge variant="outline" className="text-muted-foreground">
+              Exemplo
+            </Badge>
+          </CardAction>
+        )}
         <CardDescription>
-          {total > 0 ? (
+          {sample ? (
+            <>Prévia do que a análise do Claude vai apontar nas suas transações.</>
+          ) : total > 0 ? (
             <>
               Juntos, dá para economizar{" "}
               <span className="text-foreground font-medium whitespace-nowrap">{formatMoney(total)}</span> por mês,
@@ -51,7 +67,9 @@ export function LeaksCard({
                 <Sparkles aria-hidden />
               </EmptyMedia>
               <EmptyTitle className="text-base">Nenhum vazamento encontrado</EmptyTitle>
-              <EmptyDescription>A análise não achou assinaturas esquecidas, tarifas ou gastos do pecado.</EmptyDescription>
+              <EmptyDescription>
+                A análise não achou assinaturas esquecidas, tarifas ou gastos do pecado.
+              </EmptyDescription>
             </EmptyHeader>
           </Empty>
         ) : (
@@ -87,7 +105,7 @@ export function LeaksCard({
       <CardFooter className="border-t [.border-t]:pt-4">
         <Button variant="ghost" size="sm" className="-my-1.5 -ml-2.5" asChild>
           <Link href="/analise">
-            Ver análise completa
+            {sample ? "Ver relatório de exemplo" : "Ver análise completa"}
             <ArrowRight aria-hidden />
           </Link>
         </Button>
