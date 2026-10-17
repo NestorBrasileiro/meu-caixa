@@ -1,3 +1,4 @@
+import { sql } from 'drizzle-orm';
 import {
   bigint,
   date,
@@ -252,3 +253,44 @@ export const analysisReports = pgTable(
 
 export type AnalysisReportRow = typeof analysisReports.$inferSelect;
 export type AnalysisSource = (typeof ANALYSIS_SOURCES)[number];
+
+export const ANALYSIS_RUN_STATUSES = ['RUNNING', 'SUCCEEDED', 'FAILED'] as const;
+export const analysisRunStatus = pgEnum('analysis_run_status', ANALYSIS_RUN_STATUSES);
+
+/** Tokens gastos numa execução (somados de todas as chamadas à API da Anthropic). */
+export interface AnalysisRunUsage {
+  /** Chamadas à API (uma por volta do loop de ferramentas). */
+  requests: number;
+  inputTokens: number;
+  outputTokens: number;
+  cacheCreationInputTokens: number;
+  cacheReadInputTokens: number;
+}
+
+/**
+ * Execuções do botão "Gerar análise" (API da Anthropic). O índice único
+ * parcial garante no banco que só existe uma RUNNING por vez.
+ */
+export const analysisRuns = pgTable(
+  'analysis_runs',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    status: analysisRunStatus('status').notNull(),
+    startedAt: timestamp('started_at', { withTimezone: true }).notNull().defaultNow(),
+    finishedAt: timestamp('finished_at', { withTimezone: true }),
+    /** Mensagem em português, segura para mostrar na interface. */
+    error: text('error'),
+    reportId: uuid('report_id').references(() => analysisReports.id, { onDelete: 'set null' }),
+    model: text('model'),
+    usage: jsonb('usage').$type<AnalysisRunUsage>(),
+  },
+  (t) => [
+    index('analysis_runs_started_at_idx').on(t.startedAt),
+    uniqueIndex('analysis_runs_single_running_key')
+      .on(t.status)
+      .where(sql`${t.status} = 'RUNNING'`),
+  ],
+);
+
+export type AnalysisRunRow = typeof analysisRuns.$inferSelect;
+export type AnalysisRunStatus = (typeof ANALYSIS_RUN_STATUSES)[number];

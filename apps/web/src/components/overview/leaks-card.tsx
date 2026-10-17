@@ -1,41 +1,31 @@
-import { ArrowRight, Droplets, Flame, Sparkles } from "lucide-react"
+import { ArrowRight, CloudOff, Droplets, Flame, Sparkles } from "lucide-react"
 import Link from "next/link"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Card, CardAction, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card"
-import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from "@/components/ui/empty"
+import { Empty, EmptyContent, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from "@/components/ui/empty"
 import { formatMoney } from "@/lib/format/money"
-import type { LeakItem } from "./model"
+import type { LeaksCardState } from "./model"
+
+const TITLE = "Onde dá para economizar"
 
 const KIND = {
   LEAK: { label: "Vazamento", icon: Droplets },
   SIN: { label: "Gasto do pecado", icon: Flame },
 } as const
 
-export function LeaksCard({
-  items,
-  periodLabel,
-  sample,
-  className,
-}: {
-  items: LeakItem[]
-  /** "jul a set" */
-  periodLabel: string
-  /**
-   * O relatório ainda é de exemplo (até a integração MCP): o cartão se
-   * apresenta como exemplo e não soma a economia como se fosse dinheiro do usuário.
-   */
-  sample: boolean
-  className?: string
-}) {
+export function LeaksCard({ state, className }: { state: LeaksCardState; className?: string }) {
+  if (state.kind !== "report") return <NoReportCard state={state} className={className} />
+  const { items, periodLabel, sample } = state
   const total = items.reduce((sum, item) => sum + (item.monthlySavings ?? 0), 0)
 
   return (
     <Card className={className}>
       <CardHeader>
         <CardTitle>
-          <h2>Onde dá para economizar</h2>
+          <h2>{TITLE}</h2>
         </CardTitle>
+        {/* Relatório de exemplo (modo mock): o cartão não soma a economia como se fosse dinheiro do usuário. */}
         {sample && (
           <CardAction>
             <Badge variant="outline" className="text-muted-foreground">
@@ -45,7 +35,7 @@ export function LeaksCard({
         )}
         <CardDescription>
           {sample ? (
-            <>Prévia do que a análise do Claude vai apontar nas suas transações.</>
+            <>Prévia do que a análise do Claude aponta nas transações (dados de exemplo).</>
           ) : total > 0 ? (
             <>
               Juntos, dá para economizar{" "}
@@ -110,6 +100,56 @@ export function LeaksCard({
           </Link>
         </Button>
       </CardFooter>
+    </Card>
+  )
+}
+
+/** Sem relatório (ainda não houve análise, ou a API não respondeu): o cartão leva à tela de análise. */
+function NoReportCard({
+  state,
+  className,
+}: {
+  state: Exclude<LeaksCardState, { kind: "report" }>
+  className?: string
+}) {
+  const none = state.kind === "none"
+  return (
+    <Card className={className}>
+      <CardHeader>
+        <CardTitle>
+          <h2>{TITLE}</h2>
+        </CardTitle>
+        <CardDescription>
+          {none
+            ? "O Claude lê suas transações e aponta vazamentos e gastos do pecado."
+            : "A análise do Claude aparece aqui."}
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="flex-1">
+        <Empty className="h-full border p-6 md:p-6">
+          <EmptyHeader>
+            <EmptyMedia variant="icon">
+              {none ? <Sparkles aria-hidden /> : <CloudOff aria-hidden />}
+            </EmptyMedia>
+            <EmptyTitle className="text-base">
+              {none ? "Nenhuma análise ainda" : "Não foi possível carregar a análise"}
+            </EmptyTitle>
+            <EmptyDescription>
+              {none
+                ? "Peça a primeira análise: pelo app ou pelo seu Claude, via MCP."
+                : "A API não respondeu agora. O resto da visão geral não depende dela."}
+            </EmptyDescription>
+          </EmptyHeader>
+          <EmptyContent>
+            <Button variant="outline" size="sm" asChild>
+              <Link href="/analise">
+                {none ? "Peça a primeira análise" : "Abrir a tela de análise"}
+                <ArrowRight aria-hidden />
+              </Link>
+            </Button>
+          </EmptyContent>
+        </Empty>
+      </CardContent>
     </Card>
   )
 }

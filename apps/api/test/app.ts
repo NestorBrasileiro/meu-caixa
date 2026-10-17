@@ -6,6 +6,7 @@ import { AppModule } from '../src/app.module.js';
 import { configureApp } from '../src/app.setup.js';
 import { AuthGuard } from '../src/auth/auth.guard.js';
 import type { AuthUser } from '../src/auth/auth.types.js';
+import { ANTHROPIC_CLIENT } from '../src/claude/anthropic.client.js';
 import { ENV } from '../src/config/config.module.js';
 import { validateEnv } from '../src/config/env.js';
 import { DATABASE, type Database } from '../src/database/database.module.js';
@@ -40,6 +41,8 @@ export interface TestAppOptions {
   env?: Record<string, string>;
   /** Usa o `AuthGuard` de verdade (precisa de um Keycloak, ex.: `FakeKeycloak`). */
   realAuth?: boolean;
+  /** Cliente da Anthropic no lugar do real (ex.: `FakeClaude.client`). */
+  anthropic?: unknown;
 }
 
 export async function createTestApp(
@@ -64,6 +67,9 @@ export async function createTestApp(
     )
     .overrideProvider(FINANCE_PROVIDER)
     .useValue(provider);
+  if (options.anthropic) {
+    builder = builder.overrideProvider(ANTHROPIC_CLIENT).useValue(options.anthropic);
+  }
   if (!options.realAuth) {
     builder = builder.overrideProvider(AuthGuard).useValue(new AuthenticatedGuard());
   }
@@ -78,6 +84,6 @@ export async function createTestApp(
 export async function resetDatabase(app: INestApplication): Promise<void> {
   const db = app.get<Database>(DATABASE);
   await db.execute(
-    sql`truncate table sync_runs, invoices, transactions, accounts, connections, sessions, commitments, goals, budget_categories, analysis_reports cascade`,
+    sql`truncate table sync_runs, invoices, transactions, accounts, connections, sessions, commitments, goals, budget_categories, analysis_runs, analysis_reports cascade`,
   );
 }

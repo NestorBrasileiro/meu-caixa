@@ -1,6 +1,5 @@
 import { Card, CardContent, CardFooter, CardHeader } from "@/components/ui/card"
 import { Skeleton } from "@/components/ui/skeleton"
-import { ANALYSIS_IS_SAMPLE } from "@/lib/data"
 
 /** Mesma grade da página: coluna flexível + coluna lateral de 22rem no desktop. */
 const COLUMNS = "grid grid-cols-1 xl:grid-cols-[minmax(0,1fr)_22rem]"
@@ -36,13 +35,14 @@ function GroupSkeleton({ cards }: { cards: number }) {
 export default function Loading() {
   return (
     <div className="space-y-6" aria-busy="true" aria-label="Carregando a análise do Claude">
-      <div className="space-y-2">
-        <Skeleton className="h-7 w-52" />
-        <Skeleton className="h-4 w-80 max-w-full" />
+      {/* Título, descrição e "Gerar nova análise", como o PageHeader. */}
+      <div className="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
+        <div className="space-y-2">
+          <Skeleton className="h-7 w-52" />
+          <Skeleton className="h-4 w-80 max-w-full" />
+        </div>
+        <Skeleton className="h-8 w-44" />
       </div>
-
-      {/* Aviso de relatório de exemplo */}
-      {ANALYSIS_IS_SAMPLE && <Skeleton className="h-[4.5rem] w-full rounded-lg" />}
 
       {/* Herói + "Para onde vai o dinheiro" */}
       <div className={`${COLUMNS} gap-4`}>
@@ -90,8 +90,8 @@ export default function Loading() {
       </div>
 
       {/* "De onde vem a economia" + "Pergunte ao Claude" */}
-      <div className={`${COLUMNS} gap-4`}>
-        <Card>
+      <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
+        <Card className="xl:self-start">
           <CardHeader className="gap-2">
             <Skeleton className="h-4 w-44" />
             <Skeleton className="h-3 w-56" />

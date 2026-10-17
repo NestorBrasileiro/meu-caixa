@@ -1,6 +1,6 @@
 # Meu Caixa
 
-Painel financeiro pessoal. Junta num só lugar os dados de todos os bancos (saldo, limite, fatura, Pix, fluxo de caixa) via Open Finance, para planejamento financeiro — com leitura humana na interface e análise do Claude via MCP.
+Painel financeiro pessoal. Junta num só lugar os dados de todos os bancos (saldo, limite, fatura, Pix, fluxo de caixa) via Open Finance, para planejamento financeiro — com leitura humana na interface e análise do Claude — pelo seu próprio Claude via MCP ou direto no app.
 
 Arquitetura completa: [Painel Financeiro Pessoal — Arquitetura](https://claude.ai/code/artifact/b3e24946-b468-45bd-b529-eb65c3949204).
 
@@ -15,6 +15,7 @@ Bancos → Open Finance → Meu Pluggy → integrations/pluggy (ACL) → Postgre
 - **Login com Keycloak no backend (padrão BFF).** A API faz o fluxo OIDC (Authorization Code + PKCE) com o Keycloak e guarda os tokens numa sessão do `express-session` no Postgres. O browser só recebe um cookie `httpOnly`; os tokens nunca chegam ao frontend.
 - **O browser fala só com o Next.** O `next.config.ts` faz proxy de `/api/*` e `/auth/*` para a API, então o cookie de sessão é do mesmo site e não há CORS. As telas (Server Components) chamam a API direto do servidor repassando o cookie; as ações (salvar, sincronizar) saem do browser por `/api`.
 - **O Claude analisa via MCP.** A API expõe um servidor MCP em `/mcp` (também pelo proxy do Next) com ferramentas de leitura dos dados já agregados e uma para salvar o relatório da análise. Ver [Conectar no Claude (MCP)](#conectar-no-claude-mcp).
+- **Ou o próprio app chama o Claude.** Com `ANTHROPIC_API_KEY`, os botões "Gerar análise" e "Pergunte ao Claude" usam a API da Anthropic com as mesmas ferramentas do MCP (pago por uso). Ver [Análise do Claude](#análise-do-claude).
 - **O adapter trata o que um ORM de banco não precisa:** timeout por requisição, retry com backoff (rede, 429, 5xx, respeitando `Retry-After`), renovação automática da API key, paginação, cache em memória e validação do formato das respostas (mudança de contrato falha alto, em vez de gravar lixo).
 
 ## Estrutura
@@ -37,6 +38,7 @@ apps/api/                  NestJS 12 + TypeScript (ESM)
   src/planning/            compromissos fixos, metas, categorias e projeção
   src/insights/            dados para a análise do Claude (agregações, recorrências), ferramentas e relatórios salvos
   src/mcp/                 servidor MCP em /mcp (Streamable HTTP) e autenticação OAuth do Claude
+  src/claude/              análise pelo app: API da Anthropic (Tool Runner) com as mesmas ferramentas
   drizzle/                 migrations SQL
   test/                    testes e2e contra Postgres real
 ```
@@ -115,10 +117,44 @@ Rotas de dados sob `/api`; `/health` e `/auth/*` ficam na raiz.
 | `POST/PATCH/DELETE /api/planning/categories[/:id]` | Categorias de orçamento: agrupam categorias do agregador e têm um teto mensal |
 | `GET /api/analysis/latest` | Última análise do Claude (formato `AnalysisReport` da interface, mais `id`, `source` e `model`); 404 se ainda não houver |
 | `GET /api/analysis` | Análises salvas, da mais recente para a mais antiga; `limit` de 1 a 50 (padrão 10) |
+| `GET /api/analysis/status` | Se a análise pelo app está ligada (`app.enabled`, `app.model`) e a última execução de "Gerar análise" (`latestRun`) |
+| `POST /api/analysis/runs` | "Gerar análise": começa em background (202, execução `RUNNING`); 409 se já houver uma rodando; 503 sem `ANTHROPIC_API_KEY` |
+| `GET /api/analysis/runs/:id` | Uma execução: `status` (`RUNNING`/`SUCCEEDED`/`FAILED`), `startedAt`, `finishedAt`, `error` (em português), `reportId`, `model`; 404 se não existir |
+| `POST /api/analysis/ask` | "Pergunte ao Claude": `{ question, history? }` → `{ answer, model }` (markdown); 429 com outra pergunta em andamento; 503 sem `ANTHROPIC_API_KEY` |
 
 A projeção usa a média dos últimos 3 meses fechados: renda esperada menos compromissos ativos no mês, aportes das metas até serem atingidas e o gasto variável médio (gasto total menos os compromissos). Pagamento de fatura e transferência entre contas próprias não contam como renda nem gasto.
 
 Convenções: valores monetários em **centavos** (inteiros); transações negativas são saídas e positivas, entradas; datas `YYYY-MM-DD` no fuso `TIMEZONE` (padrão `America/Sao_Paulo`).
+
+## Análise do Claude
+
+Duas formas, que usam as **mesmas ferramentas** (`src/insights/tools.ts`) e as mesmas instruções de análise, e salvam no mesmo lugar (a tela "Análise" mostra a mais recente, de qualquer origem):
+
+| | Pelo seu Claude (MCP) | Pelo app (API da Anthropic) |
+| --- | --- | --- |
+| Como | Você conversa no claude.ai, Claude Desktop ou Claude Code com o conector `Meu Caixa` | Botões "Gerar análise" e "Pergunte ao Claude" na tela Análise |
+| Custo | Incluído na sua assinatura do Claude | **Pago por uso** na sua conta da [Anthropic](https://console.anthropic.com) (tokens de entrada e saída) |
+| Configuração | [Conectar no Claude (MCP)](#conectar-no-claude-mcp) | `ANTHROPIC_API_KEY` na API |
+| Relatório salvo | `source: "MCP"` | `source: "APP"`, com o modelo que respondeu |
+
+### Pelo app
+
+- **Gerar análise** (`POST /api/analysis/runs`): roda em background. O Claude consulta as ferramentas (resumo, fluxo de caixa, categorias, recorrências, planejamento, transações) e termina chamando `salvar_analise`; a interface acompanha por `GET /api/analysis/runs/:id`. Se ele encerrar sem salvar, recebe um lembrete uma vez; se ainda assim não salvar, a execução fica `FAILED` com o motivo. Uma por vez (409); uma execução `RUNNING` há mais de 30 minutos (ou de antes de a API reiniciar) é marcada `FAILED`.
+- **Pergunte ao Claude** (`POST /api/analysis/ask`): resposta na hora, em markdown, usando só as ferramentas de leitura (não salva relatório). Aceita até 10 mensagens anteriores da conversa (`history`). Uma pergunta por vez (429).
+- **Limites:** análise com até 25 chamadas ao modelo e 10 minutos; pergunta com até 12 chamadas e 2 minutos. Erros da Anthropic (chave inválida, sem créditos, limite de uso, sobrecarga, recusa, tempo esgotado) viram mensagens em português — a chave nunca aparece em respostas nem logs.
+- **Modelo:** `claude-opus-5-5` por padrão, com *adaptive thinking* (sempre ligado nesse modelo), `effort` `high` na análise e `medium` nas perguntas, fallback do lado do servidor em caso de recusa (`fallbacks: "default"`) e cache de prompt nas instruções e ferramentas (a parte que se repete fica bem mais barata nas chamadas seguintes).
+- **Quanto custa:** depende do volume de transações e de quantas ferramentas o Claude decide chamar. Cada execução grava as chamadas e os tokens usados (coluna `usage` da tabela `analysis_runs`; perguntas e análises também deixam uma linha no log da API). Acompanhe os gastos e defina um limite de gasto no console da Anthropic.
+- **Testar sem gastar:** os testes e2e usam um cliente com `fetch` roteirizado (`test/fake-claude.ts`); para um teste manual, aponte `ANTHROPIC_BASE_URL` para um mock local da API de Messages e use uma chave qualquer.
+
+Sem `ANTHROPIC_API_KEY`, a API sobe normalmente: `GET /api/analysis/status` devolve `app.enabled: false` e as duas ações respondem 503 com a explicação — a análise via MCP continua funcionando.
+
+### Variáveis (`apps/api/.env`)
+
+| Variável | Para quê |
+| --- | --- |
+| `ANTHROPIC_API_KEY` | Chave da API da Anthropic (console.anthropic.com → API Keys). Liga a análise pelo app; cobrada por uso. Só no backend — nunca vai para a interface |
+| `ANTHROPIC_MODEL` | Modelo (padrão `claude-opus-5-5`) |
+| `ANTHROPIC_BASE_URL` | Opcional: outro endpoint compatível com a API de Messages (ex.: um mock local para testes). Vazio = API oficial |
 
 ## Conectar no Claude (MCP)
 

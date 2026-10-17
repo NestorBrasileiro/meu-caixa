@@ -7,6 +7,10 @@ const nextConfig: NextConfig = {
   /** Servidor mínimo em `.next/standalone` para a imagem Docker (apps/web/Dockerfile). */
   output: "standalone",
   cacheComponents: true,
+  experimental: {
+    // O proxy dos rewrites corta em 30 s por padrão; "Pergunte ao Claude" pode levar até 2 min na API.
+    proxyTimeout: 150_000,
+  },
   partialPrefetching: true,
   turbopack: {
     rules: {

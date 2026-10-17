@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest"
+import type { Insight } from "@/lib/api/analysis"
 import type { Commitment } from "@/lib/api/planning"
 import type { Account, Invoice } from "@/lib/api/types"
 import { monthlyCashFlow } from "@/lib/finance/aggregate"
@@ -8,6 +9,7 @@ import {
   hasMovement,
   hasPeriodMovement,
   installmentNumberOn,
+  leaksCardState,
   overviewDescription,
   upcomingDue,
 } from "./model"
@@ -202,5 +204,46 @@ describe("overview/model — número da parcela nos vencimentos", () => {
     expect(upcoming(parcelado, "2026-07-05")).toEqual([])
     // 1º/ago: o vencimento de 10/ago é a parcela 1.
     expect(upcoming(parcelado, "2026-08-01").map((item) => item.detail)).toEqual(["Parcela 1 de 3"])
+  })
+})
+
+describe("overview/model — cartão \"Onde dá para economizar\"", () => {
+  const insight = (id: string, kind: Insight["kind"], monthlySavings: number | null): Insight => ({
+    id,
+    kind,
+    title: id,
+    explanation: `Explicação de ${id}. Mais detalhes.`,
+    monthlySavings,
+    evidence: null,
+    confidence: "HIGH",
+  })
+  const report = (sample: boolean) => ({
+    sample,
+    period: { from: "2026-07-01", to: "2026-09-30" },
+    insights: [
+      insight("corte", "CUT", 90_00),
+      insight("tarifa", "LEAK", 34_90),
+      insight("delivery", "SIN", 120_00),
+      insight("streaming", "LEAK", 39_90),
+      insight("sem-valor", "SIN", null),
+      insight("carro", "SUGGESTION", null),
+    ],
+  })
+
+  it("relatório real: os 3 maiores vazamentos/gastos do pecado por economia, sem selo de exemplo", () => {
+    const state = leaksCardState({ report: report(false) }, 3)
+    expect(state).toMatchObject({ kind: "report", sample: false, periodLabel: "jul a set" })
+    if (state.kind !== "report") throw new Error("esperava relatório")
+    expect(state.items.map((item) => item.id)).toEqual(["delivery", "streaming", "tarifa"])
+    expect(state.items[0].reason).toBe("Explicação de delivery.")
+  })
+
+  it("relatório de exemplo (mock) leva o selo", () => {
+    expect(leaksCardState({ report: report(true) }, 3)).toMatchObject({ kind: "report", sample: true })
+  })
+
+  it("sem análise ainda, ou API fora do ar", () => {
+    expect(leaksCardState({ report: null }, 3)).toEqual({ kind: "none" })
+    expect(leaksCardState(null, 3)).toEqual({ kind: "unavailable" })
   })
 })

@@ -1,4 +1,4 @@
-import type { AnalysisReport } from "@/lib/api/analysis"
+import type { AnalysisStatus, ShownAnalysis } from "@/lib/api/analysis"
 import type { PlanningOverview } from "@/lib/api/planning"
 import type {
   Account,
@@ -86,6 +86,12 @@ export async function getPlanning(): Promise<PlanningOverview> {
   return buildPlanning(mockDataset())
 }
 
-export async function getAnalysis(): Promise<AnalysisReport> {
-  return buildAnalysis(mockDataset())
+/** Relatório ilustrativo, montado com o dataset fictício: as telas o mostram como exemplo. */
+export async function getAnalysis(): Promise<ShownAnalysis | null> {
+  return { ...buildAnalysis(mockDataset()), id: "exemplo", source: "MCP", model: null, sample: true }
+}
+
+/** Sem API não há chave da Anthropic: gerar e perguntar ficam indisponíveis. */
+export async function getAnalysisStatus(): Promise<AnalysisStatus> {
+  return { app: { enabled: false, model: null }, latestRun: null }
 }
