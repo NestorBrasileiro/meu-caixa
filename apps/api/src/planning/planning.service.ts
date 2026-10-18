@@ -1,9 +1,10 @@
 import { BadRequestException, Inject, Injectable, NotFoundException } from '@nestjs/common';
-import { and, asc, desc, eq, gte, lte } from 'drizzle-orm';
+import { and, asc, desc, eq, gt, gte, inArray, isNotNull, lt, lte } from 'drizzle-orm';
 import { ENV } from '../config/config.module.js';
 import type { Env } from '../config/env.js';
 import { DATABASE, type Database } from '../database/database.module.js';
 import {
+  accounts,
   budgetCategories,
   commitments,
   goals,
@@ -12,6 +13,7 @@ import {
   type CommitmentRow,
   type GoalRow,
 } from '../database/schema.js';
+import { openInstallments, type OpenInstallment } from '../domain/card-installments.js';
 import { isIncome, isSpending } from '../domain/classify.js';
 import { today } from '../domain/dates.js';
 import { monthOf, monthRange, shiftMonth, type IsoMonth } from '../domain/months.js';
@@ -40,6 +42,11 @@ export interface MonthProjection {
   projectedBalance: number;
 }
 
+/** Parcela de compra no cartão ainda não totalmente paga (derivada das transações, não cadastrada). */
+export interface CardInstallment extends OpenInstallment {
+  cardName: string;
+}
+
 /**
  * Planejamento: compromissos fixos, metas e categorias de orçamento, mais a
  * projeção dos próximos meses a partir das transações sincronizadas.
@@ -53,21 +60,67 @@ export class PlanningService {
 
   async overview() {
     const todayDate = today(this.env.TIMEZONE);
-    const [categoryRows, commitmentRows, goalRows] = await Promise.all([
+    const [categoryRows, commitmentRows, goalRows, cardInstallments] = await Promise.all([
       this.db
         .select()
         .from(budgetCategories)
         .orderBy(asc(budgetCategories.position), asc(budgetCategories.name)),
       this.db.select().from(commitments).orderBy(desc(commitments.amount), asc(commitments.name)),
       this.db.select().from(goals).orderBy(asc(goals.targetDate), asc(goals.name)),
+      this.openCardInstallments(todayDate),
     ]);
 
     return {
       categories: categoryRows.map(toCategory),
       commitments: commitmentRows.map((row) => toCommitment(row, todayDate)),
       goals: goalRows.map(toGoal),
+      cardInstallments,
       projections: await this.projections(todayDate, commitmentRows, goalRows),
     };
+  }
+
+  // ------------------------------------------------ parcelas de cartão
+
+  /** Compras parceladas no cartão ainda em aberto (heurística em `domain/card-installments.ts`). */
+  private async openCardInstallments(todayDate: string): Promise<CardInstallment[]> {
+    const cardAccounts = await this.db
+      .select({ id: accounts.id, name: accounts.name })
+      .from(accounts)
+      .where(eq(accounts.type, 'CREDIT_CARD'));
+    if (cardAccounts.length === 0) return [];
+    const cardName = new Map(cardAccounts.map((account) => [account.id, account.name]));
+
+    const rows = await this.db
+      .select({
+        accountId: transactions.accountId,
+        date: transactions.date,
+        description: transactions.description,
+        amount: transactions.amount,
+        installmentNumber: transactions.installmentNumber,
+        installmentTotal: transactions.installmentTotal,
+      })
+      .from(transactions)
+      .where(
+        and(
+          inArray(
+            transactions.accountId,
+            cardAccounts.map((account) => account.id),
+          ),
+          isNotNull(transactions.installmentNumber),
+          gt(transactions.installmentTotal, 1),
+          lt(transactions.amount, 0),
+        ),
+      );
+
+    const installmentRows = rows.map((row) => ({
+      ...row,
+      installmentNumber: row.installmentNumber!,
+      installmentTotal: row.installmentTotal!,
+    }));
+    return openInstallments(installmentRows, todayDate).map((open) => ({
+      ...open,
+      cardName: cardName.get(open.accountId) ?? '',
+    }));
   }
 
   // ------------------------------------------------------------- compromissos
