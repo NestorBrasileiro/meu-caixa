@@ -5,7 +5,7 @@ import { today } from '../domain/dates.js';
 import { AnalysisService } from '../insights/analysis.service.js';
 import { InsightsService } from '../insights/insights.service.js';
 import { createInsightTools } from '../insights/tools.js';
-import { ANTHROPIC_CLIENT, type AnthropicClient } from './anthropic.client.js';
+import { ANTHROPIC_SOURCE, type AnthropicSource } from './anthropic.client.js';
 import { ClaudeDisabledError } from './claude-disabled.error.js';
 import { describeForLog, failure, toClaudeFailure } from './claude-errors.js';
 import { toRunnableTool, type RunnableTool } from './claude-tools.js';
@@ -40,7 +40,7 @@ export class AskService {
 
   constructor(
     @Inject(ENV) private readonly env: Env,
-    @Inject(ANTHROPIC_CLIENT) private readonly client: AnthropicClient | null,
+    @Inject(ANTHROPIC_SOURCE) private readonly source: AnthropicSource,
     insights: InsightsService,
     analysis: AnalysisService,
   ) {
@@ -50,8 +50,8 @@ export class AskService {
   }
 
   async ask(question: string, history: AskTurn[]): Promise<AskAnswer> {
-    const client = this.client;
-    if (!client) throw new ClaudeDisabledError();
+    const config = await this.source.get();
+    if (!config) throw new ClaudeDisabledError();
     if (this.inFlight) throw new AskInProgressError();
     this.inFlight = true;
 
@@ -64,9 +64,9 @@ export class AskService {
     const usage = emptyUsage();
     try {
       const { message } = await runConversation(
-        client,
+        config.client,
         buildAskParams({
-          model: this.env.ANTHROPIC_MODEL,
+          model: config.model,
           tools: this.tools,
           today: today(this.env.TIMEZONE),
           timeZone: this.env.TIMEZONE,

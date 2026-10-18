@@ -1,5 +1,6 @@
 import type { AnalysisStatus, ShownAnalysis } from "@/lib/api/analysis"
 import type { PlanningOverview } from "@/lib/api/planning"
+import type { AnthropicSettings, PluggySettings } from "@/lib/api/settings"
 import type {
   Account,
   AuthUser,
@@ -94,4 +95,29 @@ export async function getAnalysis(): Promise<ShownAnalysis | null> {
 /** Sem API não há chave da Anthropic: gerar e perguntar ficam indisponíveis. */
 export async function getAnalysisStatus(): Promise<AnalysisStatus> {
   return { app: { enabled: false, model: null }, latestRun: null }
+}
+
+export async function getPluggySettings(): Promise<PluggySettings> {
+  return {
+    provider: "pluggy",
+    configured: true,
+    clientId: "00000000-0000-4000-8000-000000000001",
+    itemIds: ["00000000-0000-4000-8000-0000000000a1", "00000000-0000-4000-8000-0000000000a2"],
+    updatedAt: MOCK_NOW,
+  }
+}
+
+/** Mesmo que o status da análise: sem API, sem chave. */
+export async function getAnthropicSettings(): Promise<AnthropicSettings> {
+  return {
+    configured: false,
+    model: "claude-opus-5-5",
+    models: [
+      { id: "claude-opus-5-5", label: "Claude Opus 5.5 (padrão) · US$ 4 / 20 por 1M tokens" },
+      { id: "claude-sonnet-5-5", label: "Claude Sonnet 5.5 · US$ 2 / 10 por 1M tokens" },
+      { id: "claude-fable-5-1", label: "Claude Fable 5.1 · US$ 10 / 50 por 1M tokens" },
+      { id: "claude-opus-5", label: "Claude Opus 5 · US$ 5 / 25 por 1M tokens" },
+    ],
+    updatedAt: null,
+  }
 }

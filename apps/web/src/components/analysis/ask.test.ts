@@ -74,8 +74,8 @@ describe("analysis/ask — erros", () => {
     expect(askErrorMessage(apiError(429, "Erro 429"))).toMatch(/respondendo outra pergunta/)
   })
 
-  it("503 sem mensagem aponta a ANTHROPIC_API_KEY; 5xx e rede têm frase própria", () => {
-    expect(askErrorMessage(apiError(503, "Erro 503"))).toMatch(/ANTHROPIC_API_KEY/)
+  it("503 sem mensagem aponta Configurações; 5xx e rede têm frase própria", () => {
+    expect(askErrorMessage(apiError(503, "Erro 503"))).toMatch(/Configurações/)
     expect(askErrorMessage(apiError(504, "O Claude demorou demais para responder."))).toBe(
       "O Claude demorou demais para responder.",
     )

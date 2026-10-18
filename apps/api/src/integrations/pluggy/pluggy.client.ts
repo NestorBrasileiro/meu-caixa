@@ -71,6 +71,11 @@ export class PluggyClient {
     this.now = options.now ?? Date.now;
   }
 
+  /** Só autentica: confirma Client ID e Client Secret. */
+  async verifyCredentials(): Promise<void> {
+    await this.getApiKey();
+  }
+
   async getItem(itemId: string): Promise<PluggyItem> {
     return this.get(`/items/${encodeURIComponent(itemId)}`, {}, pluggyItemSchema);
   }

@@ -87,7 +87,7 @@ function lastToolResult(request: RecordedRequest) {
   return last.content.find((block: { type: string }) => block.type === 'tool_result');
 }
 
-describe('Análise pela interface — desligada sem ANTHROPIC_API_KEY (e2e)', () => {
+describe('Análise pela interface — desligada sem chave da Anthropic (e2e)', () => {
   let app: INestApplication;
 
   beforeAll(async () => {
@@ -106,12 +106,12 @@ describe('Análise pela interface — desligada sem ANTHROPIC_API_KEY (e2e)', ()
       .expect(200, { app: { enabled: false, model: null }, latestRun: null });
 
     const run = await request(app.getHttpServer()).post('/api/analysis/runs').expect(503);
-    expect(run.body.message).toContain('ANTHROPIC_API_KEY');
+    expect(run.body.message).toContain('Configurações');
     const ask = await request(app.getHttpServer())
       .post('/api/analysis/ask')
       .send({ question: 'Quanto gastei?' })
       .expect(503);
-    expect(ask.body.message).toContain('ANTHROPIC_API_KEY');
+    expect(ask.body.message).toContain('Configurações');
   });
 });
 
@@ -125,10 +125,7 @@ describe('Análise pela interface — API da Anthropic (e2e)', () => {
     fake = new FakeClaude();
     const provider = new InMemoryProvider();
     seed(provider);
-    app = await createTestApp(provider, {
-      env: { ANTHROPIC_API_KEY: fake.apiKey },
-      anthropic: fake.client,
-    });
+    app = await createTestApp(provider, { anthropic: fake.client });
     await resetDatabase(app);
     await app.get(SyncService).run('MANUAL');
     runs = app.get(AnalysisRunsService);

@@ -1,6 +1,7 @@
 import { sql } from 'drizzle-orm';
 import {
   bigint,
+  check,
   date,
   index,
   integer,
@@ -294,3 +295,40 @@ export const analysisRuns = pgTable(
 
 export type AnalysisRunRow = typeof analysisRuns.$inferSelect;
 export type AnalysisRunStatus = (typeof ANALYSIS_RUN_STATUSES)[number];
+
+// ----------------------------------------------------------- configurações
+
+/** Credenciais da Pluggy (tela Configurações). Uma linha só: o app tem um dono. */
+export const pluggySettings = pgTable(
+  'pluggy_settings',
+  {
+    id: integer('id').primaryKey().default(1),
+    /** `sub` do Keycloak de quem salvou. */
+    userId: text('user_id').notNull(),
+    clientId: text('client_id').notNull(),
+    /** Cifrado com SETTINGS_ENCRYPTION_KEY (`common/secret-box.ts`). */
+    clientSecret: text('client_secret').notNull(),
+    itemIds: jsonb('item_ids').$type<string[]>().notNull(),
+    ...timestamps,
+  },
+  (t) => [check('pluggy_settings_singleton', sql`${t.id} = 1`)],
+);
+
+export type PluggySettingsRow = typeof pluggySettings.$inferSelect;
+
+/** Chave e modelo da Anthropic para a análise pelo app. Sem linha = desligada. */
+export const anthropicSettings = pgTable(
+  'anthropic_settings',
+  {
+    id: integer('id').primaryKey().default(1),
+    /** `sub` do Keycloak de quem salvou. */
+    userId: text('user_id').notNull(),
+    /** Cifrada com SETTINGS_ENCRYPTION_KEY (`common/secret-box.ts`). */
+    apiKey: text('api_key').notNull(),
+    model: text('model').notNull(),
+    ...timestamps,
+  },
+  (t) => [check('anthropic_settings_singleton', sql`${t.id} = 1`)],
+);
+
+export type AnthropicSettingsRow = typeof anthropicSettings.$inferSelect;

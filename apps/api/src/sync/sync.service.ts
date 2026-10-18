@@ -18,7 +18,11 @@ import {
 } from '../database/schema.js';
 import { chunk, conflictUpdateSet } from '../database/upsert.js';
 import { addDays, today } from '../domain/dates.js';
-import { FINANCE_PROVIDER, type FinanceProvider } from '../integrations/finance-provider.js';
+import {
+  FINANCE_PROVIDER_SOURCE,
+  type FinanceProvider,
+  type FinanceProviderSource,
+} from '../integrations/finance-provider.js';
 
 /** Chave do advisory lock que garante uma sincronização por vez. */
 const SYNC_LOCK_KEY = 7_206_845_215_331_841;
@@ -50,12 +54,16 @@ export class SyncService {
   constructor(
     @Inject(DATABASE) private readonly db: Database,
     @Inject(PG_POOL) private readonly pool: Pool,
-    @Inject(FINANCE_PROVIDER) private readonly provider: FinanceProvider,
+    @Inject(FINANCE_PROVIDER_SOURCE) private readonly providers: FinanceProviderSource,
     @Inject(ENV) private readonly env: Env,
   ) {}
 
-  /** Inicia uma sincronização em background. */
+  /**
+   * Inicia uma sincronização em background. Sem provedor configurado, falha
+   * com `ProviderNotConfiguredError` antes de registrar a execução.
+   */
   async start(trigger: SyncTrigger): Promise<StartedSync> {
+    const provider = await this.providers.get();
     const lockClient = await this.pool.connect();
     let locked = false;
     try {
@@ -69,9 +77,9 @@ export class SyncService {
 
       const [run] = await this.db
         .insert(syncRuns)
-        .values({ provider: this.provider.name, trigger, status: 'RUNNING' })
+        .values({ provider: provider.name, trigger, status: 'RUNNING' })
         .returning();
-      const completion = this.execute(run!).finally(() => {
+      const completion = this.execute(run!, provider).finally(() => {
         this.current = null;
         return releaseLock(lockClient);
       });
@@ -127,7 +135,7 @@ export class SyncService {
     }
   }
 
-  private async execute(run: SyncRunRow): Promise<SyncRunRow> {
+  private async execute(run: SyncRunRow, provider: FinanceProvider): Promise<SyncRunRow> {
     const stats: SyncStats = {
       connections: 0,
       accounts: 0,
@@ -140,15 +148,15 @@ export class SyncService {
     this.logger.log(`Sincronização ${run.id} iniciada (${run.trigger}, ${run.provider})`);
 
     try {
-      const connectionIds = await this.syncConnections(stats);
-      const accountRows = await this.syncAccounts(connectionIds, stats, errors);
+      const connectionIds = await this.syncConnections(provider, stats);
+      const accountRows = await this.syncAccounts(provider, connectionIds, stats, errors);
       for (const account of accountRows) {
         await this.collect(errors, `Transações de "${account.name}"`, () =>
-          this.syncTransactions(account, stats),
+          this.syncTransactions(provider, account, stats),
         );
         if (account.type === 'CREDIT_CARD') {
           await this.collect(errors, `Faturas de "${account.name}"`, () =>
-            this.syncInvoices(account, stats),
+            this.syncInvoices(provider, account, stats),
           );
         }
       }
@@ -170,13 +178,16 @@ export class SyncService {
     return finished!;
   }
 
-  private async syncConnections(stats: SyncStats): Promise<Map<string, string>> {
-    const fetched = await this.provider.getConnections();
+  private async syncConnections(
+    provider: FinanceProvider,
+    stats: SyncStats,
+  ): Promise<Map<string, string>> {
+    const fetched = await provider.getConnections();
     if (fetched.length === 0) return new Map();
 
     const rows = await this.db
       .insert(connections)
-      .values(fetched.map((connection) => ({ ...connection, provider: this.provider.name })))
+      .values(fetched.map((connection) => ({ ...connection, provider: provider.name })))
       .onConflictDoUpdate({
         target: [connections.provider, connections.externalId],
         set: conflictUpdateSet(connections, [
@@ -193,18 +204,19 @@ export class SyncService {
   }
 
   private async syncAccounts(
+    provider: FinanceProvider,
     connectionIds: Map<string, string>,
     stats: SyncStats,
     errors: string[],
   ): Promise<AccountRow[]> {
-    const fetched = await this.provider.getAccounts();
+    const fetched = await provider.getAccounts();
     const values = fetched.flatMap(({ connectionExternalId, ...account }) => {
       const connectionId = connectionIds.get(connectionExternalId);
       if (!connectionId) {
         errors.push(`Conta "${account.name}" pertence a uma conexão desconhecida`);
         return [];
       }
-      return [{ ...account, connectionId, provider: this.provider.name }];
+      return [{ ...account, connectionId, provider: provider.name }];
     });
     if (values.length === 0) return [];
 
@@ -230,7 +242,11 @@ export class SyncService {
     return rows;
   }
 
-  private async syncTransactions(account: AccountRow, stats: SyncStats): Promise<void> {
+  private async syncTransactions(
+    provider: FinanceProvider,
+    account: AccountRow,
+    stats: SyncStats,
+  ): Promise<void> {
     const to = today(this.env.TIMEZONE);
     // Incremental: volta alguns dias para pegar pendentes que viraram efetivadas.
     const incrementalFrom = account.transactionsSyncedThrough
@@ -238,11 +254,11 @@ export class SyncService {
       : addDays(to, -this.env.SYNC_LOOKBACK_DAYS);
     const from = incrementalFrom < to ? incrementalFrom : to;
 
-    const fetched = await this.provider.getTransactions(account.externalId, { from, to });
+    const fetched = await provider.getTransactions(account.externalId, { from, to });
     const values = fetched.map(({ accountExternalId: _account, installment, ...transaction }) => ({
       ...transaction,
       accountId: account.id,
-      provider: this.provider.name,
+      provider: provider.name,
       installmentNumber: installment?.number ?? null,
       installmentTotal: installment?.total ?? null,
     }));
@@ -295,8 +311,12 @@ export class SyncService {
     });
   }
 
-  private async syncInvoices(account: AccountRow, stats: SyncStats): Promise<void> {
-    const fetched = await this.provider.getInvoices(account.externalId);
+  private async syncInvoices(
+    provider: FinanceProvider,
+    account: AccountRow,
+    stats: SyncStats,
+  ): Promise<void> {
+    const fetched = await provider.getInvoices(account.externalId);
     if (fetched.length === 0) return;
 
     await this.db
@@ -305,7 +325,7 @@ export class SyncService {
         fetched.map(({ accountExternalId: _account, ...invoice }) => ({
           ...invoice,
           accountId: account.id,
-          provider: this.provider.name,
+          provider: provider.name,
         })),
       )
       .onConflictDoUpdate({

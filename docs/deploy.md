@@ -42,7 +42,7 @@ Você vai precisar de:
 
 - **Uma conta na DigitalOcean.**
 - **Um domínio** em que você consiga criar registros DNS (Registro.br, Cloudflare, o próprio DNS da DigitalOcean etc.). O exemplo usa `meucaixa.exemplo.com.br` para a interface e `auth.meucaixa.exemplo.com.br` para o login.
-- **As credenciais da Pluggy** (Client ID, Client Secret e os ids dos items), como no [README](../README.md#usando-seus-bancos-meu-pluggy). Dá para subir sem elas usando `FINANCE_PROVIDER=fake`, mas aí os dados são fictícios.
+- **As credenciais da Pluggy** (Client ID, Client Secret e os ids dos items), como no [README](../README.md#usando-seus-bancos-meu-pluggy). Elas são cadastradas na tela **Configurações** depois do primeiro login; até lá a API sobe normalmente, só sem sincronizar.
 - **Uma chave SSH** no seu computador (`ssh-keygen -t ed25519` se ainda não tiver).
 
 ## 2. Criar o Droplet
@@ -136,7 +136,8 @@ chmod 600 .env
 
 # Gera todas as senhas e segredos de uma vez (letras e números, 64 caracteres)
 for v in POSTGRES_PASSWORD APP_DB_PASSWORD KEYCLOAK_DB_PASSWORD \
-         KEYCLOAK_ADMIN_PASSWORD KEYCLOAK_CLIENT_SECRET SESSION_SECRET; do
+         KEYCLOAK_ADMIN_PASSWORD KEYCLOAK_CLIENT_SECRET SESSION_SECRET \
+         SETTINGS_ENCRYPTION_KEY; do
   sed -i "s|^$v=.*|$v=$(openssl rand -hex 32)|" .env
 done
 
@@ -146,8 +147,8 @@ nano .env
 No editor, preencha:
 
 - `DOMAIN`, `AUTH_DOMAIN` e `ACME_EMAIL`;
-- `FINANCE_PROVIDER=pluggy` com `PLUGGY_CLIENT_ID`, `PLUGGY_CLIENT_SECRET` e `PLUGGY_ITEM_IDS`;
-- o resto pode ficar como está. `ANTHROPIC_API_KEY`, `ANTHROPIC_MODEL` e `MCP_ACCESS_TOKEN` são opcionais.
+- `FINANCE_PROVIDER=pluggy` (as credenciais da Pluggy você cadastra depois, na tela **Configurações**; o `SETTINGS_ENCRYPTION_KEY` gerado acima é o que cifra o Client Secret no banco);
+- o resto pode ficar como está. `MCP_ACCESS_TOKEN` é opcional; a chave da Anthropic (análise pelo app, opcional) também se cadastra em **Configurações**.
 
 Guarde uma cópia do `.env` num gerenciador de senhas: sem ele, os backups do Keycloak e as sessões não se recuperam com as mesmas credenciais.
 
@@ -221,7 +222,7 @@ A API já sincroniza na subida e depois a cada `SYNC_INTERVAL_HOURS` horas. Para
 docker compose logs api | grep SyncService
 ```
 
-Mudou alguma credencial da Pluggy no `.env`? Rode `docker compose up -d` (recria só o que mudou) e sincronize de novo. Se a sincronização falhar, a mensagem aparece nesse log e também em `GET /api/sync/runs`.
+Antes da primeira sincronização, cadastre a Pluggy em **Configurações** (sem isso a API registra "Sincronização ignorada" no log). Trocou credencial ou conectou outro banco? Atualize na mesma tela e sincronize de novo, sem reiniciar nada. Se a sincronização falhar, a mensagem aparece nesse log e também em `GET /api/sync/runs`.
 
 ## 11. Conectar o Claude (MCP)
 
@@ -334,7 +335,7 @@ Os logs são rotacionados pelo Docker (3 arquivos de 10 MB por container).
 : Falta a role `owner` (client `web`) no seu usuário; passo 9.
 
 **Container reiniciando** (`docker compose ps` mostra `Restarting`)
-: `docker compose logs <serviço>`. A API recusa subir com configuração inválida e diz qual variável falta (ex.: credenciais da Pluggy com `FINANCE_PROVIDER=pluggy`).
+: `docker compose logs <serviço>`. A API recusa subir com configuração inválida e diz qual variável falta (ex.: `SETTINGS_ENCRYPTION_KEY` com `FINANCE_PROVIDER=pluggy`).
 
 **Memória**
 : `docker stats`. Se o Droplet ficar sem memória (Keycloak lento, containers mortos por OOM), confirme o swap (`swapon --show`) ou passe para 4 GB (Droplet → Resize).
