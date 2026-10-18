@@ -249,6 +249,22 @@ docker image prune -f     # apaga as imagens antigas
 
 As migrations do banco rodam sozinhas na subida da API (`DATABASE_MIGRATE_ON_START=true`). Durante o build, o site continua no ar; cada container é trocado em poucos segundos.
 
+### Atualizando de uma versão com as credenciais no `.env`
+
+Antes, `PLUGGY_CLIENT_ID`, `PLUGGY_CLIENT_SECRET`, `PLUGGY_ITEM_IDS`, `ANTHROPIC_API_KEY` e `ANTHROPIC_MODEL` ficavam no `deploy/.env`. Agora ficam no banco (tela **Configurações**), e a API não sobe sem a `SETTINGS_ENCRYPTION_KEY`. Para atualizar sem ficar fora do ar:
+
+1. **Antes** do `git pull`, crie a chave no `deploy/.env` (uma vez só, e guarde junto com o resto do `.env`):
+
+   ```bash
+   cd ~/meu-caixa/deploy
+   echo "SETTINGS_ENCRYPTION_KEY=$(openssl rand -hex 32)" >> .env
+   ```
+
+2. Atualize como acima (`git pull` e `docker compose up -d --build`).
+3. Entre no app, abra **Configurações** e cadastre o Client ID, o Client Secret e os Item IDs da Pluggy (os mesmos valores que estavam no `.env`). Se usava a análise pelo app, cadastre também a chave da Anthropic e escolha o modelo.
+4. Clique em **Sincronizar agora**. Até o passo 3, a API sobe normalmente mas pula a sincronização (`docker compose logs api | grep SyncService` mostra "Sincronização ignorada").
+5. Apague do `deploy/.env` as cinco variáveis antigas: elas não são mais repassadas para a API.
+
 **Pelo GitHub Actions (opcional):** o workflow **Deploy** (`.github/workflows/deploy.yml`) faz o mesmo por SSH, só quando você manda (Actions → Deploy → Run workflow); nunca roda em push. Configure em *Settings → Secrets and variables → Actions*:
 
 | Segredo | Valor |

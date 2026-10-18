@@ -100,7 +100,10 @@ export function validateEnv(raw: Record<string, unknown>): Env {
   const input = Object.fromEntries(Object.entries(raw).filter(([, value]) => value !== ''));
   const result = envSchema.safeParse(input);
   if (!result.success) {
-    throw new Error(`Configuração inválida:\n${z.prettifyError(result.error)}`);
+    const legacy = legacySettingsWarning(raw);
+    throw new Error(
+      `Configuração inválida:\n${z.prettifyError(result.error)}${legacy ? `\n\n${legacy}` : ''}`,
+    );
   }
   if (result.data.NODE_ENV === 'production' && !input.SESSION_SECRET) {
     throw new Error(
@@ -108,4 +111,23 @@ export function validateEnv(raw: Record<string, unknown>): Env {
     );
   }
   return result.data;
+}
+
+/** Saíram do ambiente: agora são cadastradas na tela Configurações (banco). */
+const LEGACY_SETTINGS = [
+  'PLUGGY_CLIENT_ID',
+  'PLUGGY_CLIENT_SECRET',
+  'PLUGGY_ITEM_IDS',
+  'ANTHROPIC_API_KEY',
+  'ANTHROPIC_MODEL',
+] as const;
+
+/** Aviso para quem atualizou com as credenciais ainda no .env (elas são ignoradas). */
+export function legacySettingsWarning(raw: Record<string, unknown>): string | null {
+  const present = LEGACY_SETTINGS.filter((name) => raw[name] !== undefined && raw[name] !== '');
+  if (present.length === 0) return null;
+  return (
+    `${present.join(', ')} não são mais lidas do ambiente e estão sendo ignoradas: ` +
+    'defina SETTINGS_ENCRYPTION_KEY, cadastre esses valores na tela Configurações e remova-os do .env.'
+  );
 }
