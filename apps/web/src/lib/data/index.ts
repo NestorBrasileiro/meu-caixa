@@ -29,6 +29,8 @@ export const getAllTransactions = source.getAllTransactions
 export const getInvoices = source.getInvoices
 export const getSyncRuns = source.getSyncRuns
 export const getPlanning = source.getPlanning
+export const getBudgetCategories = source.getBudgetCategories
+export const getSubscriptions = source.getSubscriptions
 /** Última análise; no modo mock, o relatório de exemplo (`sample: true`). */
 export const getAnalysis = source.getAnalysis
 export const getAnalysisStatus = source.getAnalysisStatus

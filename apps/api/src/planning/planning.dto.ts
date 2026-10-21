@@ -72,6 +72,12 @@ export class CreateCommitmentDto {
   @IsString()
   @MaxLength(200)
   notes?: string | null;
+
+  /** Criado a partir de uma assinatura (a chave dela). */
+  @IsOptional()
+  @IsString()
+  @MaxLength(200)
+  subscriptionKey?: string | null;
 }
 
 export class UpdateCommitmentDto {

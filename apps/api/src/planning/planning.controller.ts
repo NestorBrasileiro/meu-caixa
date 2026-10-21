@@ -31,6 +31,11 @@ export class PlanningController {
     return this.planning.overview(userId);
   }
 
+  @Get('categories')
+  categories(@CurrentUser() userId: string) {
+    return this.planning.categories(userId);
+  }
+
   @Post('commitments')
   createCommitment(@CurrentUser() userId: string, @Body() dto: CreateCommitmentDto) {
     return this.planning.createCommitment(userId, dto);

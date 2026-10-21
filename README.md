@@ -122,6 +122,8 @@ Rotas de dados sob `/api`; `/health` e `/auth/*` ficam na raiz.
 | `POST/PATCH/DELETE /api/planning/commitments[/:id]` | Compromissos fixos (ex.: parcela do terreno); com `installmentsTotal`, o fim sai do total de parcelas |
 | `POST/PATCH/DELETE /api/planning/goals[/:id]` | Metas de economia (ex.: entrada do carro) |
 | `POST/PATCH/DELETE /api/planning/categories[/:id]` | Categorias de orçamento: agrupam categorias do agregador e têm um teto mensal |
+| `GET /api/subscriptions` | Assinaturas detectadas nas transações dos últimos 12 meses (mesma origem com valor estável em 2+ meses): ativas com próxima cobrança, aumento de preço e se já estão no planejamento; outras cobranças recorrentes de valor variável; as que pararam de cobrar (sem cobrança há 40+ dias); as ocultas; e os totais por mês e por ano. Hábitos, parcelas e pagamentos de fatura ficam de fora |
+| `PUT /api/subscriptions/preferences` | Ajuste do usuário numa cobrança (`{ key, kind?, name? }`): `kind` `IGNORED` ("não é assinatura") ou `SUBSCRIPTION` (promove uma variável); `name` renomeia; `null` volta ao automático. Devolve a visão atualizada |
 | `GET /api/analysis/latest` | Última análise do Claude (formato `AnalysisReport` da interface, mais `id`, `source` e `model`); 404 se ainda não houver |
 | `GET /api/analysis` | Análises salvas, da mais recente para a mais antiga; `limit` de 1 a 50 (padrão 10) |
 | `GET /api/analysis/status` | Se a análise pelo app está ligada (`app.enabled`, `app.model`) e a última execução de "Gerar análise" (`latestRun`) |

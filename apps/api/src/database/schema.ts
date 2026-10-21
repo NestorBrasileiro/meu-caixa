@@ -8,6 +8,7 @@ import {
   jsonb,
   pgEnum,
   pgTable,
+  primaryKey,
   text,
   timestamp,
   unique,
@@ -245,6 +246,11 @@ export const commitments = pgTable(
     /** Total de parcelas, para financiamentos; as pagas são derivadas da data. */
     installmentsTotal: integer('installments_total'),
     notes: text('notes'),
+    /**
+     * Assinatura de onde veio ("Adicionar ao planejamento" na aba Assinaturas):
+     * a mesma `recurrenceKey` das preferências. Liga os dois mesmo se renomear.
+     */
+    subscriptionKey: text('subscription_key'),
     ...timestamps,
   },
   (t) => [
@@ -401,3 +407,33 @@ export const mcpTokens = pgTable('mcp_tokens', {
 });
 
 export type McpTokenRow = typeof mcpTokens.$inferSelect;
+
+// ---------------------------------------------------------------- assinaturas
+
+/** `SUBSCRIPTION` = o usuário diz que é assinatura; `IGNORED` = "não é assinatura". */
+export const SUBSCRIPTION_PREFERENCE_KINDS = ['SUBSCRIPTION', 'IGNORED'] as const;
+export const subscriptionPreferenceKind = pgEnum(
+  'subscription_preference_kind',
+  SUBSCRIPTION_PREFERENCE_KINDS,
+);
+
+/**
+ * Ajustes do usuário sobre as cobranças recorrentes detectadas, pela chave de
+ * `recurrenceKey` (a mesma em todas as sincronizações). Linha sem `kind` e sem
+ * `name` não existe: volta ao automático.
+ */
+export const subscriptionPreferences = pgTable(
+  'subscription_preferences',
+  {
+    userId: ownerId(),
+    key: text('key').notNull(),
+    kind: subscriptionPreferenceKind('kind'),
+    /** Nome escolhido; sem ele, vale a descrição do extrato. */
+    name: text('name'),
+    ...timestamps,
+  },
+  (t) => [primaryKey({ columns: [t.userId, t.key] })],
+);
+
+export type SubscriptionPreferenceRow = typeof subscriptionPreferences.$inferSelect;
+export type SubscriptionPreferenceKind = (typeof SUBSCRIPTION_PREFERENCE_KINDS)[number];

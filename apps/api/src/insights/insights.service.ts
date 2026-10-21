@@ -495,7 +495,7 @@ export class InsightsService {
   }
 
   /** Transações do período com a categoria efetiva e a conta, mais recentes primeiro. */
-  private async loadTransactions(
+  async loadTransactions(
     userId: string,
     period: { from: IsoDate; to: IsoDate },
     filters: { accountId?: string; category?: string; text?: string } = {},

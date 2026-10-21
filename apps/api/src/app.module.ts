@@ -11,6 +11,7 @@ import { IntegrationsModule } from './integrations/integrations.module.js';
 import { McpModule } from './mcp/mcp.module.js';
 import { PlanningModule } from './planning/planning.module.js';
 import { SettingsModule } from './settings/settings.module.js';
+import { SubscriptionsModule } from './subscriptions/subscriptions.module.js';
 import { SyncModule } from './sync/sync.module.js';
 import { TransactionsModule } from './transactions/transactions.module.js';
 import { UsersModule } from './users/users.module.js';
@@ -25,6 +26,7 @@ import { UsersModule } from './users/users.module.js';
     AccountsModule,
     TransactionsModule,
     PlanningModule,
+    SubscriptionsModule,
     SettingsModule,
     SyncModule,
     InsightsModule,

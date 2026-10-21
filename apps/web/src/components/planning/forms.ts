@@ -154,8 +154,15 @@ export const COMMITMENT_FIELDS: CommitmentField[] = [
 
 export const NOTES_MAX = 200
 
-/** Estado inicial do formulário: vazio (com início hoje) ou a partir de um compromisso. */
-export function commitmentForm(commitment: Commitment | null, today: IsoDate): CommitmentForm {
+/**
+ * Estado inicial do formulário: vazio (com início hoje), com um rascunho (ex.: a
+ * partir de uma assinatura) ou a partir de um compromisso existente.
+ */
+export function commitmentForm(
+  commitment: Commitment | null,
+  today: IsoDate,
+  draft: Partial<CommitmentForm> = {},
+): CommitmentForm {
   if (!commitment) {
     return {
       name: "",
@@ -168,6 +175,7 @@ export function commitmentForm(commitment: Commitment | null, today: IsoDate): C
       installmentsTotal: "",
       endsOn: "",
       notes: "",
+      ...draft,
     }
   }
   return {
@@ -461,7 +469,12 @@ export function categoryPatch(initial: BudgetCategory, next: BudgetCategoryInput
  * `status`; falha de rede chega como TypeError). Erros de validação da API vêm
  * em inglês (class-validator) e viram uma frase genérica em pt-BR.
  */
-export function mutationErrorMessage(error: unknown, action: "salvar" | "excluir"): string {
+/** `where` completa a mensagem de falta de permissão ("no planejamento", "nas assinaturas"). */
+export function mutationErrorMessage(
+  error: unknown,
+  action: "salvar" | "excluir",
+  where = "no planejamento",
+): string {
   const status =
     typeof error === "object" && error !== null && "status" in error ? Number((error as { status: unknown }).status) : null
   const message = error instanceof Error ? error.message : ""
@@ -470,7 +483,7 @@ export function mutationErrorMessage(error: unknown, action: "salvar" | "excluir
     return "A categoria ou a conta escolhida não existe mais. Atualize a página e escolha de novo."
   if (status === 400) return "A API não aceitou algum valor. Confira os campos e tente de novo."
   if (status === 401) return "Sua sessão expirou. Entre de novo para continuar."
-  if (status === 403) return `Seu usuário não tem permissão para ${action} no planejamento.`
+  if (status === 403) return `Seu usuário não tem permissão para ${action} ${where}.`
   if (status === 404) return "Este item não existe mais (talvez tenha sido excluído em outra aba). Atualize a página."
   if (status >= 500) return `O servidor não conseguiu ${action} agora. Tente de novo em instantes.`
   return message || `Não foi possível ${action}. Tente de novo.`

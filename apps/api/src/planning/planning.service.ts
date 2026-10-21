@@ -156,10 +156,21 @@ export class PlanningService {
           endsOn: dto.endsOn ?? null,
           installmentsTotal: dto.installmentsTotal ?? null,
           notes: dto.notes?.trim() || null,
+          subscriptionKey: dto.subscriptionKey ?? null,
         })
         .returning(),
     );
     return toCommitment(row!, today(this.env.TIMEZONE));
+  }
+
+  /** Só as categorias de orçamento (o formulário de compromisso precisa delas). */
+  async categories(userId: string) {
+    const rows = await this.db
+      .select()
+      .from(budgetCategories)
+      .where(eq(budgetCategories.userId, userId))
+      .orderBy(asc(budgetCategories.position), asc(budgetCategories.name));
+    return rows.map(toCategory);
   }
 
   async updateCommitment(userId: string, id: string, dto: UpdateCommitmentDto) {

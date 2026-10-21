@@ -1,6 +1,7 @@
 import type { AnalysisStatus, ShownAnalysis } from "@/lib/api/analysis"
-import type { PlanningOverview } from "@/lib/api/planning"
+import type { BudgetCategory, PlanningOverview } from "@/lib/api/planning"
 import type { AnthropicSettings, McpTokenStatus, PluggySettings } from "@/lib/api/settings"
+import type { SubscriptionsOverview } from "@/lib/api/subscriptions"
 import type {
   Account,
   AuthUser,
@@ -15,7 +16,8 @@ import type {
 } from "@/lib/api/types"
 import { buildAnalysis } from "@/lib/mock/analysis"
 import { MOCK_NOW, MOCK_TODAY, mockDataset } from "@/lib/mock/generator"
-import { buildPlanning } from "@/lib/mock/planning"
+import { BUDGET_CATEGORIES, buildPlanning } from "@/lib/mock/planning"
+import { buildSubscriptions } from "@/lib/mock/subscriptions"
 
 /**
  * Fonte mocada (DATA_SOURCE=mock): mesmos contratos da API, com o dataset
@@ -86,6 +88,14 @@ export async function getSyncRuns(): Promise<SyncRun[]> {
 
 export async function getPlanning(): Promise<PlanningOverview> {
   return buildPlanning(mockDataset())
+}
+
+export async function getBudgetCategories(): Promise<BudgetCategory[]> {
+  return BUDGET_CATEGORIES
+}
+
+export async function getSubscriptions(): Promise<SubscriptionsOverview> {
+  return buildSubscriptions(mockDataset())
 }
 
 /** Relatório ilustrativo, montado com o dataset fictício: as telas o mostram como exemplo. */

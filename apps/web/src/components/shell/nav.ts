@@ -2,6 +2,7 @@ import {
   ArrowLeftRight,
   Landmark,
   LayoutDashboard,
+  Repeat,
   Settings,
   Sparkles,
   Target,
@@ -35,6 +36,12 @@ export const NAV_ITEMS: NavItem[] = [
     description: "Lista unificada de todos os bancos",
   },
   {
+    title: "Assinaturas",
+    href: "/assinaturas",
+    icon: Repeat,
+    description: "Cobranças que se repetem todo mês, aumentos e o que parou",
+  },
+  {
     title: "Planejamento",
     href: "/planejamento",
     icon: Target,
@@ -50,7 +57,7 @@ export const NAV_ITEMS: NavItem[] = [
     title: "Configurações",
     href: "/configuracoes",
     icon: Settings,
-    description: "Credenciais da Pluggy e chave da Anthropic",
+    description: "Pluggy, chave da Anthropic e token do MCP",
   },
 ]
 

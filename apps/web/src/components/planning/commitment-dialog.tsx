@@ -37,6 +37,8 @@ export function CommitmentDialog({
   open,
   onOpenChange,
   commitment,
+  draft,
+  subscriptionKey,
   categories,
   today,
   onDelete,
@@ -46,12 +48,16 @@ export function CommitmentDialog({
   onOpenChange: (open: boolean) => void
   /** null = novo compromisso. */
   commitment: Commitment | null
+  /** Novo compromisso já preenchido (ex.: "Adicionar ao planejamento" numa assinatura). */
+  draft?: Partial<CommitmentForm>
+  /** Assinatura de onde vem o novo compromisso: a API guarda a ligação entre os dois. */
+  subscriptionKey?: string
   categories: BudgetCategory[]
   today: IsoDate
   onDelete: (trigger: HTMLElement) => void
   onCloseAutoFocus: ComponentProps<typeof DialogContent>["onCloseAutoFocus"]
 }) {
-  const [form, setForm] = useState<CommitmentForm>(() => commitmentForm(commitment, today))
+  const [form, setForm] = useState<CommitmentForm>(() => commitmentForm(commitment, today, draft))
   const [errors, setErrors] = useState<FieldErrors<CommitmentField>>({})
   const mutation = useMutation()
 
@@ -77,7 +83,10 @@ export function CommitmentDialog({
       () =>
         commitment
           ? apiRequest(`/api/planning/commitments/${commitment.id}`, { method: "PATCH", body })
-          : apiRequest("/api/planning/commitments", { method: "POST", body }),
+          : apiRequest("/api/planning/commitments", {
+              method: "POST",
+              body: subscriptionKey ? { ...body, subscriptionKey } : body,
+            }),
       {
         action: "salvar",
         onSuccess: () => {
