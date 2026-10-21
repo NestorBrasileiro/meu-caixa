@@ -13,12 +13,12 @@ export interface ClaudeConfig {
 }
 
 /**
- * Entrega o cliente da Anthropic a partir da chave salva no banco; `null`
- * quando não há chave (o app sobe e só a análise pela interface fica
- * desligada). Os testes substituem por um cliente com `fetch` falso.
+ * Entrega o cliente da Anthropic a partir da chave que o usuário salvou;
+ * `null` quando ele não tem chave (só a análise pela interface fica
+ * desligada para ele). Os testes substituem por um cliente com `fetch` falso.
  */
 export interface AnthropicSource {
-  get(): Promise<ClaudeConfig | null>;
+  get(userId: string): Promise<ClaudeConfig | null>;
 }
 
 export const ANTHROPIC_SOURCE = Symbol('ANTHROPIC_SOURCE');
@@ -39,24 +39,29 @@ export function createAnthropicClient(env: Env, apiKey: string, maxRetries = 2):
   });
 }
 
-/** Reaproveita o cliente montado até a configuração salva mudar. */
+/** Reaproveita o cliente de cada usuário até a configuração dele mudar. */
 export class StoredAnthropicSource implements AnthropicSource {
-  private memo: { version: number; config: ClaudeConfig } | null = null;
+  private readonly memo = new Map<string, { version: number; config: ClaudeConfig }>();
 
   constructor(
     private readonly store: AnthropicSettingsStore,
     private readonly env: Env,
   ) {}
 
-  async get(): Promise<ClaudeConfig | null> {
-    const row = await this.store.find();
-    if (!row) return null;
-    const version = row.updatedAt.getTime();
-    if (this.memo?.version !== version) {
-      const { apiKey, model } = this.store.decrypt(row);
-      this.memo = { version, config: { client: createAnthropicClient(this.env, apiKey), model } };
+  async get(userId: string): Promise<ClaudeConfig | null> {
+    const row = await this.store.find(userId);
+    if (!row) {
+      this.memo.delete(userId);
+      return null;
     }
-    return this.memo.config;
+    const version = row.updatedAt.getTime();
+    let memo = this.memo.get(userId);
+    if (memo?.version !== version) {
+      const { apiKey, model } = this.store.decrypt(row);
+      memo = { version, config: { client: createAnthropicClient(this.env, apiKey), model } };
+      this.memo.set(userId, memo);
+    }
+    return memo.config;
   }
 }
 

@@ -91,12 +91,18 @@ Fluxo igual ao do cronoflow: a API é o cliente confidencial do Keycloak e a int
 | `GET /auth/login` | Redireciona para o login do Keycloak (PKCE + state guardados na sessão) |
 | `GET /auth/callback` | Troca o code por tokens, gera um novo id de sessão e volta para `FRONTEND_URL` (em caso de erro, `FRONTEND_URL?authError=login_failed`, que a interface manda para `/erro-login`) |
 | `GET /auth/logout` | Apaga a sessão e encerra o SSO no Keycloak, voltando para `FRONTEND_URL` |
-| `GET /auth/me` | Usuário logado (`id`, `name`, `email`, `roles`) |
+| `GET /auth/me` | Usuário logado (`id` do banco, `keycloakId`, `name`, `email`, `roles`) |
 
 - Todas as rotas, exceto `/health` e `/auth/login|callback|logout`, exigem sessão válida e a role `KEYCLOAK_REQUIRED_ROLE` (padrão `owner`, do client ou do realm). A cada requisição o token é validado por introspecção no Keycloak e renovado com o refresh token quando está para expirar.
 - Respostas: `401` sem sessão (a interface redireciona para `/auth/login`), `403` sem a role (a interface mostra `/sem-acesso`), `503` se o Keycloak estiver fora do ar.
 - Requisições mutantes (`POST`, `PATCH`, `DELETE`) de uma origem diferente de `FRONTEND_URL`/`APP_URL` levam `403` (proteção CSRF por `Origin`).
 - O cookie é `SameSite=Lax`: API e interface ficam no mesmo site porque o Next faz proxy de `/auth` e `/api`. Em produção, `APP_URL` e `FRONTEND_URL` são a URL pública da interface.
+
+### Usuários
+
+Cada pessoa do Keycloak com a role vira um usuário do app (tabela `users`, criada no primeiro acesso) e só enxerga os próprios dados: todas as tabelas têm `user_id`, toda consulta filtra por ele e um id de outro usuário responde `404`. Cada um cadastra a própria Pluggy, a própria chave da Anthropic e o próprio token do MCP em **Configurações**; a sincronização roda por usuário (uma por vez para cada um).
+
+O cadastro é **só por convite** (`registrationAllowed: false` no realm): para dar acesso a alguém, crie o usuário no console do Keycloak (Users → Add user, depois Credentials) e dê a role `owner` do client `web` (Role mapping → Assign role → Filter by clients). Para cortar o acesso, desative o usuário no Keycloak; se ele tiver gerado um token do MCP, ele vale até ser revogado (apague a linha em `mcp_tokens` ou o usuário em `users`, que leva todos os dados dele junto).
 
 ## API
 
@@ -110,7 +116,7 @@ Rotas de dados sob `/api`; `/health` e `/auth/*` ficam na raiz.
 | `GET /api/transactions` | Lista unificada; filtros `accountId`, `from`, `to`, `status`, `search`, `limit`, `offset`. Cada item traz a categoria efetiva (`category`) e a do agregador (`originalCategory`) |
 | `PATCH /api/transactions/:id` | Recategoriza (`{ category }`); `null` volta para a categoria do agregador. A sincronização não desfaz |
 | `GET /api/invoices` | Faturas de cartão; filtro `accountId` |
-| `POST /api/sync` | Dispara uma sincronização (202); 409 se já houver uma rodando |
+| `POST /api/sync` | Dispara uma sincronização do usuário (202); 409 se já houver uma dele rodando; 412 sem a Pluggy cadastrada |
 | `GET /api/sync/runs` | Histórico das sincronizações, com contagens e erros |
 | `GET /api/planning` | Categorias de orçamento, compromissos fixos (com parcelas pagas), metas e a projeção dos próximos 6 meses |
 | `POST/PATCH/DELETE /api/planning/commitments[/:id]` | Compromissos fixos (ex.: parcela do terreno); com `installmentsTotal`, o fim sai do total de parcelas |
@@ -122,6 +128,9 @@ Rotas de dados sob `/api`; `/health` e `/auth/*` ficam na raiz.
 | `POST /api/analysis/runs` | "Gerar análise": começa em background (202, execução `RUNNING`); 409 se já houver uma rodando; 503 sem chave da Anthropic cadastrada |
 | `GET /api/analysis/runs/:id` | Uma execução: `status` (`RUNNING`/`SUCCEEDED`/`FAILED`), `startedAt`, `finishedAt`, `error` (em português), `reportId`, `model`; 404 se não existir |
 | `POST /api/analysis/ask` | "Pergunte ao Claude": `{ question, history? }` → `{ answer, model }` (markdown); 429 com outra pergunta em andamento; 503 sem chave da Anthropic cadastrada |
+| `GET/PUT /api/settings/pluggy` | Credenciais da Pluggy do usuário (o Client Secret nunca volta) |
+| `GET/PUT/DELETE /api/settings/anthropic` | Chave e modelo da Anthropic do usuário (a chave nunca volta) |
+| `GET/POST/DELETE /api/settings/mcp-token` | Token pessoal do MCP: situação (`exists`, `hint`, `createdAt`, `lastUsedAt`), gerar um novo (o `token` vem só nesta resposta) e revogar |
 
 A projeção usa a média dos últimos 3 meses fechados: renda esperada menos compromissos ativos no mês, aportes das metas até serem atingidas e o gasto variável médio (gasto total menos os compromissos). Pagamento de fatura e transferência entre contas próprias não contam como renda nem gasto.
 
@@ -191,7 +200,9 @@ Um token do Keycloak vale quando (checado por introspecção a cada requisição
 - está ativo e o usuário tem a role `KEYCLOAK_REQUIRED_ROLE` (`owner`) — sem ela, `403`;
 - foi emitido **para o servidor MCP**: a audiência (`aud`) inclui `${APP_URL}/mcp`. Assim um token do realm emitido para outra aplicação (inclusive o da sessão da interface, client `web`) é recusado com `401`. Se preferir confiar no client em vez da audiência, liste os clients aceitos em `MCP_ALLOWED_CLIENTS` (ex.: `claude`).
 
-Alternativa simples para o Claude Code/Desktop: defina `MCP_ACCESS_TOKEN` (segredo longo, `openssl rand -hex 32`) e mande-o no header `Authorization: Bearer ...`. Comparado em tempo constante; deixe vazio para desligar.
+Alternativa simples para o Claude Code/Desktop: o **token pessoal**, gerado por cada usuário em **Configurações → Token do MCP** e mandado no header `Authorization: Bearer mcx_...`. Ele aparece uma vez só (o banco guarda só o sha256), um novo invalida o anterior e "Revogar" corta o acesso na hora.
+
+Cada token (do Keycloak ou pessoal) identifica um usuário, e as ferramentas só leem e gravam os dados dele.
 
 #### Client "claude" no Keycloak
 
@@ -221,10 +232,10 @@ claude mcp add --transport http --client-id claude --callback-port 8765 meu-caix
 # dentro do Claude Code: /mcp → meu-caixa → Authenticate
 ```
 
-Com o `MCP_ACCESS_TOKEN` (sem login):
+Com o token pessoal (sem login; a tela Configurações mostra o comando pronto ao gerar):
 
 ```bash
-claude mcp add --transport http meu-caixa https://<domínio>/mcp --header "Authorization: Bearer <MCP_ACCESS_TOKEN>"
+claude mcp add --transport http meu-caixa https://<domínio>/mcp --header "Authorization: Bearer <token mcx_...>"
 ```
 
 Em desenvolvimento, troque a URL por `http://localhost:3001/mcp`.
@@ -234,7 +245,6 @@ Em desenvolvimento, troque a URL por `http://localhost:3001/mcp`.
 | Variável | Para quê |
 | --- | --- |
 | `APP_URL` | URL pública da interface; o recurso MCP é `${APP_URL}/mcp` (vai nos metadados e é a audiência exigida) |
-| `MCP_ACCESS_TOKEN` | Opcional: segredo (mín. 32 caracteres) aceito como Bearer token no `/mcp` |
 | `MCP_ALLOWED_CLIENTS` | Opcional: clients do Keycloak (`azp`) aceitos mesmo sem a audiência do MCP, separados por vírgula |
 | `KEYCLOAK_REQUIRED_ROLE` | Role exigida também no `/mcp` (padrão `owner`) |
 

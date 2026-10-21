@@ -34,3 +34,17 @@ export interface AnthropicSettingsInput {
   apiKey?: string
   model: string
 }
+
+/** Token pessoal do MCP como a API mostra: o token só vem uma vez, ao ser gerado. */
+export interface McpTokenStatus {
+  exists: boolean
+  /** Últimos 4 caracteres, para reconhecer o token. */
+  hint: string | null
+  createdAt: IsoDateTime | null
+  lastUsedAt: IsoDateTime | null
+}
+
+/** Resposta de `POST /api/settings/mcp-token`: o token novo (o anterior deixa de valer). */
+export interface IssuedMcpToken {
+  token: string
+}

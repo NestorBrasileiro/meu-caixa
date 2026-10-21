@@ -7,7 +7,7 @@ import { SAVE_REMINDER, SERVER_SIDE_FALLBACK_BETA } from '../src/claude/prompts.
 import { DATABASE, type Database } from '../src/database/database.module.js';
 import { analysisRuns } from '../src/database/schema.js';
 import { SyncService } from '../src/sync/sync.service.js';
-import { createTestApp, resetDatabase } from './app.js';
+import { createTestApp, resetDatabase, userIdOf } from './app.js';
 import {
   apiError,
   endTurn,
@@ -127,7 +127,7 @@ describe('Análise pela interface — API da Anthropic (e2e)', () => {
     seed(provider);
     app = await createTestApp(provider, { anthropic: fake.client });
     await resetDatabase(app);
-    await app.get(SyncService).run('MANUAL');
+    await app.get(SyncService).run(await userIdOf(app), 'MANUAL');
     runs = app.get(AnalysisRunsService);
     db = app.get<Database>(DATABASE);
   });
@@ -292,7 +292,7 @@ describe('Análise pela interface — API da Anthropic (e2e)', () => {
   it('uma execução por vez (409) e execução travada há mais de 30 min vira FAILED', async () => {
     const [running] = await db
       .insert(analysisRuns)
-      .values({ status: 'RUNNING', model: 'claude-opus-5-5' })
+      .values({ userId: await userIdOf(app), status: 'RUNNING', model: 'claude-opus-5-5' })
       .returning();
     const conflict = await http().post('/api/analysis/runs').expect(409);
     expect(conflict.body.message).toContain('Já existe uma análise');

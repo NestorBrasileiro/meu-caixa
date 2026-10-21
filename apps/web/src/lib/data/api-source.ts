@@ -3,7 +3,7 @@ import { redirect } from "next/navigation"
 import { connection } from "next/server"
 import type { AnalysisStatus, ShownAnalysis, StoredAnalysis } from "@/lib/api/analysis"
 import type { PlanningOverview } from "@/lib/api/planning"
-import type { AnthropicSettings, PluggySettings } from "@/lib/api/settings"
+import type { AnthropicSettings, McpTokenStatus, PluggySettings } from "@/lib/api/settings"
 import type {
   Account,
   AuthUser,
@@ -154,4 +154,8 @@ export function getPluggySettings(): Promise<PluggySettings> {
 
 export function getAnthropicSettings(): Promise<AnthropicSettings> {
   return api<AnthropicSettings>("/api/settings/anthropic")
+}
+
+export function getMcpToken(): Promise<McpTokenStatus> {
+  return api<McpTokenStatus>("/api/settings/mcp-token")
 }

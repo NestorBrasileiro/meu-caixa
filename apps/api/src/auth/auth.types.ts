@@ -1,11 +1,18 @@
-/** Usuário autenticado, montado a partir da introspecção do token no Keycloak. */
-export interface AuthUser {
-  id: string;
+/** Usuário como o Keycloak informa, a partir da introspecção do token. */
+export interface KeycloakUser {
+  /** `sub` do token. */
+  sub: string;
   username: string | null;
   name: string | null;
   email: string | null;
   /** Roles do realm e do client da aplicação. */
   roles: string[];
+}
+
+/** Usuário autenticado no app: `id` é o do banco (`users.id`), dono dos dados. */
+export interface AuthUser extends Omit<KeycloakUser, 'sub'> {
+  id: string;
+  keycloakId: string;
 }
 
 /** Tokens guardados na sessão — nunca chegam ao browser. */

@@ -9,7 +9,7 @@ import { MCP_OAUTH_CLIENT_ID, MCP_PROMPT, mcpReachabilityNote, mcpUrl } from "./
 const noSubscription = () => () => {}
 
 /** Origem da página no browser; null no HTML do servidor (atrás de proxy ele não sabe o domínio público). */
-function useOrigin(): string | null {
+export function useOrigin(): string | null {
   return useSyncExternalStore(
     noSubscription,
     () => window.location.origin,

@@ -10,6 +10,7 @@ import {
 } from '@nestjs/common';
 import { Type } from 'class-transformer';
 import { IsInt, IsOptional, Max, Min } from 'class-validator';
+import { CurrentUser } from '../auth/current-user.decorator.js';
 import type { SyncRunRow } from '../database/schema.js';
 import { ProviderNotConfiguredError } from '../integrations/finance-provider.js';
 import { SyncInProgressError, SyncService } from './sync.service.js';
@@ -30,9 +31,9 @@ export class SyncController {
   /** Dispara uma sincronização sob demanda; acompanhe em `GET /sync/runs`. */
   @Post()
   @HttpCode(HttpStatus.ACCEPTED)
-  async start(): Promise<SyncRunRow> {
+  async start(@CurrentUser() userId: string): Promise<SyncRunRow> {
     try {
-      const { run } = await this.sync.start('MANUAL');
+      const { run } = await this.sync.start(userId, 'MANUAL');
       return run;
     } catch (error) {
       if (error instanceof SyncInProgressError) throw new ConflictException(error.message);
@@ -45,7 +46,10 @@ export class SyncController {
   }
 
   @Get('runs')
-  listRuns(@Query() query: ListSyncRunsQuery): Promise<SyncRunRow[]> {
-    return this.sync.listRuns(query.limit);
+  listRuns(
+    @CurrentUser() userId: string,
+    @Query() query: ListSyncRunsQuery,
+  ): Promise<SyncRunRow[]> {
+    return this.sync.listRuns(userId, query.limit);
   }
 }

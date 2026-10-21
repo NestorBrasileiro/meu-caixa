@@ -104,15 +104,15 @@ export class InsightsService {
 
   // ------------------------------------------------------------------ resumo
 
-  async summary() {
+  async summary(userId: string) {
     const todayDate = this.today();
     const month = monthOf(todayDate);
     const previous = shiftMonth(month, -1);
     const [accountRows, connectionRows, txs, lastSync] = await Promise.all([
-      this.accounts.listAccounts(),
-      this.accounts.listConnections(),
-      this.loadTransactions({ from: monthRange(previous).from, to: todayDate }),
-      this.lastSync(),
+      this.accounts.listAccounts(userId),
+      this.accounts.listConnections(userId),
+      this.loadTransactions(userId, { from: monthRange(previous).from, to: todayDate }),
+      this.lastSync(userId),
     ]);
     const cash = accountRows.filter((account) => account.type !== 'CREDIT_CARD');
     const cards = accountRows.filter((account) => account.type === 'CREDIT_CARD');
@@ -151,8 +151,8 @@ export class InsightsService {
 
   // ------------------------------------------------------------------ contas
 
-  async listAccounts() {
-    const rows = await this.accounts.listAccounts();
+  async listAccounts(userId: string) {
+    const rows = await this.accounts.listAccounts(userId);
     return {
       contas: rows.map((account) => ({
         id: account.id,
@@ -174,9 +174,9 @@ export class InsightsService {
 
   // -------------------------------------------------------------- transações
 
-  async searchTransactions(input: SearchTransactionsInput) {
+  async searchTransactions(userId: string, input: SearchTransactionsInput) {
     const period = this.period(input, (to) => addDays(to, -30));
-    const rows = await this.loadTransactions(period, {
+    const rows = await this.loadTransactions(userId, period, {
       accountId: input.conta_id,
       category: input.categoria,
       text: input.texto,
@@ -226,7 +226,7 @@ export class InsightsService {
 
   // -------------------------------------------------------------- categorias
 
-  async spendingByCategory(input: PeriodInput) {
+  async spendingByCategory(userId: string, input: PeriodInput) {
     // Padrão: os últimos 3 meses fechados.
     const lastClosed = shiftMonth(monthOf(this.today()), -1);
     const period = this.period(
@@ -235,7 +235,7 @@ export class InsightsService {
       input.de ? undefined : monthRange(lastClosed).to,
     );
     const months = monthsInRange(period.from, period.to);
-    const txs = await this.loadTransactions(period);
+    const txs = await this.loadTransactions(userId, period);
     const categories = spendingByCategory(txs, months);
     const total = categories.reduce((sum, category) => sum + category.total, 0);
 
@@ -274,7 +274,7 @@ export class InsightsService {
 
   // ----------------------------------------------------------- fluxo de caixa
 
-  async cashFlow(input: { meses: number; incluir_mes_atual: boolean }) {
+  async cashFlow(userId: string, input: { meses: number; incluir_mes_atual: boolean }) {
     const todayDate = this.today();
     const current = monthOf(todayDate);
     const lastMonth = input.incluir_mes_atual ? current : shiftMonth(current, -1);
@@ -285,7 +285,7 @@ export class InsightsService {
       from: monthRange(months[0]!).from,
       to: lastMonth === current ? todayDate : monthRange(lastMonth).to,
     };
-    const totals = monthlyTotals(await this.loadTransactions(period), months);
+    const totals = monthlyTotals(await this.loadTransactions(userId, period), months);
     const closed = totals.filter((row) => row.month !== current);
     const average = (pick: (row: (typeof totals)[number]) => number) =>
       closed.length === 0
@@ -317,12 +317,12 @@ export class InsightsService {
 
   // ------------------------------------------------------------ recorrências
 
-  async recurrences(input: { meses: number; minimo_meses: number }) {
+  async recurrences(userId: string, input: { meses: number; minimo_meses: number }) {
     const todayDate = this.today();
     const current = monthOf(todayDate);
     const period = { from: monthRange(shiftMonth(current, 1 - input.meses)).from, to: todayDate };
     const minMonths = Math.min(input.minimo_meses, input.meses);
-    const found = detectRecurrences(await this.loadTransactions(period), {
+    const found = detectRecurrences(await this.loadTransactions(userId, period), {
       today: todayDate,
       minMonths,
     });
@@ -372,15 +372,15 @@ export class InsightsService {
 
   // ------------------------------------------------------------ planejamento
 
-  async planningOverview() {
+  async planningOverview(userId: string) {
     const todayDate = this.today();
     const current = monthOf(todayDate);
     const closed = Array.from({ length: BASE_MONTHS }, (_, i) =>
       shiftMonth(current, i - BASE_MONTHS),
     );
     const [overview, txs] = await Promise.all([
-      this.planning.overview(),
-      this.loadTransactions({ from: monthRange(closed[0]!).from, to: todayDate }),
+      this.planning.overview(userId),
+      this.loadTransactions(userId, { from: monthRange(closed[0]!).from, to: todayDate }),
     ]);
     const spending = spendingByCategory(txs, [...closed, current]);
     const spentIn = (sources: Set<string | null>, months: IsoMonth[]) =>
@@ -496,6 +496,7 @@ export class InsightsService {
 
   /** Transações do período com a categoria efetiva e a conta, mais recentes primeiro. */
   private async loadTransactions(
+    userId: string,
     period: { from: IsoDate; to: IsoDate },
     filters: { accountId?: string; category?: string; text?: string } = {},
   ): Promise<LoadedTransaction[]> {
@@ -503,6 +504,7 @@ export class InsightsService {
       string | null
     >`coalesce(${transactions.userCategory}, ${transactions.category})`;
     const conditions: (SQL | undefined)[] = [
+      eq(transactions.userId, userId),
       gte(transactions.date, period.from),
       lte(transactions.date, period.to),
       filters.accountId ? eq(transactions.accountId, filters.accountId) : undefined,
@@ -556,8 +558,13 @@ export class InsightsService {
     }));
   }
 
-  private async lastSync() {
-    const [run] = await this.db.select().from(syncRuns).orderBy(desc(syncRuns.startedAt)).limit(1);
+  private async lastSync(userId: string) {
+    const [run] = await this.db
+      .select()
+      .from(syncRuns)
+      .where(eq(syncRuns.userId, userId))
+      .orderBy(desc(syncRuns.startedAt))
+      .limit(1);
     if (!run) return null;
     return {
       status: run.status,

@@ -1,6 +1,6 @@
 import type { AnalysisStatus, ShownAnalysis } from "@/lib/api/analysis"
 import type { PlanningOverview } from "@/lib/api/planning"
-import type { AnthropicSettings, PluggySettings } from "@/lib/api/settings"
+import type { AnthropicSettings, McpTokenStatus, PluggySettings } from "@/lib/api/settings"
 import type {
   Account,
   AuthUser,
@@ -35,7 +35,8 @@ export async function getNow(): Promise<IsoDateTime> {
 
 export async function getCurrentUser(): Promise<AuthUser> {
   return {
-    id: "user-1",
+    id: "00000000-0000-4000-8000-000000000001",
+    keycloakId: "user-1",
     username: "nestor",
     name: "Nestor Brasileiro",
     email: "nestor@example.com",
@@ -120,4 +121,9 @@ export async function getAnthropicSettings(): Promise<AnthropicSettings> {
     ],
     updatedAt: null,
   }
+}
+
+/** Sem API não há servidor MCP: nenhum token. */
+export async function getMcpToken(): Promise<McpTokenStatus> {
+  return { exists: false, hint: null, createdAt: null, lastUsedAt: null }
 }

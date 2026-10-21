@@ -7,14 +7,12 @@ import { DATABASE, type Database } from '../database/database.module.js';
 import { anthropicSettings, type AnthropicSettingsRow } from '../database/schema.js';
 import { ClaudeDisabledError } from './claude-disabled.error.js';
 
-const SINGLETON_ID = 1;
-
 export interface AnthropicCredentials {
   apiKey: string;
   model: string;
 }
 
-/** Chave da Anthropic no banco, cifrada, e o modelo escolhido. */
+/** Chave da Anthropic de cada usuário no banco, cifrada, e o modelo escolhido. */
 @Injectable()
 export class AnthropicSettingsStore {
   constructor(
@@ -23,11 +21,11 @@ export class AnthropicSettingsStore {
   ) {}
 
   /** Linha como está no banco (chave ainda cifrada). */
-  async find(): Promise<AnthropicSettingsRow | null> {
+  async find(userId: string): Promise<AnthropicSettingsRow | null> {
     const [row] = await this.db
       .select()
       .from(anthropicSettings)
-      .where(eq(anthropicSettings.id, SINGLETON_ID));
+      .where(eq(anthropicSettings.userId, userId));
     return row ?? null;
   }
 
@@ -46,23 +44,22 @@ export class AnthropicSettingsStore {
 
   async save(userId: string, credentials: AnthropicCredentials): Promise<AnthropicSettingsRow> {
     const values = {
-      userId,
       apiKey: encryptSecret(credentials.apiKey, this.key()),
       model: credentials.model,
     };
     const [row] = await this.db
       .insert(anthropicSettings)
-      .values({ id: SINGLETON_ID, ...values })
+      .values({ userId, ...values })
       .onConflictDoUpdate({
-        target: anthropicSettings.id,
+        target: anthropicSettings.userId,
         set: { ...values, updatedAt: new Date() },
       })
       .returning();
     return row!;
   }
 
-  async remove(): Promise<void> {
-    await this.db.delete(anthropicSettings).where(eq(anthropicSettings.id, SINGLETON_ID));
+  async remove(userId: string): Promise<void> {
+    await this.db.delete(anthropicSettings).where(eq(anthropicSettings.userId, userId));
   }
 
   /** Falha antes de qualquer trabalho se não houver chave para cifrar. */

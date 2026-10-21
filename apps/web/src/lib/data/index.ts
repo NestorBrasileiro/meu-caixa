@@ -34,3 +34,4 @@ export const getAnalysis = source.getAnalysis
 export const getAnalysisStatus = source.getAnalysisStatus
 export const getPluggySettings = source.getPluggySettings
 export const getAnthropicSettings = source.getAnthropicSettings
+export const getMcpToken = source.getMcpToken

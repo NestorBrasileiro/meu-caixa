@@ -50,6 +50,13 @@
       "when": 1792328023637,
       "tag": "0006_anthropic_settings",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1792505981381,
+      "tag": "0007_multi_user",
+      "breakpoints": true
     }
   ]
 }

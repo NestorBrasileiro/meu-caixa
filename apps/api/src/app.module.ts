@@ -13,11 +13,13 @@ import { PlanningModule } from './planning/planning.module.js';
 import { SettingsModule } from './settings/settings.module.js';
 import { SyncModule } from './sync/sync.module.js';
 import { TransactionsModule } from './transactions/transactions.module.js';
+import { UsersModule } from './users/users.module.js';
 
 @Module({
   imports: [
     ConfigModule,
     DatabaseModule,
+    UsersModule,
     AuthModule,
     IntegrationsModule,
     AccountsModule,

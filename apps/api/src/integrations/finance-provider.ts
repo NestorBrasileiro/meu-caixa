@@ -28,16 +28,22 @@ export interface FinanceProvider {
  * Entrega o provedor atual. Com a Pluggy, as credenciais vêm do banco e podem
  * mudar com o app no ar: quem sincroniza pede o provedor a cada execução.
  */
+/** Provedor de cada usuário (cada um cadastra a própria Pluggy). */
 export interface FinanceProviderSource {
-  /** Falha com `ProviderNotConfiguredError` enquanto não houver configuração. */
-  get(): Promise<FinanceProvider>;
+  /** Falha com `ProviderNotConfiguredError` enquanto o usuário não configurar. */
+  get(userId: string): Promise<FinanceProvider>;
+  /**
+   * Usuários que o agendador deve sincronizar; `null` = todos (o provedor
+   * fake e os testes não dependem de configuração).
+   */
+  configuredUserIds(): Promise<string[] | null>;
 }
 
 export const FINANCE_PROVIDER_SOURCE = Symbol('FINANCE_PROVIDER_SOURCE');
 
-/** Fonte que sempre entrega o mesmo provedor (fake e testes). */
+/** Fonte que entrega o mesmo provedor para todos os usuários (fake e testes). */
 export function staticProviderSource(provider: FinanceProvider): FinanceProviderSource {
-  return { get: async () => provider };
+  return { get: async () => provider, configuredUserIds: async () => null };
 }
 
 export class ProviderNotConfiguredError extends Error {

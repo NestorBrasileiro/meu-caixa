@@ -113,7 +113,10 @@ export interface SyncRun {
 
 /** GET /auth/me */
 export interface AuthUser {
+  /** Id no banco do app: dono dos dados. */
   id: string
+  /** `sub` do usuário no Keycloak. */
+  keycloakId: string
   username: string | null
   name: string | null
   email: string | null
