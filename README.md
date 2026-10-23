@@ -12,6 +12,7 @@ Bancos → Open Finance → Meu Pluggy → integrations/pluggy (ACL) → Postgre
 
 - **A Pluggy é plugável.** O sistema depende só da interface `FinanceProvider` (`apps/api/src/integrations/finance-provider.ts`). O módulo `integrations/pluggy` traduz o formato da Pluggy para o modelo de domínio próprio (`src/domain/finance.ts`). Trocar de agregador = escrever outro adapter.
 - **Postgres é a fonte de verdade.** O módulo `sync` copia os dados do provedor para o banco a cada `SYNC_INTERVAL_HOURS` (e sob demanda em `POST /api/sync`, o botão "Sincronizar agora"). A API sempre lê do banco; se a Pluggy cair, as telas continuam funcionando com o último dado sincronizado.
+- **Empréstimos e financiamentos também entram no sync** (`GET /loans` da Pluggy, por conexão): saldo devedor, parcelas pagas/a vencer/vencidas, taxa e CET. É um produto opcional do Open Finance: se o banco não compartilha (403/404), a sincronização segue sem empréstimos para aquela conexão, sem falhar, e mantém o que já estava gravado; uma resposta vazia vale como nenhum empréstimo. Os que somem de uma conexão sincronizada (quitados) são apagados. A contagem fica em `stats.loans` de cada execução (ausente nas execuções antigas).
 - **Login com Keycloak no backend (padrão BFF).** A API faz o fluxo OIDC (Authorization Code + PKCE) com o Keycloak e guarda os tokens numa sessão do `express-session` no Postgres. O browser só recebe um cookie `httpOnly`; os tokens nunca chegam ao frontend.
 - **O browser fala só com o Next.** O `next.config.ts` faz proxy de `/api/*` e `/auth/*` para a API, então o cookie de sessão é do mesmo site e não há CORS. As telas (Server Components) chamam a API direto do servidor repassando o cookie; as ações (salvar, sincronizar) saem do browser por `/api`.
 - **O Claude analisa via MCP.** A API expõe um servidor MCP em `/mcp` (também pelo proxy do Next) com ferramentas de leitura dos dados já agregados e uma para salvar o relatório da análise. Ver [Conectar no Claude (MCP)](#conectar-no-claude-mcp).
@@ -29,14 +30,16 @@ apps/web/                  Next.js 16 + shadcn/ui (interface)
   src/lib/finance/         regras compartilhadas (fluxo de caixa, gasto por categoria)
 apps/api/                  NestJS 12 + TypeScript (ESM)
   src/auth/                login com Keycloak, sessão, guard global e CSRF
-  src/domain/              modelo próprio: Conta, Transação, Fatura, Conexão
+  src/domain/              modelo próprio: Conta, Transação, Fatura, Conexão, Empréstimo
   src/integrations/        FinanceProvider + adapters (pluggy, fake) + cache
   src/database/            schema Drizzle (Postgres)
   src/sync/                sincronização provedor → Postgres
   src/accounts/            GET /api/connections, GET /api/accounts
+  src/loans/               GET /api/loans (empréstimos e financiamentos)
   src/transactions/        transações (lista e recategorização) e faturas
   src/planning/            compromissos fixos, metas, categorias e projeção
   src/insights/            dados para a análise do Claude (agregações, recorrências), ferramentas e relatórios salvos
+  src/export/              exportação em Excel, PDF, CSV e Markdown (um relatório, um renderizador por formato)
   src/mcp/                 servidor MCP em /mcp (Streamable HTTP) e autenticação OAuth do Claude
   src/claude/              análise pelo app: API da Anthropic (Tool Runner) com as mesmas ferramentas
   drizzle/                 migrations SQL
@@ -110,6 +113,7 @@ Rotas de dados sob `/api`; `/health` e `/auth/*` ficam na raiz.
 | `GET /api/transactions` | Lista unificada; filtros `accountId`, `from`, `to`, `status`, `search`, `limit`, `offset`. Cada item traz a categoria efetiva (`category`) e a do agregador (`originalCategory`) |
 | `PATCH /api/transactions/:id` | Recategoriza (`{ category }`); `null` volta para a categoria do agregador. A sincronização não desfaz |
 | `GET /api/invoices` | Faturas de cartão; filtro `accountId` |
+| `GET /api/loans` | Empréstimos e financiamentos, do maior saldo devedor para o menor: valor contratado, saldo devedor, parcelas (`total`, `paid`, `remaining`, `overdue`), próxima parcela, taxa de juros e CET em % ao ano e periodicidade em português. Campos que o banco não informa vêm `null`; a próxima parcela é calculada do calendário do contrato (primeiro vencimento + periodicidade) |
 | `POST /api/sync` | Dispara uma sincronização (202); 409 se já houver uma rodando |
 | `GET /api/sync/runs` | Histórico das sincronizações, com contagens e erros |
 | `GET /api/planning` | Categorias de orçamento, compromissos fixos (com parcelas pagas), metas e a projeção dos próximos 6 meses |
@@ -122,10 +126,47 @@ Rotas de dados sob `/api`; `/health` e `/auth/*` ficam na raiz.
 | `POST /api/analysis/runs` | "Gerar análise": começa em background (202, execução `RUNNING`); 409 se já houver uma rodando; 503 sem chave da Anthropic cadastrada |
 | `GET /api/analysis/runs/:id` | Uma execução: `status` (`RUNNING`/`SUCCEEDED`/`FAILED`), `startedAt`, `finishedAt`, `error` (em português), `reportId`, `model`; 404 se não existir |
 | `POST /api/analysis/ask` | "Pergunte ao Claude": `{ question, history? }` → `{ answer, model }` (markdown); 429 com outra pergunta em andamento; 503 sem chave da Anthropic cadastrada |
+| `GET /api/export/options` | Formatos, seções, período padrão e limite de meses da exportação. Ver [Exportação](#exportação) |
+| `GET /api/export` | Baixa a exportação: `format` (`xlsx`, `pdf`, `csv` ou `md`), `from`/`to` e `sections`; 400 com a explicação em português para pedido inválido |
 
 A projeção usa a média dos últimos 3 meses fechados: renda esperada menos compromissos ativos no mês, aportes das metas até serem atingidas e o gasto variável médio (gasto total menos os compromissos). Pagamento de fatura e transferência entre contas próprias não contam como renda nem gasto.
 
 Convenções: valores monetários em **centavos** (inteiros); transações negativas são saídas e positivas, entradas; datas `YYYY-MM-DD` no fuso `TIMEZONE` (padrão `America/Sao_Paulo`).
+
+## Exportação
+
+Para analisar o dinheiro fora do app — numa planilha, impresso ou em **qualquer chat de IA, sem chave da Anthropic** —, a API exporta tudo o que o Meu Caixa sabe num arquivo só. Um `ExportDataService` (`src/export/`) monta um relatório tipado a partir dos serviços que já existem (contas, transações, faturas, planejamento, empréstimos, análises, sincronização) e cada formato é um renderizador puro desse mesmo relatório; os números batem entre os formatos e com as telas (mesmas regras: pagamento de fatura e transferência entre contas próprias não são gasto nem renda).
+
+| Formato | Arquivo | O que vem |
+| --- | --- | --- |
+| Excel | `.xlsx` | Aba "Resumo" e uma aba por seção: valores em R$ como número (negativos em vermelho), datas de verdade, porcentagens, cabeçalho fixo, filtro, total com fórmula (`SUM`; nas transações, `SUBTOTAL`, que respeita o filtro) e impressão ajustada à largura da página |
+| PDF | `.pdf` | Relatório A4: capa com os números principais, avisos e convenções; uma tabela por seção (cabeçalho repetido nas quebras, linhas zebradas, dinheiro à direita, seções largas em paisagem) e "Página X de Y". Acima de 5.000 transações, leva as mais recentes e avisa |
+| CSV | `.zip` | Um CSV por seção (`01-resumo.csv` … `15-analise.csv`) em UTF-8 com BOM, separador `;`, vírgula decimal e datas dd/mm/aaaa — abre certo no Excel em português — e um `LEIA-ME.txt` com colunas e convenções |
+| Markdown | `.md` | Para ler ou **colar no ChatGPT, Claude.ai ou Gemini**: cabeçalho, "Como usar" com um pedido de análise pronto (gastos, vazamentos, assinaturas esquecidas, "gastos do pecado", cortes com economia estimada), convenções e uma tabela por seção. Acima de 3.000 transações, leva as mais recentes e avisa |
+
+`GET /api/export?format=xlsx|pdf|csv|md&from=AAAA-MM-DD&to=AAAA-MM-DD&sections=resumo,transacoes` devolve o arquivo (`Content-Disposition: attachment; filename="meu-caixa_<de>_a_<ate>.<ext>"`). Padrões: período do 1º dia do mês de dois meses atrás até hoje; todas as seções. Datas no futuro viram hoje (o arquivo avisa); período invertido, maior que 24 meses do calendário, formato ou seção desconhecidos dão 400 com a explicação. `GET /api/export/options` lista formatos, seções e o período padrão para a interface.
+
+Seções, nesta ordem:
+
+| Id | Conteúdo |
+| --- | --- |
+| `resumo` | Saldo em contas, dívida, limite e limite disponível dos cartões, parcelas a vencer, saldo devedor de empréstimos, resultado do período (entradas, saídas, saldo, taxa de poupança), contagens, conexões e **avisos de frescor** (conexão que precisa de ação, sincronização antiga ou com erro, conta sincronizada só até antes do fim do período) |
+| `contas` | Todas as contas e cartões: banco, tipo, nome, número, saldo (cartão: dívida), limite, disponível, sincronizado até, status da conexão |
+| `cartoes` | Por cartão: limite, usado, disponível, % de uso e a fatura em aberto (valor, fechamento, vencimento) |
+| `faturas` | Faturas com vencimento a partir do início do período, inclusive as futuras |
+| `parcelamentos` | Compras parceladas no cartão em aberto: parcela atual, valor, próxima, fim e valor restante (parcelas restantes × valor) |
+| `emprestimos` | Empréstimos e financiamentos do Open Finance (contratado, saldo devedor, parcelas pagas/restantes/atrasadas, próxima, taxa e CET); sem nenhum, o arquivo explica que nem todo banco compartilha |
+| `compromissos` | Compromissos fixos (ex.: parcela do terreno) com parcelas pagas, fim e valor restante |
+| `metas` | Metas com progresso, aporte planejado e necessário |
+| `orcamento` | Teto × gasto de cada categoria de orçamento em cada mês do período, mais o gasto sem categoria de orçamento |
+| `projecao` | Projeção dos próximos 6 meses |
+| `fluxo` | Entradas, saídas e saldo de cada mês do período (meses incompletos marcados) |
+| `categorias` | Gasto por categoria no período: total, nº de transações, % do total e média mensal |
+| `recorrencias` | Assinaturas, contas fixas, hábitos e parcelamentos detectados (janela de pelo menos 6 meses até o fim do período) |
+| `transacoes` | Todas as transações do período: data, banco, conta, descrição, contraparte, categoria (e a original, se editada), forma de pagamento, parcela, status, tipo, "Interna" (fatura/transferência própria) e valor |
+| `analise` | A última análise salva do Claude (manchete, resumo e sugestões), se houver |
+
+As transações são lidas em páginas de 2.000 (keyset por data e id) e o período é limitado a 24 meses, para segurar memória e tempo. Bibliotecas: [exceljs](https://github.com/exceljs/exceljs) (xlsx), [pdfmake](https://pdfmake.github.io/docs/) (PDF sem browser, fonte Roboto embutida com acentos) e [fflate](https://github.com/101arrowz/fflate) (zip).
 
 ## Análise do Claude
 

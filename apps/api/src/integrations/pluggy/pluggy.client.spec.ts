@@ -254,4 +254,67 @@ describe('PluggyClient', () => {
 
     await expect(client.getIdentity('item-1')).resolves.toBeNull();
   });
+
+  describe('listLoans', () => {
+    const loan = (id: string) => ({ id, itemId: 'item-1', productName: 'Crédito pessoal' });
+
+    it('percorre todas as páginas filtrando pelo item', async () => {
+      const { fetchFn, calls } = fakeFetch({
+        'POST /auth': [auth()],
+        'GET /loans': [
+          () => json({ results: [loan('l1')], page: 1, totalPages: 2, total: 2 }),
+          () => json({ results: [loan('l2')], page: 2, totalPages: 2, total: 2 }),
+        ],
+      });
+      const { client } = createClient(fetchFn);
+
+      const loans = await client.listLoans('item-1');
+
+      expect(loans?.map((l) => l.id)).toEqual(['l1', 'l2']);
+      const queries = calls
+        .filter((c) => c.path === '/loans')
+        .map((c) => [c.url.searchParams.get('itemId'), c.url.searchParams.get('page')]);
+      expect(queries).toEqual([
+        ['item-1', '1'],
+        ['item-1', '2'],
+      ]);
+    });
+
+    it.each([403, 404])('devolve null quando a Pluggy responde %i, sem repetir', async (status) => {
+      const { fetchFn } = fakeFetch({
+        'POST /auth': [auth()],
+        'GET /loans': [() => json({ message: 'forbidden' }, { status })],
+      });
+      const { client, sleep } = createClient(fetchFn);
+
+      await expect(client.listLoans('item-1')).resolves.toBeNull();
+      expect(sleep).not.toHaveBeenCalled();
+    });
+
+    it('trata resposta sem corpo como nenhum empréstimo', async () => {
+      const { fetchFn } = fakeFetch({
+        'POST /auth': [auth()],
+        'GET /loans': [() => new Response(null, { status: 200 })],
+      });
+      const { client } = createClient(fetchFn);
+
+      await expect(client.listLoans('item-1')).resolves.toEqual([]);
+    });
+
+    it('falha alto em outros erros e em formato inesperado', async () => {
+      const { fetchFn } = fakeFetch({
+        'POST /auth': [auth()],
+        'GET /loans': [
+          () => json({ message: 'bad request' }, { status: 400 }),
+          () => json({ results: [{ id: 'l1' }], page: 1, totalPages: 1 }),
+        ],
+      });
+      const { client } = createClient(fetchFn);
+
+      await expect(client.listLoans('item-1')).rejects.toMatchObject({ status: 400 });
+      await expect(client.listLoans('item-1')).rejects.toThrow(
+        /Resposta inesperada .* \/loans: results\.0\.itemId/,
+      );
+    });
+  });
 });

@@ -8,6 +8,7 @@ import {
   accounts,
   connections,
   invoices,
+  loans,
   syncRuns,
   transactions,
   type AccountRow,
@@ -142,13 +143,15 @@ export class SyncService {
       transactions: 0,
       removedPendingTransactions: 0,
       invoices: 0,
+      loans: 0,
     };
     const errors: string[] = [];
     let status: SyncStatus;
     this.logger.log(`Sincronização ${run.id} iniciada (${run.trigger}, ${run.provider})`);
 
     try {
-      const connectionIds = await this.syncConnections(provider, stats);
+      const connectionRows = await this.syncConnections(provider, stats);
+      const connectionIds = new Map(connectionRows.map((row) => [row.externalId, row.id]));
       const accountRows = await this.syncAccounts(provider, connectionIds, stats, errors);
       for (const account of accountRows) {
         await this.collect(errors, `Transações de "${account.name}"`, () =>
@@ -159,6 +162,11 @@ export class SyncService {
             this.syncInvoices(provider, account, stats),
           );
         }
+      }
+      for (const connection of connectionRows) {
+        await this.collect(errors, `Empréstimos de "${connection.institutionName}"`, () =>
+          this.syncLoans(provider, connection, stats),
+        );
       }
       status = errors.length > 0 ? 'PARTIAL' : 'SUCCEEDED';
     } catch (error) {
@@ -181,9 +189,9 @@ export class SyncService {
   private async syncConnections(
     provider: FinanceProvider,
     stats: SyncStats,
-  ): Promise<Map<string, string>> {
+  ): Promise<SyncedConnection[]> {
     const fetched = await provider.getConnections();
-    if (fetched.length === 0) return new Map();
+    if (fetched.length === 0) return [];
 
     const rows = await this.db
       .insert(connections)
@@ -197,10 +205,14 @@ export class SyncService {
           'lastRefreshedAt',
         ]),
       })
-      .returning({ id: connections.id, externalId: connections.externalId });
+      .returning({
+        id: connections.id,
+        externalId: connections.externalId,
+        institutionName: connections.institutionName,
+      });
 
     stats.connections = rows.length;
-    return new Map(rows.map((row) => [row.externalId, row.id]));
+    return rows;
   }
 
   private async syncAccounts(
@@ -342,6 +354,83 @@ export class SyncService {
     stats.invoices += fetched.length;
   }
 
+  /**
+   * Espelha os empréstimos da conexão: grava os que vieram e apaga os que
+   * sumiram (quitados). Se o banco não compartilha empréstimos (`null`), não
+   * mexe no que já estava gravado.
+   */
+  private async syncLoans(
+    provider: FinanceProvider,
+    connection: SyncedConnection,
+    stats: SyncStats,
+  ): Promise<void> {
+    const fetched = await provider.getLoans(connection.externalId);
+    if (fetched === null) {
+      this.logger.warn(
+        `"${connection.institutionName}" não compartilha empréstimos; seguindo sem eles`,
+      );
+      return;
+    }
+
+    const values = fetched.map(
+      ({ connectionExternalId: _connection, installments, raw, ...loan }) => ({
+        ...loan,
+        connectionId: connection.id,
+        provider: provider.name,
+        installmentsTotal: installments.total,
+        installmentsPaid: installments.paid,
+        installmentsRemaining: installments.remaining,
+        installmentsOverdue: installments.overdue,
+        raw: raw ?? null,
+      }),
+    );
+
+    await this.db.transaction(async (tx) => {
+      for (const batch of chunk(values, UPSERT_BATCH_SIZE)) {
+        await tx
+          .insert(loans)
+          .values(batch)
+          .onConflictDoUpdate({
+            target: [loans.provider, loans.externalId],
+            set: conflictUpdateSet(loans, [
+              'connectionId',
+              'productName',
+              'type',
+              'contractNumber',
+              'contractedAmount',
+              'outstandingBalance',
+              'currency',
+              'contractDate',
+              'finalDueDate',
+              'firstInstallmentDueDate',
+              'periodicity',
+              'periodicityLabel',
+              'installmentsTotal',
+              'installmentsPaid',
+              'installmentsRemaining',
+              'installmentsOverdue',
+              'installmentAmount',
+              'scheduledInstallments',
+              'interestRateAnnual',
+              'cetAnnual',
+              'raw',
+            ]),
+          });
+      }
+
+      const seen = values.map((value) => value.externalId);
+      await tx
+        .delete(loans)
+        .where(
+          and(
+            eq(loans.connectionId, connection.id),
+            seen.length > 0 ? notInArray(loans.externalId, seen) : undefined,
+          ),
+        );
+    });
+    stats.loans = (stats.loans ?? 0) + values.length;
+  }
+
   /** Uma conta com problema não impede as outras de sincronizarem. */
   private async collect(errors: string[], context: string, work: () => Promise<void>) {
     try {
@@ -350,6 +439,12 @@ export class SyncService {
       errors.push(`${context}: ${describe(error)}`);
     }
   }
+}
+
+interface SyncedConnection {
+  id: string;
+  externalId: string;
+  institutionName: string;
 }
 
 async function releaseLock(client: PoolClient): Promise<void> {

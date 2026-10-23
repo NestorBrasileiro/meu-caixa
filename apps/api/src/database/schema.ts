@@ -3,6 +3,7 @@ import {
   bigint,
   check,
   date,
+  doublePrecision,
   index,
   integer,
   jsonb,
@@ -18,6 +19,8 @@ import {
   CONNECTION_STATUSES,
   PAYMENT_METHODS,
   TRANSACTION_STATUSES,
+  type LoanPeriodicity,
+  type ScheduledInstallment,
 } from '../domain/finance.js';
 
 /**
@@ -137,12 +140,57 @@ export const invoices = pgTable(
   ],
 );
 
+/** Empréstimos e financiamentos, por conexão (no Open Finance não são contas). */
+export const loans = pgTable(
+  'loans',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    connectionId: uuid('connection_id')
+      .notNull()
+      .references(() => connections.id, { onDelete: 'cascade' }),
+    ...providerRef,
+    productName: text('product_name').notNull(),
+    type: text('type'),
+    contractNumber: text('contract_number'),
+    contractedAmount: money('contracted_amount'),
+    outstandingBalance: money('outstanding_balance'),
+    currency: text('currency').notNull(),
+    contractDate: date('contract_date', { mode: 'string' }),
+    finalDueDate: date('final_due_date', { mode: 'string' }),
+    firstInstallmentDueDate: date('first_installment_due_date', { mode: 'string' }),
+    periodicity: text('periodicity').$type<LoanPeriodicity>(),
+    periodicityLabel: text('periodicity_label'),
+    installmentsTotal: integer('installments_total'),
+    installmentsPaid: integer('installments_paid'),
+    installmentsRemaining: integer('installments_remaining'),
+    installmentsOverdue: integer('installments_overdue'),
+    installmentAmount: money('installment_amount'),
+    /** Parcelas não regulares com data própria; a próxima parcela sai daqui e do calendário. */
+    scheduledInstallments: jsonb('scheduled_installments')
+      .$type<ScheduledInstallment[]>()
+      .notNull()
+      .default([]),
+    /** % ao ano. */
+    interestRateAnnual: doublePrecision('interest_rate_annual'),
+    cetAnnual: doublePrecision('cet_annual'),
+    /** Payload original do provedor, para uso futuro (não é exposto pela API). */
+    raw: jsonb('raw'),
+    ...timestamps,
+  },
+  (t) => [
+    uniqueIndex('loans_provider_external_id_key').on(t.provider, t.externalId),
+    index('loans_connection_id_idx').on(t.connectionId),
+  ],
+);
+
 export interface SyncStats {
   connections: number;
   accounts: number;
   transactions: number;
   removedPendingTransactions: number;
   invoices: number;
+  /** Ausente nas execuções gravadas antes dos empréstimos existirem. */
+  loans?: number;
 }
 
 export const syncRuns = pgTable(
@@ -213,6 +261,7 @@ export type ConnectionRow = typeof connections.$inferSelect;
 export type AccountRow = typeof accounts.$inferSelect;
 export type TransactionRow = typeof transactions.$inferSelect;
 export type InvoiceRow = typeof invoices.$inferSelect;
+export type LoanRow = typeof loans.$inferSelect;
 export type SyncRunRow = typeof syncRuns.$inferSelect;
 export type BudgetCategoryRow = typeof budgetCategories.$inferSelect;
 export type CommitmentRow = typeof commitments.$inferSelect;

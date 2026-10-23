@@ -3,6 +3,7 @@ import type {
   Connection,
   DateRange,
   Invoice,
+  Loan,
   Profile,
   Transaction,
 } from '../domain/finance.js';
@@ -22,6 +23,13 @@ export interface FinanceProvider {
   getAccounts(): Promise<Account[]>;
   getTransactions(accountId: string, range: DateRange): Promise<Transaction[]>;
   getInvoices(accountId: string): Promise<Invoice[]>;
+  /**
+   * Empréstimos e financiamentos de uma conexão. `null` quando a instituição
+   * não compartilha esse produto (fora do consentimento do Open Finance ou
+   * indisponível no agregador): o sync segue sem empréstimos para a conexão e
+   * mantém o que já tinha gravado. `[]` significa que não há nenhum.
+   */
+  getLoans(connectionId: string): Promise<Loan[] | null>;
 }
 
 /**

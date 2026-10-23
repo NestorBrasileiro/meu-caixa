@@ -1,4 +1,6 @@
 import type { AnalysisStatus, ShownAnalysis } from "@/lib/api/analysis"
+import { EXPORT_FORMATS, EXPORT_MAX_MONTHS, EXPORT_SECTIONS, type ExportOptions } from "@/lib/api/export"
+import type { Loan } from "@/lib/api/loans"
 import type { PlanningOverview } from "@/lib/api/planning"
 import type { AnthropicSettings, PluggySettings } from "@/lib/api/settings"
 import type {
@@ -15,6 +17,7 @@ import type {
 } from "@/lib/api/types"
 import { buildAnalysis } from "@/lib/mock/analysis"
 import { MOCK_NOW, MOCK_TODAY, mockDataset } from "@/lib/mock/generator"
+import { buildLoans } from "@/lib/mock/loans"
 import { buildPlanning } from "@/lib/mock/planning"
 
 /**
@@ -119,5 +122,23 @@ export async function getAnthropicSettings(): Promise<AnthropicSettings> {
       { id: "claude-opus-5", label: "Claude Opus 5 · US$ 5 / 25 por 1M tokens" },
     ],
     updatedAt: null,
+  }
+}
+
+export async function getLoans(): Promise<Loan[]> {
+  return buildLoans()
+}
+
+/**
+ * O catálogo do contrato, para a tela de exportação aparecer inteira. Sem API não há arquivo: o
+ * botão de baixar fica desabilitado.
+ */
+export async function getExportOptions(): Promise<ExportOptions> {
+  return {
+    formats: EXPORT_FORMATS,
+    sections: EXPORT_SECTIONS,
+    // Os últimos 3 meses: do dia 1º de dois meses atrás até hoje.
+    defaultPeriod: { from: "2026-08-01", to: MOCK_TODAY },
+    maxMonths: EXPORT_MAX_MONTHS,
   }
 }

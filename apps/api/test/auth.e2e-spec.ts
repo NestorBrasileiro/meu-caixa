@@ -63,6 +63,7 @@ describe('Autenticação com Keycloak (e2e)', () => {
 
   it('bloqueia as rotas sem sessão, exceto as públicas', async () => {
     await agent().get('/api/accounts').expect(401);
+    await agent().get('/api/loans').expect(401);
     await agent().get('/auth/me').expect(401);
     await agent().get('/health').expect(200);
   });

@@ -34,3 +34,7 @@ export const getAnalysis = source.getAnalysis
 export const getAnalysisStatus = source.getAnalysisStatus
 export const getPluggySettings = source.getPluggySettings
 export const getAnthropicSettings = source.getAnthropicSettings
+/** Empréstimos e financiamentos (Open Finance); no modo mock, dois de exemplo. */
+export const getLoans = source.getLoans
+/** Formatos, seções e período padrão da exportação; no modo mock, o catálogo do contrato. */
+export const getExportOptions = source.getExportOptions

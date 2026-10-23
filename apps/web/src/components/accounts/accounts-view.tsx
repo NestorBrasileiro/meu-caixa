@@ -1,4 +1,5 @@
 import { ExternalLink, Landmark } from "lucide-react"
+import type { Loan } from "@/lib/api/loans"
 import type { Account, Connection, Invoice, IsoDate, IsoDateTime, SyncRun } from "@/lib/api/types"
 import { findActiveRun } from "@/components/shell/sync-status"
 import { PageHeader } from "@/components/page-header"
@@ -12,6 +13,7 @@ import { MEU_PLUGGY_URL, plural } from "./format"
 import { AccountsHeaderActions } from "./header-actions"
 import { buildInvoiceHistory, findOpenInvoice } from "./invoices"
 import { InvoicesCard } from "./invoices-card"
+import { LoansCard } from "./loans-card"
 import { SyncHistoryCard } from "./sync-history-card"
 
 export interface AccountsData {
@@ -19,6 +21,8 @@ export interface AccountsData {
   accounts: Account[]
   invoices: Invoice[]
   runs: SyncRun[]
+  /** null quando `GET /api/loans` falhou: o cartão de empréstimos avisa e o resto da tela fica. */
+  loans: Loan[] | null
 }
 
 /**
@@ -31,7 +35,7 @@ function connectionColumns(count: number): string {
 
 /** A tela de contas a partir dos dados já carregados (a página só busca; aqui só se monta). */
 export function AccountsView({
-  data: { connections, accounts, invoices, runs },
+  data: { connections, accounts, invoices, runs, loans },
   today,
   now,
   readOnly,
@@ -49,6 +53,8 @@ export function AccountsView({
     }),
   )
   const histories = cards.map((card) => buildInvoiceHistory(card, invoices, today))
+  // Sem banco conectado não há de onde vir empréstimo: o cartão só aparece se houver algum.
+  const showLoans = connections.length > 0 || (loans?.length ?? 0) > 0
 
   const description =
     connections.length === 0
@@ -117,6 +123,8 @@ export function AccountsView({
           </section>
         </>
       )}
+
+      {showLoans && <LoansCard loans={loans} />}
 
       <div
         className={
