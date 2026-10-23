@@ -32,3 +32,5 @@ export const getPlanning = source.getPlanning
 /** Última análise; no modo mock, o relatório de exemplo (`sample: true`). */
 export const getAnalysis = source.getAnalysis
 export const getAnalysisStatus = source.getAnalysisStatus
+export const getPluggySettings = source.getPluggySettings
+export const getAnthropicSettings = source.getAnthropicSettings

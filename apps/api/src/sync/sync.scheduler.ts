@@ -8,6 +8,7 @@ import {
 import { ENV } from '../config/config.module.js';
 import type { Env } from '../config/env.js';
 import type { SyncTrigger } from '../database/schema.js';
+import { ProviderNotConfiguredError } from '../integrations/finance-provider.js';
 import { SyncInProgressError, SyncService } from './sync.service.js';
 
 /**
@@ -54,6 +55,8 @@ export class SyncScheduler implements OnApplicationBootstrap, BeforeApplicationS
     } catch (error) {
       if (error instanceof SyncInProgressError) {
         this.logger.log(`Sincronização ${trigger} ignorada: outra já está em andamento`);
+      } else if (error instanceof ProviderNotConfiguredError) {
+        this.logger.log(`Sincronização ${trigger} ignorada: ${error.message}`);
       } else {
         this.logger.error(`Sincronização ${trigger} falhou`, error);
       }

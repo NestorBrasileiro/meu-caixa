@@ -3,6 +3,7 @@ import { Target } from "lucide-react"
 import { PageHeader } from "@/components/page-header"
 import { AddButton } from "@/components/planning/actions"
 import { BudgetCard } from "@/components/planning/budget-card"
+import { CardInstallmentsCard } from "@/components/planning/card-installments-card"
 import { CommitmentsCard } from "@/components/planning/commitments-card"
 import { PlanningEditor } from "@/components/planning/editor"
 import { GoalCard } from "@/components/planning/goal-card"
@@ -64,6 +65,9 @@ export default async function Page() {
   }))
   const active = activeCommitments(planning.commitments, today)
   const committed = commitmentsTotal(active)
+
+  // Parcelas de cartão em aberto: já vêm derivadas das transações, sem cadastro manual.
+  const cardInstallmentsTotal = planning.cardInstallments.reduce((sum, row) => sum + row.amount, 0)
 
   // Metas: as já alcançadas não recebem mais aporte.
   const goals = planning.goals.map((goal) => goalProgress(goal, today, accounts))
@@ -150,6 +154,8 @@ export default async function Page() {
             )}
           </section>
         </div>
+
+        <CardInstallmentsCard rows={planning.cardInstallments} total={cardInstallmentsTotal} />
 
         <BudgetCard
           groups={groupBudget(budget)}

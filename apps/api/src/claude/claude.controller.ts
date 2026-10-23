@@ -65,7 +65,7 @@ export interface AnalysisStatus {
 
 /**
  * Análise feita pela interface com a API da Anthropic ("Gerar análise" e
- * "Pergunte ao Claude"). Precisa de `ANTHROPIC_API_KEY`; sem ela, 503.
+ * "Pergunte ao Claude"). Precisa da chave da Anthropic salva em Configurações; sem ela, 503.
  */
 @Controller('analysis')
 export class ClaudeController {
@@ -76,10 +76,8 @@ export class ClaudeController {
 
   @Get('status')
   async status(): Promise<AnalysisStatus> {
-    return {
-      app: { enabled: this.runs.enabled, model: this.runs.model },
-      latestRun: await this.runs.latest(),
-    };
+    const [app, latestRun] = await Promise.all([this.runs.status(), this.runs.latest()]);
+    return { app, latestRun };
   }
 
   /** Começa a gerar uma análise em background; acompanhe em `GET /analysis/runs/:id`. */

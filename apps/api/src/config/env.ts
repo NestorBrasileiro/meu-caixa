@@ -52,13 +52,7 @@ export const envSchema = z
      */
     MCP_ALLOWED_CLIENTS: commaSeparatedList.default([]),
 
-    /**
-     * Análise pela interface ("Gerar análise" e "Pergunte ao Claude"), paga
-     * por uso na API da Anthropic. Sem a chave, o app sobe normalmente e só
-     * esses recursos ficam desligados (503).
-     */
-    ANTHROPIC_API_KEY: z.string().min(1).optional(),
-    ANTHROPIC_MODEL: z.string().min(1).default('claude-opus-5-5'),
+    // Chave e modelo da Anthropic ficam no banco (tela Configurações).
     /** Opcional: outro endpoint da API (ex.: um mock local). O SDK também lê do ambiente. */
     ANTHROPIC_BASE_URL: z.url().optional(),
 
@@ -67,12 +61,18 @@ export const envSchema = z
     FINANCE_PROVIDER: z.enum(['pluggy', 'fake']).default('pluggy'),
     PROVIDER_CACHE_TTL_SECONDS: z.coerce.number().int().min(0).default(300),
 
+    // Client ID, Client Secret e items ficam no banco (tela Configurações).
     PLUGGY_BASE_URL: z.url().default('https://api.pluggy.ai'),
-    PLUGGY_CLIENT_ID: z.string().optional(),
-    PLUGGY_CLIENT_SECRET: z.string().optional(),
-    PLUGGY_ITEM_IDS: commaSeparatedList.default([]),
     PLUGGY_TIMEOUT_MS: z.coerce.number().int().positive().default(15_000),
     PLUGGY_MAX_RETRIES: z.coerce.number().int().min(0).max(10).default(3),
+    /**
+     * Cifra os segredos salvos no banco. Trocar a chave invalida o que já foi
+     * salvo (cadastre de novo). Gere com: openssl rand -hex 32
+     */
+    SETTINGS_ENCRYPTION_KEY: z
+      .string()
+      .regex(/^[0-9a-f]{64}$/i, 'use 64 caracteres hexadecimais (openssl rand -hex 32)')
+      .optional(),
 
     SYNC_ENABLED: booleanFlag.default(true),
     SYNC_INTERVAL_HOURS: z.coerce.number().positive().default(6),
@@ -80,24 +80,13 @@ export const envSchema = z
     SYNC_OVERLAP_DAYS: z.coerce.number().int().min(0).default(7),
   })
   .superRefine((env, ctx) => {
-    if (env.FINANCE_PROVIDER === 'pluggy') {
-      const required = ['PLUGGY_CLIENT_ID', 'PLUGGY_CLIENT_SECRET'] as const;
-      for (const key of required) {
-        if (!env[key]) {
-          ctx.addIssue({
-            code: 'custom',
-            path: [key],
-            message: `obrigatório quando FINANCE_PROVIDER=pluggy`,
-          });
-        }
-      }
-      if (env.PLUGGY_ITEM_IDS.length === 0) {
-        ctx.addIssue({
-          code: 'custom',
-          path: ['PLUGGY_ITEM_IDS'],
-          message: 'informe ao menos um item (conexão) do Meu Pluggy',
-        });
-      }
+    // Um default aleatório por boot tornaria ilegível o segredo salvo a cada restart.
+    if (env.FINANCE_PROVIDER === 'pluggy' && !env.SETTINGS_ENCRYPTION_KEY) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['SETTINGS_ENCRYPTION_KEY'],
+        message: 'obrigatório quando FINANCE_PROVIDER=pluggy (gere com: openssl rand -hex 32)',
+      });
     }
   });
 
@@ -111,7 +100,10 @@ export function validateEnv(raw: Record<string, unknown>): Env {
   const input = Object.fromEntries(Object.entries(raw).filter(([, value]) => value !== ''));
   const result = envSchema.safeParse(input);
   if (!result.success) {
-    throw new Error(`Configuração inválida:\n${z.prettifyError(result.error)}`);
+    const legacy = legacySettingsWarning(raw);
+    throw new Error(
+      `Configuração inválida:\n${z.prettifyError(result.error)}${legacy ? `\n\n${legacy}` : ''}`,
+    );
   }
   if (result.data.NODE_ENV === 'production' && !input.SESSION_SECRET) {
     throw new Error(
@@ -119,4 +111,23 @@ export function validateEnv(raw: Record<string, unknown>): Env {
     );
   }
   return result.data;
+}
+
+/** Saíram do ambiente: agora são cadastradas na tela Configurações (banco). */
+const LEGACY_SETTINGS = [
+  'PLUGGY_CLIENT_ID',
+  'PLUGGY_CLIENT_SECRET',
+  'PLUGGY_ITEM_IDS',
+  'ANTHROPIC_API_KEY',
+  'ANTHROPIC_MODEL',
+] as const;
+
+/** Aviso para quem atualizou com as credenciais ainda no .env (elas são ignoradas). */
+export function legacySettingsWarning(raw: Record<string, unknown>): string | null {
+  const present = LEGACY_SETTINGS.filter((name) => raw[name] !== undefined && raw[name] !== '');
+  if (present.length === 0) return null;
+  return (
+    `${present.join(', ')} não são mais lidas do ambiente e estão sendo ignoradas: ` +
+    'defina SETTINGS_ENCRYPTION_KEY, cadastre esses valores na tela Configurações e remova-os do .env.'
+  );
 }

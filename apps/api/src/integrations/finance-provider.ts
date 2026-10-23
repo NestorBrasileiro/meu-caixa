@@ -24,7 +24,28 @@ export interface FinanceProvider {
   getInvoices(accountId: string): Promise<Invoice[]>;
 }
 
-export const FINANCE_PROVIDER = Symbol('FINANCE_PROVIDER');
+/**
+ * Entrega o provedor atual. Com a Pluggy, as credenciais vêm do banco e podem
+ * mudar com o app no ar: quem sincroniza pede o provedor a cada execução.
+ */
+export interface FinanceProviderSource {
+  /** Falha com `ProviderNotConfiguredError` enquanto não houver configuração. */
+  get(): Promise<FinanceProvider>;
+}
+
+export const FINANCE_PROVIDER_SOURCE = Symbol('FINANCE_PROVIDER_SOURCE');
+
+/** Fonte que sempre entrega o mesmo provedor (fake e testes). */
+export function staticProviderSource(provider: FinanceProvider): FinanceProviderSource {
+  return { get: async () => provider };
+}
+
+export class ProviderNotConfiguredError extends Error {
+  constructor(message = 'Configure as credenciais da Pluggy em Configurações') {
+    super(message);
+    this.name = 'ProviderNotConfiguredError';
+  }
+}
 
 /** Falha ao falar com o provedor, já traduzida para um erro nosso. */
 export class FinanceProviderError extends Error {

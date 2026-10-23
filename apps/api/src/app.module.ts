@@ -10,6 +10,7 @@ import { InsightsModule } from './insights/insights.module.js';
 import { IntegrationsModule } from './integrations/integrations.module.js';
 import { McpModule } from './mcp/mcp.module.js';
 import { PlanningModule } from './planning/planning.module.js';
+import { SettingsModule } from './settings/settings.module.js';
 import { SyncModule } from './sync/sync.module.js';
 import { TransactionsModule } from './transactions/transactions.module.js';
 
@@ -22,6 +23,7 @@ import { TransactionsModule } from './transactions/transactions.module.js';
     AccountsModule,
     TransactionsModule,
     PlanningModule,
+    SettingsModule,
     SyncModule,
     InsightsModule,
     McpModule,

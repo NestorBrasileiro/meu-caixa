@@ -3,6 +3,7 @@ import { redirect } from "next/navigation"
 import { connection } from "next/server"
 import type { AnalysisStatus, ShownAnalysis, StoredAnalysis } from "@/lib/api/analysis"
 import type { PlanningOverview } from "@/lib/api/planning"
+import type { AnthropicSettings, PluggySettings } from "@/lib/api/settings"
 import type {
   Account,
   AuthUser,
@@ -142,7 +143,15 @@ export async function getAnalysis(): Promise<ShownAnalysis | null> {
   return report && { ...report, sample: false }
 }
 
-/** Se o app pode gerar análises e responder perguntas (ANTHROPIC_API_KEY) e a última geração. */
+/** Se o app pode gerar análises e responder perguntas (chave da Anthropic salva) e a última geração. */
 export function getAnalysisStatus(): Promise<AnalysisStatus> {
   return api<AnalysisStatus>("/api/analysis/status")
+}
+
+export function getPluggySettings(): Promise<PluggySettings> {
+  return api<PluggySettings>("/api/settings/pluggy")
+}
+
+export function getAnthropicSettings(): Promise<AnthropicSettings> {
+  return api<AnthropicSettings>("/api/settings/anthropic")
 }
