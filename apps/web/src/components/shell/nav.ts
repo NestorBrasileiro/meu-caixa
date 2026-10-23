@@ -1,5 +1,6 @@
 import {
   ArrowLeftRight,
+  Download,
   Landmark,
   LayoutDashboard,
   Settings,
@@ -45,6 +46,12 @@ export const NAV_ITEMS: NavItem[] = [
     href: "/analise",
     icon: Sparkles,
     description: "O que cortar, gastos do pecado e sugestões",
+  },
+  {
+    title: "Exportar",
+    href: "/exportar",
+    icon: Download,
+    description: "Excel, PDF, CSV ou Markdown para colar numa IA",
   },
   {
     title: "Configurações",

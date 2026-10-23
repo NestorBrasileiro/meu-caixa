@@ -5,9 +5,11 @@ import { AuthModule } from './auth/auth.module.js';
 import { ClaudeModule } from './claude/claude.module.js';
 import { ConfigModule } from './config/config.module.js';
 import { DatabaseModule } from './database/database.module.js';
+import { ExportModule } from './export/export.module.js';
 import { HealthController } from './health/health.controller.js';
 import { InsightsModule } from './insights/insights.module.js';
 import { IntegrationsModule } from './integrations/integrations.module.js';
+import { LoansModule } from './loans/loans.module.js';
 import { McpModule } from './mcp/mcp.module.js';
 import { PlanningModule } from './planning/planning.module.js';
 import { SettingsModule } from './settings/settings.module.js';
@@ -28,6 +30,8 @@ import { TransactionsModule } from './transactions/transactions.module.js';
     InsightsModule,
     McpModule,
     ClaudeModule,
+    LoansModule,
+    ExportModule,
   ],
   controllers: [HealthController],
   providers: [

@@ -22,6 +22,8 @@ const LABELS: Record<string, string> = {
   "Online shopping": "Compras online",
   "Credit card payment": "Pagamento de fatura",
   Utilities: "Contas de consumo",
+  "Loans and financing": "Empréstimos e financiamentos",
+  "Vehicle financing": "Financiamento de veículo",
   "Same person transfer": "Transferência entre contas próprias",
   "Same person transfer - PIX": "Pix entre contas próprias",
   "Same person transfer - TED": "TED entre contas próprias",

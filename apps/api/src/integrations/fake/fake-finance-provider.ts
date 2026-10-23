@@ -6,10 +6,18 @@ import type {
   DateRange,
   Invoice,
   IsoDate,
+  Loan,
   PaymentMethod,
   Profile,
   Transaction,
 } from '../../domain/finance.js';
+import { LOAN_PERIODICITY_LABEL } from '../../domain/loans.js';
+import {
+  installmentDueDate,
+  monthOf,
+  occurrencesUntil,
+  shiftMonth as shiftIsoMonth,
+} from '../../domain/months.js';
 import type { FinanceProvider } from '../finance-provider.js';
 
 interface Rule {
@@ -130,6 +138,66 @@ const RULES: Rule[] = [
   },
 ];
 
+interface FakeLoanPlan {
+  externalId: string;
+  productName: string;
+  type: string;
+  contractNumber: string;
+  /** Meses antes do atual em que o contrato foi assinado. */
+  contractedMonthsAgo: number;
+  contractDay: number;
+  /** Dia do mês do vencimento das parcelas (a primeira vence no mês seguinte ao contrato). */
+  dueDay: number;
+  principal: Cents;
+  installments: number;
+  /** Juros compostos ao mês (fração). */
+  monthlyRate: number;
+  cetAnnual: number;
+  /** Lançamento da parcela na conta corrente. */
+  slug: string;
+  description: string;
+  counterpartyName: string;
+  category: string;
+}
+
+/** Empréstimos do Banco Exemplo, pagos por débito na conta corrente (tabela Price). */
+const LOAN_PLANS: FakeLoanPlan[] = [
+  {
+    externalId: 'fake-loan-pessoal',
+    productName: 'Crédito pessoal',
+    type: 'CREDITO_PESSOAL_SEM_CONSIGNACAO',
+    contractNumber: '0001234-5',
+    contractedMonthsAgo: 12,
+    contractDay: 3,
+    dueDay: 12,
+    principal: 1_500_000,
+    installments: 24,
+    monthlyRate: 0.0249,
+    cetAnnual: 36.87,
+    slug: 'parcela-emprestimo',
+    description: 'Parcela crédito pessoal',
+    counterpartyName: 'Banco Exemplo',
+    category: 'Loans and financing',
+  },
+  {
+    externalId: 'fake-loan-veiculo',
+    productName: 'Financiamento de veículo',
+    type: 'AQUISICAO_BENS_VEICULOS_AUTOMOTORES',
+    contractNumber: 'CDC-778899',
+    contractedMonthsAgo: 3,
+    contractDay: 20,
+    dueDay: 25,
+    principal: 6_200_000,
+    installments: 48,
+    monthlyRate: 0.0139,
+    cetAnnual: 19.52,
+    slug: 'parcela-veiculo',
+    description: 'Parcela financiamento veículo',
+    counterpartyName: 'Banco Exemplo',
+    category: 'Vehicle financing',
+  },
+];
+
 /** Quantos dias para trás os lançamentos ainda aparecem como pendentes. */
 const PENDING_DAYS = 2;
 
@@ -209,7 +277,9 @@ export class FakeFinanceProvider implements FinanceProvider {
     const todayDate = today(this.options.timeZone, this.now());
     const last = range.to < todayDate ? range.to : todayDate;
     const pendingFrom = addDays(todayDate, -PENDING_DAYS);
-    const rules = RULES.filter((rule) => rule.accountId === accountId);
+    const rules = [...RULES, ...this.loanRules(todayDate)].filter(
+      (rule) => rule.accountId === accountId,
+    );
     const transactions: Transaction[] = [];
 
     for (let date = range.from; date <= last; date = addDays(date, 1)) {
@@ -257,6 +327,58 @@ export class FakeFinanceProvider implements FinanceProvider {
     return invoices;
   }
 
+  async getLoans(connectionId: string): Promise<Loan[] | null> {
+    if (connectionId !== 'fake-bank') return [];
+    const todayDate = today(this.options.timeZone, this.now());
+    return LOAN_PLANS.map((plan) => {
+      const schedule = loanSchedule(plan, todayDate);
+      return {
+        externalId: plan.externalId,
+        connectionExternalId: 'fake-bank',
+        productName: plan.productName,
+        type: plan.type,
+        contractNumber: plan.contractNumber,
+        contractedAmount: plan.principal,
+        outstandingBalance: schedule.outstandingBalance,
+        currency: 'BRL',
+        contractDate: schedule.contractDate,
+        finalDueDate: schedule.finalDueDate,
+        firstInstallmentDueDate: schedule.firstDueDate,
+        periodicity: 'MONTHLY',
+        periodicityLabel: LOAN_PERIODICITY_LABEL.MONTHLY,
+        installments: {
+          total: plan.installments,
+          paid: schedule.paid,
+          remaining: plan.installments - schedule.paid,
+          overdue: 0,
+        },
+        installmentAmount: schedule.payment,
+        scheduledInstallments: [],
+        interestRateAnnual: Math.round(((1 + plan.monthlyRate) ** 12 - 1) * 10_000) / 100,
+        cetAnnual: plan.cetAnnual,
+      };
+    });
+  }
+
+  /** Débitos das parcelas na conta corrente, do primeiro vencimento até hoje. */
+  private loanRules(todayDate: IsoDate): Rule[] {
+    return LOAN_PLANS.map((plan) => {
+      const { firstDueDate, finalDueDate, payment } = loanSchedule(plan, todayDate);
+      return {
+        accountId: CHECKING,
+        slug: plan.slug,
+        description: plan.description,
+        counterpartyName: plan.counterpartyName,
+        category: plan.category,
+        paymentMethod: 'OTHER',
+        amountOn: (d: Day) =>
+          d.dayOfMonth === plan.dueDay && d.date >= firstDueDate && d.date <= finalDueDate
+            ? -payment
+            : null,
+      };
+    });
+  }
+
   private now(): Date {
     return this.options.now?.() ?? new Date();
   }
@@ -293,4 +415,26 @@ function shiftMonth(month: string, offset: number): string {
 function invoiceIdFor(date: IsoDate): string {
   const month = date.slice(0, 7);
   return `fake-invoice:${Number(date.slice(8, 10)) <= 8 ? month : shiftMonth(month, 1)}`;
+}
+
+/** Calendário e saldo de um empréstimo fictício (Price), a partir de hoje. */
+function loanSchedule(plan: FakeLoanPlan, todayDate: IsoDate) {
+  const contractMonth = shiftIsoMonth(monthOf(todayDate), -plan.contractedMonthsAgo);
+  const contractDate = `${contractMonth}-${String(plan.contractDay).padStart(2, '0')}`;
+  const firstDueDate = installmentDueDate(`${shiftIsoMonth(contractMonth, 1)}-01`, plan.dueDay, 1);
+  const finalDueDate = installmentDueDate(firstDueDate, plan.dueDay, plan.installments);
+  // O que vence hoje conta como pago (débito automático no dia).
+  const paid = Math.min(
+    plan.installments,
+    occurrencesUntil(firstDueDate, plan.dueDay, addDays(todayDate, 1)),
+  );
+  const i = plan.monthlyRate;
+  const factor = (1 + i) ** plan.installments;
+  const payment = Math.round((plan.principal * i * factor) / (factor - 1));
+  const grown = (1 + i) ** paid;
+  const outstandingBalance = Math.max(
+    0,
+    Math.round(plan.principal * grown - (payment * (grown - 1)) / i),
+  );
+  return { contractDate, firstDueDate, finalDueDate, paid, payment, outstandingBalance };
 }
