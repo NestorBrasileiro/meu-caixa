@@ -4,12 +4,20 @@ import type {
   Connection,
   DateRange,
   Invoice,
+  Loan,
   Profile,
   Transaction,
 } from '../../domain/finance.js';
 import type { FinanceProvider } from '../finance-provider.js';
 import type { PluggyClient } from './pluggy.client.js';
-import { mapAccount, mapBill, mapIdentity, mapItem, mapTransaction } from './pluggy.mapper.js';
+import {
+  mapAccount,
+  mapBill,
+  mapIdentity,
+  mapItem,
+  mapLoan,
+  mapTransaction,
+} from './pluggy.mapper.js';
 
 export interface PluggyProviderOptions {
   /** Ids dos items (bancos conectados) no Meu Pluggy. */
@@ -65,5 +73,11 @@ export class PluggyProvider implements FinanceProvider {
   async getInvoices(accountId: string): Promise<Invoice[]> {
     const bills = await this.client.listBills(accountId);
     return bills.map((bill) => mapBill(bill, accountId, this.options.timeZone));
+  }
+
+  async getLoans(itemId: string): Promise<Loan[] | null> {
+    // Produto opcional do Open Finance: `null` quando o banco não compartilha.
+    const loans = await this.client.listLoans(itemId);
+    return loans?.map((loan) => mapLoan(loan, this.options.timeZone)) ?? null;
   }
 }

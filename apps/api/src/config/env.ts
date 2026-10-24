@@ -41,11 +41,7 @@ export const envSchema = z
     /** Role (de realm ou do client) exigida para acessar os dados financeiros. */
     KEYCLOAK_REQUIRED_ROLE: z.string().default('owner'),
 
-    /**
-     * Segredo opcional para clientes MCP sem OAuth (Claude Code/Desktop via
-     * header `Authorization: Bearer ...`). Gere com: openssl rand -hex 32
-     */
-    MCP_ACCESS_TOKEN: z.string().min(32, 'use ao menos 32 caracteres aleatórios').optional(),
+    // Clientes MCP sem OAuth usam o token pessoal gerado em Configurações.
     /**
      * Clients do Keycloak (`azp`) cujos tokens valem no /mcp mesmo sem a
      * audiência `${APP_URL}/mcp`. Vazio (padrão): só tokens com essa audiência.
@@ -113,13 +109,14 @@ export function validateEnv(raw: Record<string, unknown>): Env {
   return result.data;
 }
 
-/** Saíram do ambiente: agora são cadastradas na tela Configurações (banco). */
+/** Saíram do ambiente: agora cada usuário cadastra na tela Configurações (banco). */
 const LEGACY_SETTINGS = [
   'PLUGGY_CLIENT_ID',
   'PLUGGY_CLIENT_SECRET',
   'PLUGGY_ITEM_IDS',
   'ANTHROPIC_API_KEY',
   'ANTHROPIC_MODEL',
+  'MCP_ACCESS_TOKEN',
 ] as const;
 
 /** Aviso para quem atualizou com as credenciais ainda no .env (elas são ignoradas). */
@@ -128,6 +125,7 @@ export function legacySettingsWarning(raw: Record<string, unknown>): string | nu
   if (present.length === 0) return null;
   return (
     `${present.join(', ')} não são mais lidas do ambiente e estão sendo ignoradas: ` +
-    'defina SETTINGS_ENCRYPTION_KEY, cadastre esses valores na tela Configurações e remova-os do .env.'
+    'defina SETTINGS_ENCRYPTION_KEY, cadastre esses valores (ou gere o token do MCP) na tela ' +
+    'Configurações e remova-os do .env.'
   );
 }

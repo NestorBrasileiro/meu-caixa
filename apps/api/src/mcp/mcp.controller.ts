@@ -7,8 +7,8 @@ import { ENV } from '../config/config.module.js';
 import type { Env } from '../config/env.js';
 import { AnalysisService } from '../insights/analysis.service.js';
 import { InsightsService } from '../insights/insights.service.js';
-import { createInsightTools, type InsightTool } from '../insights/tools.js';
-import { mcpResourceUrl } from './mcp-auth.js';
+import { createInsightTools } from '../insights/tools.js';
+import { type McpAuthExtra, mcpResourceUrl } from './mcp-auth.js';
 import { createMcpServer } from './mcp-server.js';
 
 /**
@@ -20,20 +20,28 @@ import { createMcpServer } from './mcp-server.js';
 @Controller('mcp')
 export class McpController {
   private readonly logger = new Logger(McpController.name);
-  private readonly tools: InsightTool[];
 
-  constructor(insights: InsightsService, analysis: AnalysisService) {
-    this.tools = createInsightTools({ insights, analysis, source: 'MCP' });
-  }
+  constructor(
+    private readonly insights: InsightsService,
+    private readonly analysis: AnalysisService,
+  ) {}
 
   @Post()
   async handle(@Req() req: Request, @Res() res: Response): Promise<void> {
     // Defesa em profundidade: sem o middleware de Bearer, nada passa.
-    if (!req.auth) {
+    const userId = (req.auth?.extra as McpAuthExtra | undefined)?.userId;
+    if (!userId) {
       res.status(401).json({ error: 'invalid_token', error_description: 'Token ausente' });
       return;
     }
-    const server = createMcpServer(this.tools);
+    // Ferramentas por requisição: cada uma só enxerga os dados do dono do token.
+    const tools = createInsightTools({
+      insights: this.insights,
+      analysis: this.analysis,
+      source: 'MCP',
+      userId,
+    });
+    const server = createMcpServer(tools);
     // Respostas JSON (sem SSE): atravessam proxies (o rewrite do Next) sem surpresa.
     const transport = new StreamableHTTPServerTransport({
       sessionIdGenerator: undefined,

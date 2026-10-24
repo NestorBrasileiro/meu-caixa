@@ -2,8 +2,11 @@ import { cookies } from "next/headers"
 import { redirect } from "next/navigation"
 import { connection } from "next/server"
 import type { AnalysisStatus, ShownAnalysis, StoredAnalysis } from "@/lib/api/analysis"
-import type { PlanningOverview } from "@/lib/api/planning"
-import type { AnthropicSettings, PluggySettings } from "@/lib/api/settings"
+import type { ExportOptions } from "@/lib/api/export"
+import type { Loan } from "@/lib/api/loans"
+import type { BudgetCategory, PlanningOverview } from "@/lib/api/planning"
+import type { AnthropicSettings, McpTokenStatus, PluggySettings } from "@/lib/api/settings"
+import type { SubscriptionsOverview } from "@/lib/api/subscriptions"
 import type {
   Account,
   AuthUser,
@@ -154,4 +157,27 @@ export function getPluggySettings(): Promise<PluggySettings> {
 
 export function getAnthropicSettings(): Promise<AnthropicSettings> {
   return api<AnthropicSettings>("/api/settings/anthropic")
+}
+
+/** Empréstimos e financiamentos que os bancos compartilham pelo Open Finance. */
+export function getLoans(): Promise<Loan[]> {
+  return api<Loan[]>("/api/loans")
+}
+
+/** Formatos, seções e período padrão da exportação. */
+export function getExportOptions(): Promise<ExportOptions> {
+  return api<ExportOptions>("/api/export/options")
+}
+
+export function getMcpToken(): Promise<McpTokenStatus> {
+  return api<McpTokenStatus>("/api/settings/mcp-token")
+}
+
+/** Só as categorias do orçamento (sem a projeção do planejamento inteiro). */
+export function getBudgetCategories(): Promise<BudgetCategory[]> {
+  return api<BudgetCategory[]>("/api/planning/categories")
+}
+
+export function getSubscriptions(): Promise<SubscriptionsOverview> {
+  return api<SubscriptionsOverview>("/api/subscriptions")
 }

@@ -17,6 +17,12 @@ describe('legacySettingsWarning', () => {
     expect(warning).toContain('Configurações');
   });
 
+  it('o MCP_ACCESS_TOKEN também: virou token pessoal em Configurações', () => {
+    expect(legacySettingsWarning({ MCP_ACCESS_TOKEN: 'a'.repeat(64) })).toContain(
+      'MCP_ACCESS_TOKEN',
+    );
+  });
+
   it('sem nenhuma, não avisa', () => {
     expect(legacySettingsWarning(BASE)).toBeNull();
   });

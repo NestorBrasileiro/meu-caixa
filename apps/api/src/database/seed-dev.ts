@@ -1,13 +1,15 @@
 import { Pool } from 'pg';
+import { asc, eq } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/node-postgres';
 import { loadEnvFile } from '../config/load-env-file.js';
-import { budgetCategories, commitments, goals } from './schema.js';
+import { budgetCategories, commitments, goals, users } from './schema.js';
 import * as schema from './schema.js';
 
 /**
- * Dados de exemplo do planejamento para desenvolvimento (só insere se as
- * tabelas estiverem vazias): categorias de orçamento, a parcela do terreno e
- * a meta da entrada do carro.  Uso: `pnpm --filter api db:seed`.
+ * Dados de exemplo do planejamento para desenvolvimento (só insere se o
+ * usuário ainda não tiver compromissos): categorias de orçamento, a parcela do
+ * terreno e a meta da entrada do carro. Vão para o usuário mais antigo (o
+ * primeiro que entrou no app). Uso: `pnpm --filter api db:seed`.
  */
 async function main(): Promise<void> {
   loadEnvFile();
@@ -16,15 +18,28 @@ async function main(): Promise<void> {
   const pool = new Pool({ connectionString: url });
   const db = drizzle(pool, { schema });
   try {
-    const existing = await db.select({ id: commitments.id }).from(commitments).limit(1);
+    const [user] = await db.select().from(users).orderBy(asc(users.createdAt)).limit(1);
+    if (!user) {
+      console.log(
+        'Nenhum usuário ainda: entre no app uma vez (o usuário nasce no login) e rode de novo.',
+      );
+      return;
+    }
+    const userId = user.id;
+    const existing = await db
+      .select({ id: commitments.id })
+      .from(commitments)
+      .where(eq(commitments.userId, userId))
+      .limit(1);
     if (existing.length > 0) {
-      console.log('Planejamento já tem dados; nada a fazer.');
+      console.log(`Planejamento de ${user.username ?? userId} já tem dados; nada a fazer.`);
       return;
     }
     const categories = await db
       .insert(budgetCategories)
       .values([
         {
+          userId,
           name: 'Moradia e contas',
           kind: 'ESSENTIAL',
           sourceCategories: ['Housing', 'Electricity', 'Internet', 'Telecommunications'],
@@ -32,6 +47,7 @@ async function main(): Promise<void> {
           position: 0,
         },
         {
+          userId,
           name: 'Mercado',
           kind: 'ESSENTIAL',
           sourceCategories: ['Groceries'],
@@ -39,6 +55,7 @@ async function main(): Promise<void> {
           position: 1,
         },
         {
+          userId,
           name: 'Transporte',
           kind: 'ESSENTIAL',
           sourceCategories: ['Gas stations', 'Taxi and ride-hailing'],
@@ -46,6 +63,7 @@ async function main(): Promise<void> {
           position: 2,
         },
         {
+          userId,
           name: 'Delivery e restaurantes',
           kind: 'DISCRETIONARY',
           sourceCategories: ['Food delivery', 'Restaurants'],
@@ -53,6 +71,7 @@ async function main(): Promise<void> {
           position: 3,
         },
         {
+          userId,
           name: 'Assinaturas',
           kind: 'DISCRETIONARY',
           sourceCategories: ['Video streaming', 'Music streaming'],
@@ -60,6 +79,7 @@ async function main(): Promise<void> {
           position: 4,
         },
         {
+          userId,
           name: 'Compras',
           kind: 'DISCRETIONARY',
           sourceCategories: ['Shopping', 'Online shopping'],
@@ -72,6 +92,7 @@ async function main(): Promise<void> {
 
     await db.insert(commitments).values([
       {
+        userId,
         name: 'Parcela do terreno',
         amount: 2_300_00,
         dayOfMonth: 10,
@@ -82,6 +103,7 @@ async function main(): Promise<void> {
         notes: 'Loteadora',
       },
       {
+        userId,
         name: 'Streaming de vídeo',
         amount: 55_90,
         dayOfMonth: 1,
@@ -92,6 +114,7 @@ async function main(): Promise<void> {
     ]);
     await db.insert(goals).values([
       {
+        userId,
         name: 'Entrada do carro',
         target: 40_000_00,
         saved: 12_500_00,
@@ -99,7 +122,7 @@ async function main(): Promise<void> {
         monthlyContribution: 1_500_00,
       },
     ]);
-    console.log('Planejamento de exemplo criado.');
+    console.log(`Planejamento de exemplo criado para ${user.username ?? userId}.`);
   } finally {
     await pool.end();
   }

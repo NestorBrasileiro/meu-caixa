@@ -91,6 +91,81 @@ export const pluggyBillSchema = z.object({
   minimumPaymentAmount: z.number().nullish(),
 });
 
+const nullableNumber = z.number().nullish();
+
+/**
+ * Empréstimo/financiamento (`GET /loans`, produto de crédito do Open Finance).
+ * Só `id` e `itemId` são obrigatórios: o resto o banco pode não informar. Os
+ * tipos dos campos usados (números e datas) continuam validados — um valor em
+ * formato diferente falha alto. Objeto "solto" para guardar o payload inteiro
+ * em `raw`.
+ */
+export const pluggyLoanSchema = z.looseObject({
+  id: z.string(),
+  itemId: z.string(),
+  contractNumber: z.string().nullish(),
+  ipocCode: z.string().nullish(),
+  productName: z.string().nullish(),
+  type: z.string().nullish(),
+  kind: z.string().nullish(),
+  contractDate: isoDateTime.nullish(),
+  contractAmount: nullableNumber,
+  currencyCode: z.string().nullish(),
+  dueDate: isoDateTime.nullish(),
+  installmentPeriodicity: z.string().nullish(),
+  installmentPeriodicityAdditionalInfo: z.string().nullish(),
+  firstInstallmentDueDate: isoDateTime.nullish(),
+  CET: nullableNumber,
+  amortizationScheduled: z.string().nullish(),
+  interestRates: z
+    .array(
+      z.object({
+        taxType: z.string().nullish(),
+        interestRateType: z.string().nullish(),
+        taxPeriodicity: z.string().nullish(),
+        preFixedRate: nullableNumber,
+        postFixedRate: nullableNumber,
+      }),
+    )
+    .nullish(),
+  installments: z
+    .object({
+      typeNumberOfInstallments: z.string().nullish(),
+      totalNumberOfInstallments: nullableNumber,
+      typeContractRemaining: z.string().nullish(),
+      contractRemainingNumber: nullableNumber,
+      paidInstallments: nullableNumber,
+      dueInstallments: nullableNumber,
+      pastDueInstallments: nullableNumber,
+      balloonPayments: z
+        .array(
+          z.object({
+            dueDate: isoDateTime.nullish(),
+            amount: z
+              .object({ value: nullableNumber, currencyCode: z.string().nullish() })
+              .nullish(),
+          }),
+        )
+        .nullish(),
+    })
+    .nullish(),
+  payments: z
+    .object({
+      contractOutstandingBalance: nullableNumber,
+      releases: z
+        .array(
+          z.object({
+            isOverParcelPayment: z.boolean().nullish(),
+            installmentId: z.string().nullish(),
+            paidDate: isoDateTime.nullish(),
+            paidAmount: nullableNumber,
+          }),
+        )
+        .nullish(),
+    })
+    .nullish(),
+});
+
 export const pageResponseSchema = <T extends z.ZodType>(item: T) =>
   z.object({
     results: z.array(item),
@@ -109,3 +184,4 @@ export type PluggyIdentity = z.infer<typeof pluggyIdentitySchema>;
 export type PluggyAccount = z.infer<typeof pluggyAccountSchema>;
 export type PluggyTransaction = z.infer<typeof pluggyTransactionSchema>;
 export type PluggyBill = z.infer<typeof pluggyBillSchema>;
+export type PluggyLoan = z.infer<typeof pluggyLoanSchema>;

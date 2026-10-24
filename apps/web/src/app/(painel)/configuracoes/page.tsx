@@ -3,11 +3,12 @@ import { Info } from "lucide-react"
 import { MEU_PLUGGY_URL } from "@/components/accounts/format"
 import { PageHeader } from "@/components/page-header"
 import { AnthropicSettingsForm } from "@/components/settings/anthropic-settings-form"
+import { McpTokenForm } from "@/components/settings/mcp-token-form"
 import { PluggySettingsForm } from "@/components/settings/pluggy-settings-form"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { Badge } from "@/components/ui/badge"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
-import { CAN_WRITE, getAnthropicSettings, getPluggySettings } from "@/lib/data"
+import { CAN_WRITE, getAnthropicSettings, getMcpToken, getPluggySettings } from "@/lib/data"
 import { formatDateTime } from "@/lib/format/date"
 
 export const metadata: Metadata = { title: "Configurações" }
@@ -25,13 +26,17 @@ function ExternalLink({ href, children }: { href: string; children: React.ReactN
 }
 
 export default async function Page() {
-  const [settings, anthropic] = await Promise.all([getPluggySettings(), getAnthropicSettings()])
+  const [settings, anthropic, mcpToken] = await Promise.all([
+    getPluggySettings(),
+    getAnthropicSettings(),
+    getMcpToken(),
+  ])
 
   return (
     <div className="space-y-6">
       <PageHeader
         title="Configurações"
-        description="Credenciais da Pluggy (seus bancos) e chave da Anthropic (análise pelo app)."
+        description="Só suas: credenciais da Pluggy (seus bancos), chave da Anthropic (análise pelo app) e token do MCP."
       />
 
       <div className="grid gap-4 xl:grid-cols-[minmax(0,42rem)_minmax(0,1fr)]">
@@ -138,6 +143,47 @@ export default async function Page() {
                 análise gerada ou pergunta respondida.
               </li>
               <li>A análise pelo seu Claude conectado via MCP não precisa desta chave.</li>
+            </ul>
+          </CardContent>
+        </Card>
+      </div>
+
+      <div className="grid gap-4 xl:grid-cols-[minmax(0,42rem)_minmax(0,1fr)]">
+        <Card>
+          <CardHeader>
+            <div className="flex flex-wrap items-center gap-2">
+              <CardTitle>
+                <h2>Token do MCP</h2>
+              </CardTitle>
+              {mcpToken.exists ? (
+                <Badge variant="secondary">Ativo</Badge>
+              ) : (
+                <Badge variant="outline">Nenhum</Badge>
+              )}
+            </div>
+            <CardDescription>
+              Para o Claude Code ou o Claude Desktop lerem as suas finanças sem o login pelo navegador.
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <McpTokenForm status={mcpToken} readOnly={!CAN_WRITE} />
+          </CardContent>
+        </Card>
+
+        <Card className="h-fit">
+          <CardHeader>
+            <CardTitle>
+              <h2>Sobre o token</h2>
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <ul className="text-muted-foreground list-disc space-y-2 pl-5 text-sm">
+              <li>
+                Dá acesso aos <span className="text-foreground">seus dados</span>, como se fosse você: guarde como
+                uma senha.
+              </li>
+              <li>Fica guardado só como hash: se perder, gere outro (o antigo deixa de valer).</li>
+              <li>O conector do claude.ai não precisa dele: ele entra pelo login (veja a tela Análise).</li>
             </ul>
           </CardContent>
         </Card>

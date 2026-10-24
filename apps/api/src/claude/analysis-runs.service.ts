@@ -15,7 +15,7 @@ import { today } from '../domain/dates.js';
 import { analysisReportInputSchema } from '../insights/analysis.schema.js';
 import { AnalysisService } from '../insights/analysis.service.js';
 import { InsightsService } from '../insights/insights.service.js';
-import { createInsightTools, type InsightTool } from '../insights/tools.js';
+import { createInsightTools } from '../insights/tools.js';
 import {
   ANTHROPIC_SOURCE,
   type AnthropicClient,
@@ -60,13 +60,12 @@ export interface StartedRun {
 /**
  * "Gerar análise": o Claude (API da Anthropic) roda as mesmas ferramentas do
  * servidor MCP em background e termina salvando o relatório com
- * `salvar_analise` (origem `APP`). Uma execução por vez.
+ * `salvar_analise` (origem `APP`). Uma execução por vez para cada usuário.
  */
 @Injectable()
 export class AnalysisRunsService implements OnApplicationBootstrap, OnApplicationShutdown {
   private readonly logger = new Logger(AnalysisRunsService.name);
-  private readonly tools: InsightTool[];
-  private current: Promise<unknown> | null = null;
+  private readonly running = new Set<Promise<unknown>>();
   private readonly aborts = new Set<AbortController>();
   private shuttingDown = false;
 
@@ -74,15 +73,13 @@ export class AnalysisRunsService implements OnApplicationBootstrap, OnApplicatio
     @Inject(DATABASE) private readonly db: Database,
     @Inject(ENV) private readonly env: Env,
     @Inject(ANTHROPIC_SOURCE) private readonly source: AnthropicSource,
-    insights: InsightsService,
-    analysis: AnalysisService,
-  ) {
-    this.tools = createInsightTools({ insights, analysis, source: 'APP' });
-  }
+    private readonly insights: InsightsService,
+    private readonly analysis: AnalysisService,
+  ) {}
 
   /** Chave salva e legível = ligada. Chave que não decifra conta como desligada. */
-  async status(): Promise<{ enabled: boolean; model: string | null }> {
-    const config = await this.source.get().catch((error: unknown) => {
+  async status(userId: string): Promise<{ enabled: boolean; model: string | null }> {
+    const config = await this.source.get(userId).catch((error: unknown) => {
       if (error instanceof ClaudeDisabledError) return null;
       throw error;
     });
@@ -110,8 +107,8 @@ export class AnalysisRunsService implements OnApplicationBootstrap, OnApplicatio
     await this.waitForIdle();
   }
 
-  async start(): Promise<StartedRun> {
-    const config = await this.source.get();
+  async start(userId: string): Promise<StartedRun> {
+    const config = await this.source.get(userId);
     if (!config) throw new ClaudeDisabledError();
     await this.failStaleRuns();
 
@@ -119,36 +116,38 @@ export class AnalysisRunsService implements OnApplicationBootstrap, OnApplicatio
     try {
       [run] = (await this.db
         .insert(analysisRuns)
-        .values({ status: 'RUNNING', model: config.model })
+        .values({ userId, status: 'RUNNING', model: config.model })
         .returning()) as [AnalysisRunRow];
     } catch (error) {
-      // Índice único parcial: já existe uma RUNNING.
+      // Índice único parcial: este usuário já tem uma RUNNING.
       if (isUniqueViolation(error)) throw new AnalysisRunInProgressError();
       throw error;
     }
 
     const completion = this.execute(config, run);
     const tracked = completion.catch(() => undefined);
-    this.current = tracked;
-    void tracked.finally(() => {
-      if (this.current === tracked) this.current = null;
-    });
+    this.running.add(tracked);
+    void tracked.finally(() => this.running.delete(tracked));
     return { run: toDto(run), completion };
   }
 
   async waitForIdle(): Promise<void> {
-    await this.current;
+    await Promise.all(this.running);
   }
 
-  async get(id: string): Promise<AnalysisRunDto | null> {
-    const [run] = await this.db.select().from(analysisRuns).where(eq(analysisRuns.id, id));
-    return run ? toDto(run) : null;
-  }
-
-  async latest(): Promise<AnalysisRunDto | null> {
+  async get(userId: string, id: string): Promise<AnalysisRunDto | null> {
     const [run] = await this.db
       .select()
       .from(analysisRuns)
+      .where(and(eq(analysisRuns.id, id), eq(analysisRuns.userId, userId)));
+    return run ? toDto(run) : null;
+  }
+
+  async latest(userId: string): Promise<AnalysisRunDto | null> {
+    const [run] = await this.db
+      .select()
+      .from(analysisRuns)
+      .where(eq(analysisRuns.userId, userId))
       .orderBy(desc(analysisRuns.startedAt))
       .limit(1);
     return run ? toDto(run) : null;
@@ -186,7 +185,7 @@ export class AnalysisRunsService implements OnApplicationBootstrap, OnApplicatio
     let status: 'SUCCEEDED' | 'FAILED' = 'FAILED';
     let error: string | null = null;
     try {
-      await this.converse(config, state, usage, controller.signal);
+      await this.converse(run.userId, config, state, usage, controller.signal);
       status = 'SUCCEEDED';
     } catch (cause) {
       const failed = toClaudeFailure(cause, timedOut);
@@ -221,6 +220,7 @@ export class AnalysisRunsService implements OnApplicationBootstrap, OnApplicatio
 
   /** O loop com o Claude; lança `ClaudeFailure` (ou erro do SDK) se não terminar salvando. */
   private async converse(
+    userId: string,
     { client, model }: { client: AnthropicClient; model: string },
     state: { reportId: string | null; model: string },
     usage: AnalysisRunUsage,
@@ -228,7 +228,7 @@ export class AnalysisRunsService implements OnApplicationBootstrap, OnApplicatio
   ): Promise<void> {
     const params = buildRunParams({
       model,
-      tools: this.runTools(state),
+      tools: this.runTools(userId, state),
       today: today(this.env.TIMEZONE),
       timeZone: this.env.TIMEZONE,
     });
@@ -269,8 +269,17 @@ export class AnalysisRunsService implements OnApplicationBootstrap, OnApplicatio
    * Ferramentas da execução: as mesmas do MCP, com `salvar_analise` gravando o
    * modelo que de fato respondeu (o fallback pode trocar) e uma vez só.
    */
-  private runTools(state: { reportId: string | null; model: string }): RunnableTool[] {
-    return this.tools.map((tool) => {
+  private runTools(
+    userId: string,
+    state: { reportId: string | null; model: string },
+  ): RunnableTool[] {
+    const tools = createInsightTools({
+      insights: this.insights,
+      analysis: this.analysis,
+      source: 'APP',
+      userId,
+    });
+    return tools.map((tool) => {
       if (tool.name !== SAVE_TOOL_NAME) return toRunnableTool(tool);
       return toRunnableTool({
         ...tool,

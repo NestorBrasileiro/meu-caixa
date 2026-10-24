@@ -30,30 +30,26 @@ const TRUNCATED_NOTE = '\n\n_(A resposta passou do tamanho máximo e foi cortada
 
 /**
  * "Pergunte ao Claude": responde na hora usando só as ferramentas de leitura
- * (sem `salvar_analise`). Uma pergunta por vez.
+ * (sem `salvar_analise`). Uma pergunta por vez para cada usuário.
  */
 @Injectable()
 export class AskService {
   private readonly logger = new Logger(AskService.name);
-  private readonly tools: RunnableTool[];
-  private inFlight = false;
+  /** Usuários com uma pergunta em andamento. */
+  private readonly inFlight = new Set<string>();
 
   constructor(
     @Inject(ENV) private readonly env: Env,
     @Inject(ANTHROPIC_SOURCE) private readonly source: AnthropicSource,
-    insights: InsightsService,
-    analysis: AnalysisService,
-  ) {
-    this.tools = createInsightTools({ insights, analysis, source: 'APP' })
-      .filter((tool) => tool.readOnly)
-      .map(toRunnableTool);
-  }
+    private readonly insights: InsightsService,
+    private readonly analysis: AnalysisService,
+  ) {}
 
-  async ask(question: string, history: AskTurn[]): Promise<AskAnswer> {
-    const config = await this.source.get();
+  async ask(userId: string, question: string, history: AskTurn[]): Promise<AskAnswer> {
+    const config = await this.source.get(userId);
     if (!config) throw new ClaudeDisabledError();
-    if (this.inFlight) throw new AskInProgressError();
-    this.inFlight = true;
+    if (this.inFlight.has(userId)) throw new AskInProgressError();
+    this.inFlight.add(userId);
 
     const controller = new AbortController();
     let timedOut = false;
@@ -67,7 +63,7 @@ export class AskService {
         config.client,
         buildAskParams({
           model: config.model,
-          tools: this.tools,
+          tools: this.readOnlyTools(userId),
           today: today(this.env.TIMEZONE),
           timeZone: this.env.TIMEZONE,
           question,
@@ -88,11 +84,22 @@ export class AskService {
       throw failed;
     } finally {
       clearTimeout(timer);
-      this.inFlight = false;
+      this.inFlight.delete(userId);
       this.logger.log(
         `Pergunta: ${usage.requests} chamadas, ${usage.inputTokens} in / ${usage.outputTokens} out / ` +
           `${usage.cacheReadInputTokens} cache lido / ${usage.cacheCreationInputTokens} cache escrito`,
       );
     }
+  }
+
+  private readOnlyTools(userId: string): RunnableTool[] {
+    return createInsightTools({
+      insights: this.insights,
+      analysis: this.analysis,
+      source: 'APP',
+      userId,
+    })
+      .filter((tool) => tool.readOnly)
+      .map(toRunnableTool);
   }
 }

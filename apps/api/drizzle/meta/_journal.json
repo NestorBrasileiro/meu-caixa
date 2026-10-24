@@ -50,6 +50,34 @@
       "when": 1792328023637,
       "tag": "0006_anthropic_settings",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1792505981381,
+      "tag": "0007_multi_user",
+      "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1792549821960,
+      "tag": "0008_subscription_preferences",
+      "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1792555359752,
+      "tag": "0009_commitment_subscription_key",
+      "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1792873961069,
+      "tag": "0010_loans",
+      "breakpoints": true
     }
   ]
 }
