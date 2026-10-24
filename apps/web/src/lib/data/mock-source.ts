@@ -1,5 +1,9 @@
 import type { AnalysisStatus, ShownAnalysis } from "@/lib/api/analysis"
-import type { PlanningOverview } from "@/lib/api/planning"
+import { EXPORT_FORMATS, EXPORT_MAX_MONTHS, EXPORT_SECTIONS, type ExportOptions } from "@/lib/api/export"
+import type { Loan } from "@/lib/api/loans"
+import type { BudgetCategory, PlanningOverview } from "@/lib/api/planning"
+import type { AnthropicSettings, McpTokenStatus, PluggySettings } from "@/lib/api/settings"
+import type { SubscriptionsOverview } from "@/lib/api/subscriptions"
 import type {
   Account,
   AuthUser,
@@ -14,7 +18,9 @@ import type {
 } from "@/lib/api/types"
 import { buildAnalysis } from "@/lib/mock/analysis"
 import { MOCK_NOW, MOCK_TODAY, mockDataset } from "@/lib/mock/generator"
-import { buildPlanning } from "@/lib/mock/planning"
+import { buildLoans } from "@/lib/mock/loans"
+import { BUDGET_CATEGORIES, buildPlanning } from "@/lib/mock/planning"
+import { buildSubscriptions } from "@/lib/mock/subscriptions"
 
 /**
  * Fonte mocada (DATA_SOURCE=mock): mesmos contratos da API, com o dataset
@@ -34,7 +40,8 @@ export async function getNow(): Promise<IsoDateTime> {
 
 export async function getCurrentUser(): Promise<AuthUser> {
   return {
-    id: "user-1",
+    id: "00000000-0000-4000-8000-000000000001",
+    keycloakId: "user-1",
     username: "nestor",
     name: "Nestor Brasileiro",
     email: "nestor@example.com",
@@ -86,6 +93,14 @@ export async function getPlanning(): Promise<PlanningOverview> {
   return buildPlanning(mockDataset())
 }
 
+export async function getBudgetCategories(): Promise<BudgetCategory[]> {
+  return BUDGET_CATEGORIES
+}
+
+export async function getSubscriptions(): Promise<SubscriptionsOverview> {
+  return buildSubscriptions(mockDataset())
+}
+
 /** Relatório ilustrativo, montado com o dataset fictício: as telas o mostram como exemplo. */
 export async function getAnalysis(): Promise<ShownAnalysis | null> {
   return { ...buildAnalysis(mockDataset()), id: "exemplo", source: "MCP", model: null, sample: true }
@@ -94,4 +109,52 @@ export async function getAnalysis(): Promise<ShownAnalysis | null> {
 /** Sem API não há chave da Anthropic: gerar e perguntar ficam indisponíveis. */
 export async function getAnalysisStatus(): Promise<AnalysisStatus> {
   return { app: { enabled: false, model: null }, latestRun: null }
+}
+
+export async function getPluggySettings(): Promise<PluggySettings> {
+  return {
+    provider: "pluggy",
+    configured: true,
+    clientId: "00000000-0000-4000-8000-000000000001",
+    itemIds: ["00000000-0000-4000-8000-0000000000a1", "00000000-0000-4000-8000-0000000000a2"],
+    updatedAt: MOCK_NOW,
+  }
+}
+
+/** Mesmo que o status da análise: sem API, sem chave. */
+export async function getAnthropicSettings(): Promise<AnthropicSettings> {
+  return {
+    configured: false,
+    model: "claude-opus-5-5",
+    models: [
+      { id: "claude-opus-5-5", label: "Claude Opus 5.5 (padrão) · US$ 4 / 20 por 1M tokens" },
+      { id: "claude-sonnet-5-5", label: "Claude Sonnet 5.5 · US$ 2 / 10 por 1M tokens" },
+      { id: "claude-fable-5-1", label: "Claude Fable 5.1 · US$ 10 / 50 por 1M tokens" },
+      { id: "claude-opus-5", label: "Claude Opus 5 · US$ 5 / 25 por 1M tokens" },
+    ],
+    updatedAt: null,
+  }
+}
+
+export async function getLoans(): Promise<Loan[]> {
+  return buildLoans()
+}
+
+/**
+ * O catálogo do contrato, para a tela de exportação aparecer inteira. Sem API não há arquivo: o
+ * botão de baixar fica desabilitado.
+ */
+export async function getExportOptions(): Promise<ExportOptions> {
+  return {
+    formats: EXPORT_FORMATS,
+    sections: EXPORT_SECTIONS,
+    // Os últimos 3 meses: do dia 1º de dois meses atrás até hoje.
+    defaultPeriod: { from: "2026-08-01", to: MOCK_TODAY },
+    maxMonths: EXPORT_MAX_MONTHS,
+  }
+}
+
+/** Sem API não há servidor MCP: nenhum token. */
+export async function getMcpToken(): Promise<McpTokenStatus> {
+  return { exists: false, hint: null, createdAt: null, lastUsedAt: null }
 }

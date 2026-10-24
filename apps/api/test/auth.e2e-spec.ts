@@ -4,7 +4,7 @@ import request from 'supertest';
 import { KeycloakClient } from '../src/auth/keycloak.client.js';
 import { SESSION_COOKIE } from '../src/auth/session.constants.js';
 import { DATABASE, type Database } from '../src/database/database.module.js';
-import { sessions } from '../src/database/schema.js';
+import { sessions, users } from '../src/database/schema.js';
 import { SyncService } from '../src/sync/sync.service.js';
 import { createTestApp, FRONTEND_URL, resetDatabase } from './app.js';
 import { FakeKeycloak } from './fake-keycloak.js';
@@ -63,6 +63,7 @@ describe('Autenticação com Keycloak (e2e)', () => {
 
   it('bloqueia as rotas sem sessão, exceto as públicas', async () => {
     await agent().get('/api/accounts').expect(401);
+    await agent().get('/api/loans').expect(401);
     await agent().get('/auth/me').expect(401);
     await agent().get('/health').expect(200);
   });
@@ -82,8 +83,16 @@ describe('Autenticação com Keycloak (e2e)', () => {
     expect(cookie).not.toContain('access_token');
 
     const me = await client.get('/auth/me').expect(200);
+    // `id` é o do banco: o usuário nasce no primeiro acesso.
+    const created = await app
+      .get<Database>(DATABASE)
+      .select({ id: users.id })
+      .from(users)
+      .where(eq(users.keycloakId, 'user-1'));
+    expect(created).toHaveLength(1);
     expect(me.body).toEqual({
-      id: 'user-1',
+      id: created[0]!.id,
+      keycloakId: 'user-1',
       username: 'nestor',
       name: 'Nestor',
       email: 'nestor@example.com',

@@ -132,6 +132,11 @@ describe("planning/forms: compromissos", () => {
     expect(form.paymentMethod).toBe("PIX")
   })
 
+  it("rascunho preenche um compromisso novo (e só um novo)", () => {
+    const draft = { name: "Streaming", amount: "55,90", dayOfMonth: "1", paymentMethod: "CARD" as const }
+    expect(commitmentForm(null, "2026-10-08", draft)).toMatchObject({ ...draft, startsOn: "2026-10-08" })
+  })
+
   it("monta o corpo do POST com os tipos da API", () => {
     expect(validateCommitment(valid)).toEqual({
       ok: true,
@@ -366,5 +371,9 @@ describe("planning/forms: erros da API", () => {
 
   it("falha de rede (sem status) pede para conferir a conexão", () => {
     expect(mutationErrorMessage(new TypeError("Failed to fetch"), "salvar")).toMatch(/sem resposta do servidor/)
+    expect(mutationErrorMessage(apiError(403, "Forbidden"), "salvar")).toMatch(/no planejamento/)
+    expect(mutationErrorMessage(apiError(403, "Forbidden"), "salvar", "nas assinaturas")).toBe(
+      "Seu usuário não tem permissão para salvar nas assinaturas.",
+    )
   })
 })

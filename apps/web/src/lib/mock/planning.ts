@@ -1,6 +1,13 @@
-import { installmentsPaid } from "@/components/planning/schedule"
-import type { BudgetCategory, Commitment, Goal, MonthProjection, PlanningOverview } from "@/lib/api/planning"
-import type { Cents } from "@/lib/api/types"
+import { dueDate, installmentDueDate, installmentsPaid, shift } from "@/components/planning/schedule"
+import type {
+  BudgetCategory,
+  CardInstallment,
+  Commitment,
+  Goal,
+  MonthProjection,
+  PlanningOverview,
+} from "@/lib/api/planning"
+import type { Cents, Transaction } from "@/lib/api/types"
 import { lastMonths, monthRange } from "@/lib/finance/aggregate"
 import { isSpending } from "@/lib/finance/classify"
 import { IDS, MOCK_TODAY, type MockDataset } from "./generator"
@@ -196,6 +203,56 @@ export function averageVariableSpending(dataset: MockDataset): Cents {
   return Math.round(total / months.length)
 }
 
+/**
+ * Parcelas de cartão em aberto, com a mesma heurística da API
+ * (`apps/api/src/domain/card-installments.ts`): só compras, compra = conta +
+ * descrição + total de parcelas + mês da 1ª parcela, âncora = parcela mais
+ * adiantada. Parcelas diferentes no mesmo dia = banco que data tudo na compra.
+ */
+function buildCardInstallments(dataset: MockDataset): CardInstallment[] {
+  const cardName = new Map(dataset.accounts.map((account) => [account.id, account.name]))
+  const purchases = dataset.transactions.filter((tx) => tx.amount < 0 && tx.installment && tx.installment.total > 1)
+  const product = (tx: Transaction) => `${tx.accountId}|${tx.description}|${tx.installment!.total}`
+
+  const numbersByDay = new Map<string, Set<number>>()
+  for (const tx of purchases) {
+    const day = `${product(tx)}|${tx.date}`
+    numbersByDay.set(day, (numbersByDay.get(day) ?? new Set<number>()).add(tx.installment!.number))
+  }
+
+  const groups = new Map<string, { anchor: Transaction; firstMonth: string }>()
+  for (const tx of purchases) {
+    const datedAtPurchase = numbersByDay.get(`${product(tx)}|${tx.date}`)!.size > 1
+    const firstMonth = shift(tx.date.slice(0, 7), datedAtPurchase ? 0 : -(tx.installment!.number - 1))
+    const key = `${product(tx)}|${firstMonth}`
+    const current = groups.get(key)?.anchor
+    const ahead =
+      !current ||
+      tx.installment!.number > current.installment!.number ||
+      (tx.installment!.number === current.installment!.number && tx.date > current.date)
+    if (ahead) groups.set(key, { anchor: tx, firstMonth })
+  }
+
+  const result: CardInstallment[] = []
+  for (const { anchor, firstMonth } of groups.values()) {
+    const { total } = anchor.installment!
+    const dayOfMonth = Number(anchor.date.slice(8, 10))
+    const startsOn = dueDate(firstMonth, dayOfMonth)
+    const paid = installmentsPaid(startsOn, dayOfMonth, total, MOCK_TODAY)
+    if (paid >= total) continue
+    result.push({
+      accountId: anchor.accountId,
+      cardName: cardName.get(anchor.accountId) ?? "",
+      description: anchor.description,
+      amount: -anchor.amount,
+      installments: { paid, total },
+      nextDueDate: installmentDueDate(startsOn, dayOfMonth, paid + 1),
+      endsOn: installmentDueDate(startsOn, dayOfMonth, total),
+    })
+  }
+  return result.sort((a, b) => b.amount - a.amount)
+}
+
 export function buildPlanning(dataset: MockDataset): PlanningOverview {
   const commitmentsTotal = COMMITMENTS.reduce((sum, c) => sum + c.amount, 0)
   const goalsTotal = GOALS.reduce((sum, g) => sum + g.monthlyContribution, 0)
@@ -220,5 +277,11 @@ export function buildPlanning(dataset: MockDataset): PlanningOverview {
       projectedBalance: income - commitmentsTotal - goalsTotal - expectedVariableSpending,
     }
   })
-  return { categories: BUDGET_CATEGORIES, commitments: COMMITMENTS, goals: GOALS, projections }
+  return {
+    categories: BUDGET_CATEGORIES,
+    commitments: COMMITMENTS,
+    goals: GOALS,
+    cardInstallments: buildCardInstallments(dataset),
+    projections,
+  }
 }

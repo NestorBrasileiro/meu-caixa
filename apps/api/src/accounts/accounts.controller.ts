@@ -1,4 +1,5 @@
 import { Controller, Get } from '@nestjs/common';
+import { CurrentUser } from '../auth/current-user.decorator.js';
 import { AccountsService } from './accounts.service.js';
 
 @Controller()
@@ -7,13 +8,13 @@ export class AccountsController {
 
   /** Bancos conectados e o estado de cada conexão. */
   @Get('connections')
-  listConnections() {
-    return this.accounts.listConnections();
+  listConnections(@CurrentUser() userId: string) {
+    return this.accounts.listConnections(userId);
   }
 
   /** Contas e cartões com saldo e limite, em centavos. */
   @Get('accounts')
-  listAccounts() {
-    return this.accounts.listAccounts();
+  listAccounts(@CurrentUser() userId: string) {
+    return this.accounts.listAccounts(userId);
   }
 }

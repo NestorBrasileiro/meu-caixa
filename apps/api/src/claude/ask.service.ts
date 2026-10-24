@@ -5,7 +5,7 @@ import { today } from '../domain/dates.js';
 import { AnalysisService } from '../insights/analysis.service.js';
 import { InsightsService } from '../insights/insights.service.js';
 import { createInsightTools } from '../insights/tools.js';
-import { ANTHROPIC_CLIENT, type AnthropicClient } from './anthropic.client.js';
+import { ANTHROPIC_SOURCE, type AnthropicSource } from './anthropic.client.js';
 import { ClaudeDisabledError } from './claude-disabled.error.js';
 import { describeForLog, failure, toClaudeFailure } from './claude-errors.js';
 import { toRunnableTool, type RunnableTool } from './claude-tools.js';
@@ -30,30 +30,26 @@ const TRUNCATED_NOTE = '\n\n_(A resposta passou do tamanho máximo e foi cortada
 
 /**
  * "Pergunte ao Claude": responde na hora usando só as ferramentas de leitura
- * (sem `salvar_analise`). Uma pergunta por vez.
+ * (sem `salvar_analise`). Uma pergunta por vez para cada usuário.
  */
 @Injectable()
 export class AskService {
   private readonly logger = new Logger(AskService.name);
-  private readonly tools: RunnableTool[];
-  private inFlight = false;
+  /** Usuários com uma pergunta em andamento. */
+  private readonly inFlight = new Set<string>();
 
   constructor(
     @Inject(ENV) private readonly env: Env,
-    @Inject(ANTHROPIC_CLIENT) private readonly client: AnthropicClient | null,
-    insights: InsightsService,
-    analysis: AnalysisService,
-  ) {
-    this.tools = createInsightTools({ insights, analysis, source: 'APP' })
-      .filter((tool) => tool.readOnly)
-      .map(toRunnableTool);
-  }
+    @Inject(ANTHROPIC_SOURCE) private readonly source: AnthropicSource,
+    private readonly insights: InsightsService,
+    private readonly analysis: AnalysisService,
+  ) {}
 
-  async ask(question: string, history: AskTurn[]): Promise<AskAnswer> {
-    const client = this.client;
-    if (!client) throw new ClaudeDisabledError();
-    if (this.inFlight) throw new AskInProgressError();
-    this.inFlight = true;
+  async ask(userId: string, question: string, history: AskTurn[]): Promise<AskAnswer> {
+    const config = await this.source.get(userId);
+    if (!config) throw new ClaudeDisabledError();
+    if (this.inFlight.has(userId)) throw new AskInProgressError();
+    this.inFlight.add(userId);
 
     const controller = new AbortController();
     let timedOut = false;
@@ -64,10 +60,10 @@ export class AskService {
     const usage = emptyUsage();
     try {
       const { message } = await runConversation(
-        client,
+        config.client,
         buildAskParams({
-          model: this.env.ANTHROPIC_MODEL,
-          tools: this.tools,
+          model: config.model,
+          tools: this.readOnlyTools(userId),
           today: today(this.env.TIMEZONE),
           timeZone: this.env.TIMEZONE,
           question,
@@ -88,11 +84,22 @@ export class AskService {
       throw failed;
     } finally {
       clearTimeout(timer);
-      this.inFlight = false;
+      this.inFlight.delete(userId);
       this.logger.log(
         `Pergunta: ${usage.requests} chamadas, ${usage.inputTokens} in / ${usage.outputTokens} out / ` +
           `${usage.cacheReadInputTokens} cache lido / ${usage.cacheCreationInputTokens} cache escrito`,
       );
     }
+  }
+
+  private readOnlyTools(userId: string): RunnableTool[] {
+    return createInsightTools({
+      insights: this.insights,
+      analysis: this.analysis,
+      source: 'APP',
+      userId,
+    })
+      .filter((tool) => tool.readOnly)
+      .map(toRunnableTool);
   }
 }

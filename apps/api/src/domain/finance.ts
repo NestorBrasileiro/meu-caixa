@@ -85,3 +85,68 @@ export interface Invoice {
   minimumPayment: Cents | null;
   currency: string;
 }
+
+/** Periodicidade das parcelas de um empréstimo (`IRREGULAR` = sem periodicidade regular). */
+export const LOAN_PERIODICITIES = [
+  'WEEKLY',
+  'FORTNIGHTLY',
+  'MONTHLY',
+  'BIMONTHLY',
+  'QUARTERLY',
+  'SEMIANNUAL',
+  'YEARLY',
+  'IRREGULAR',
+  'OTHER',
+] as const;
+export type LoanPeriodicity = (typeof LOAN_PERIODICITIES)[number];
+
+/** Parcela com data e valor informados explicitamente pela instituição. */
+export interface ScheduledInstallment {
+  dueDate: IsoDate;
+  amount: Cents | null;
+}
+
+/**
+ * Empréstimo ou financiamento (Open Finance: empréstimos, financiamentos,
+ * antecipação de recebíveis e adiantamento a depositante). Campos que o banco
+ * não informa ficam `null`: nada aqui é estimado pelo adapter, exceto o que
+ * está documentado em cada campo.
+ */
+export interface Loan {
+  externalId: string;
+  connectionExternalId: string;
+  /** Nome amigável em pt-BR (o do banco ou, sem ele, o da modalidade). */
+  productName: string;
+  /** Modalidade bruta do Open Finance (ex.: CREDITO_PESSOAL_SEM_CONSIGNACAO). */
+  type: string | null;
+  contractNumber: string | null;
+  contractedAmount: Cents | null;
+  /** Saldo devedor: quanto falta para quitar. */
+  outstandingBalance: Cents | null;
+  currency: string;
+  contractDate: IsoDate | null;
+  /** Vencimento da última parcela (fim do contrato). */
+  finalDueDate: IsoDate | null;
+  firstInstallmentDueDate: IsoDate | null;
+  periodicity: LoanPeriodicity | null;
+  /** Periodicidade em pt-BR (ex.: "Mensal"). */
+  periodicityLabel: string | null;
+  installments: {
+    total: number | null;
+    paid: number | null;
+    /** A vencer. */
+    remaining: number | null;
+    /** Vencidas e não pagas. */
+    overdue: number | null;
+  };
+  /** Valor da parcela regular, quando conhecido (parcelas fixas). */
+  installmentAmount: Cents | null;
+  /** Parcelas não regulares com data própria (ex.: parcelas intermediárias). */
+  scheduledInstallments: ScheduledInstallment[];
+  /** Taxa de juros em % ao ano. */
+  interestRateAnnual: number | null;
+  /** Custo Efetivo Total em % ao ano. */
+  cetAnnual: number | null;
+  /** Payload original do provedor, guardado para uso futuro. */
+  raw?: unknown;
+}

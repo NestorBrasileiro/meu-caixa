@@ -25,7 +25,7 @@ export type AppAvailability =
   | { kind: "ready"; model: string | null }
   /** `DATA_SOURCE=mock`: não há API. */
   | { kind: "readOnly" }
-  /** A API não tem `ANTHROPIC_API_KEY`. */
+  /** Nenhuma chave da Anthropic salva em Configurações. */
   | { kind: "notConfigured" }
   /** Não deu para consultar GET /api/analysis/status. */
   | { kind: "unknown" }
@@ -37,7 +37,7 @@ export function appAvailability(status: AnalysisStatus | null, canWrite: boolean
 }
 
 export const NOT_CONFIGURED_HINT =
-  "O app usa a API da Anthropic, e a ANTHROPIC_API_KEY não está configurada na API. Pelo MCP funciona sem ela: conecte o seu Claude e peça a análise por lá."
+  "O app usa a API da Anthropic, e a chave ainda não foi cadastrada em Configurações. Pelo MCP funciona sem ela: conecte o seu Claude e peça a análise por lá."
 export const STATUS_UNKNOWN_HINT = "Não foi possível consultar a API agora. Recarregue a página para tentar de novo."
 
 /** Por que gerar e perguntar estão indisponíveis; null quando estão disponíveis. */

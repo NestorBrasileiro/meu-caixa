@@ -120,15 +120,11 @@ services:
       KEYCLOAK_REQUIRED_ROLE: owner
       TIMEZONE: ${TIMEZONE:-America/Sao_Paulo}
       FINANCE_PROVIDER: ${FINANCE_PROVIDER:-pluggy}
-      PLUGGY_CLIENT_ID: ${PLUGGY_CLIENT_ID:-}
-      PLUGGY_CLIENT_SECRET: ${PLUGGY_CLIENT_SECRET:-}
-      PLUGGY_ITEM_IDS: ${PLUGGY_ITEM_IDS:-}
+      # Pluggy e Anthropic ficam no banco (tela Configurações), cifradas com esta chave.
+      SETTINGS_ENCRYPTION_KEY: ${SETTINGS_ENCRYPTION_KEY:-}
       SYNC_ENABLED: ${SYNC_ENABLED:-true}
       SYNC_INTERVAL_HOURS: ${SYNC_INTERVAL_HOURS:-6}
-      # Análise com o Claude e MCP (opcionais; vazias = recurso desligado).
-      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
-      ANTHROPIC_MODEL: ${ANTHROPIC_MODEL:-}
-      MCP_ACCESS_TOKEN: ${MCP_ACCESS_TOKEN:-}
+      # MCP (opcional). Chave da Anthropic e token do MCP ficam no banco, por usuário.
       MCP_ALLOWED_CLIENTS: ${MCP_ALLOWED_CLIENTS:-}
     networks: [backend, edge]
     depends_on:

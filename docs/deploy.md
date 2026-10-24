@@ -42,7 +42,7 @@ Você vai precisar de:
 
 - **Uma conta na DigitalOcean.**
 - **Um domínio** em que você consiga criar registros DNS (Registro.br, Cloudflare, o próprio DNS da DigitalOcean etc.). O exemplo usa `meucaixa.exemplo.com.br` para a interface e `auth.meucaixa.exemplo.com.br` para o login.
-- **As credenciais da Pluggy** (Client ID, Client Secret e os ids dos items), como no [README](../README.md#usando-seus-bancos-meu-pluggy). Dá para subir sem elas usando `FINANCE_PROVIDER=fake`, mas aí os dados são fictícios.
+- **As credenciais da Pluggy** (Client ID, Client Secret e os ids dos items), como no [README](../README.md#usando-seus-bancos-meu-pluggy). Elas são cadastradas na tela **Configurações** depois do primeiro login; até lá a API sobe normalmente, só sem sincronizar.
 - **Uma chave SSH** no seu computador (`ssh-keygen -t ed25519` se ainda não tiver).
 
 ## 2. Criar o Droplet
@@ -136,7 +136,8 @@ chmod 600 .env
 
 # Gera todas as senhas e segredos de uma vez (letras e números, 64 caracteres)
 for v in POSTGRES_PASSWORD APP_DB_PASSWORD KEYCLOAK_DB_PASSWORD \
-         KEYCLOAK_ADMIN_PASSWORD KEYCLOAK_CLIENT_SECRET SESSION_SECRET; do
+         KEYCLOAK_ADMIN_PASSWORD KEYCLOAK_CLIENT_SECRET SESSION_SECRET \
+         SETTINGS_ENCRYPTION_KEY; do
   sed -i "s|^$v=.*|$v=$(openssl rand -hex 32)|" .env
 done
 
@@ -146,8 +147,8 @@ nano .env
 No editor, preencha:
 
 - `DOMAIN`, `AUTH_DOMAIN` e `ACME_EMAIL`;
-- `FINANCE_PROVIDER=pluggy` com `PLUGGY_CLIENT_ID`, `PLUGGY_CLIENT_SECRET` e `PLUGGY_ITEM_IDS`;
-- o resto pode ficar como está. `ANTHROPIC_API_KEY`, `ANTHROPIC_MODEL` e `MCP_ACCESS_TOKEN` são opcionais.
+- `FINANCE_PROVIDER=pluggy` (as credenciais da Pluggy você cadastra depois, na tela **Configurações**; o `SETTINGS_ENCRYPTION_KEY` gerado acima é o que cifra o Client Secret no banco);
+- o resto pode ficar como está. A chave da Anthropic (análise pelo app, opcional) e o token do MCP também se cadastram em **Configurações**, cada usuário os seus.
 
 Guarde uma cópia do `.env` num gerenciador de senhas: sem ele, os backups do Keycloak e as sessões não se recuperam com as mesmas credenciais.
 
@@ -170,7 +171,7 @@ O que acontece na primeira subida:
 
 1. O Postgres cria os bancos `meu_caixa` e `keycloak` (`postgres/init.sh`).
 2. O Keycloak importa o realm `meu-caixa` (`keycloak/realm.json`), com os clients `web` e `claude` já apontando para o seu domínio, e cria o admin temporário (`KEYCLOAK_ADMIN`).
-3. A API aplica as migrations e faz a primeira sincronização com a Pluggy.
+3. A API aplica as migrations. A sincronização começa depois que você cadastrar a sua Pluggy (passo 10).
 4. O Caddy pede os certificados ao Let's Encrypt para os dois domínios.
 
 Teste: `curl https://meucaixa.exemplo.com.br/health` deve responder `{"status":"ok","database":"up"}`.
@@ -209,6 +210,16 @@ Abra http://localhost:8180/admin. A tela de login do admin aparece no endereço 
 
 Recomendado: no realm **master**, crie um admin definitivo (Users → Create, role `admin` do realm) e apague o admin temporário: o próprio console mostra um aviso até você fazer isso.
 
+### Convidar outras pessoas
+
+O app é multiusuário, com cadastro só por convite: cada pessoa que você criar aqui, com a role `owner` do client `web`, entra com os próprios dados e não enxerga os seus (nem você os dela). Repita os comandos acima com o usuário dela (`kc create users`, `kc set-password`, `kc add-roles`). No primeiro acesso, ela cadastra a própria Pluggy em **Configurações** (cada pessoa usa a sua aplicação da Pluggy, com o Meu Pluggy dela) e, se quiser, a própria chave da Anthropic.
+
+Para cortar o acesso de alguém, desative o usuário no Keycloak (`kc update users/<id> -r meu-caixa -s enabled=false`, ou pelo console). Se a pessoa tiver gerado um token do MCP, ele continua valendo até ser revogado: apague o usuário dela no app, o que leva junto todos os dados dela:
+
+```bash
+docker compose exec postgres psql -U postgres -d meu_caixa -c "delete from users where username = 'fulano'"
+```
+
 > Quer o console aberto na internet mesmo assim? Defina `KEYCLOAK_ADMIN_URL=https://<AUTH_DOMAIN>` e `KEYCLOAK_ADMIN_PUBLIC=true` no `.env` e rode `docker compose up -d`. Não é recomendado.
 
 ## 10. Primeiro acesso e primeira sincronização
@@ -218,10 +229,10 @@ Abra `https://meucaixa.exemplo.com.br`: você vai para o login do Keycloak e, de
 A API já sincroniza na subida e depois a cada `SYNC_INTERVAL_HOURS` horas. Para forçar, use **Sincronizar agora** na interface. Para conferir pelo servidor:
 
 ```bash
-docker compose logs api | grep SyncService
+docker compose logs api | grep Sync
 ```
 
-Mudou alguma credencial da Pluggy no `.env`? Rode `docker compose up -d` (recria só o que mudou) e sincronize de novo. Se a sincronização falhar, a mensagem aparece nesse log e também em `GET /api/sync/runs`.
+Antes da primeira sincronização, cadastre a sua Pluggy em **Configurações** (enquanto ninguém cadastrar, o log mostra "nenhum usuário com a Pluggy configurada"). A sincronização automática roda para cada usuário que cadastrou a Pluggy, um de cada vez. Trocou credencial ou conectou outro banco? Atualize na mesma tela e sincronize de novo, sem reiniciar nada. Se a sincronização falhar, a mensagem aparece nesse log e também em `GET /api/sync/runs`.
 
 ## 11. Conectar o Claude (MCP)
 
@@ -230,7 +241,9 @@ O endpoint MCP fica em `https://<DOMAIN>/mcp` e o login usa OAuth com o client p
 1. No Claude, vá em **Configurações → Conectores → Adicionar conector personalizado**.
 2. URL: `https://meucaixa.exemplo.com.br/mcp`.
 3. Nas opções avançadas, **OAuth Client ID:** `claude` (sem client secret).
-4. Conecte: o Claude abre a tela de login do Keycloak; entre com o seu usuário (que tem a role `owner`).
+4. Conecte: o Claude abre a tela de login do Keycloak; entre com o seu usuário (que tem a role `owner`). O Claude passa a ver só os dados de quem entrou.
+
+No Claude Code ou Desktop sem OAuth, use o token pessoal gerado em **Configurações → Token do MCP** (a tela mostra o comando `claude mcp add` pronto).
 
 Os tokens emitidos para o client `claude` trazem a audiência `https://<DOMAIN>/mcp` e a role `owner` do client `web`.
 
@@ -247,6 +260,31 @@ docker image prune -f     # apaga as imagens antigas
 ```
 
 As migrations do banco rodam sozinhas na subida da API (`DATABASE_MIGRATE_ON_START=true`). Durante o build, o site continua no ar; cada container é trocado em poucos segundos.
+
+### Atualizando de uma versão com as credenciais no `.env`
+
+Antes, `PLUGGY_CLIENT_ID`, `PLUGGY_CLIENT_SECRET`, `PLUGGY_ITEM_IDS`, `ANTHROPIC_API_KEY` e `ANTHROPIC_MODEL` ficavam no `deploy/.env`. Agora ficam no banco (tela **Configurações**), e a API não sobe sem a `SETTINGS_ENCRYPTION_KEY`. Para atualizar sem ficar fora do ar:
+
+1. **Antes** do `git pull`, crie a chave no `deploy/.env` (uma vez só, e guarde junto com o resto do `.env`):
+
+   ```bash
+   cd ~/meu-caixa/deploy
+   echo "SETTINGS_ENCRYPTION_KEY=$(openssl rand -hex 32)" >> .env
+   ```
+
+2. Atualize como acima (`git pull` e `docker compose up -d --build`).
+3. Entre no app, abra **Configurações** e cadastre o Client ID, o Client Secret e os Item IDs da Pluggy (os mesmos valores que estavam no `.env`). Se usava a análise pelo app, cadastre também a chave da Anthropic e escolha o modelo.
+4. Clique em **Sincronizar agora**. Até o passo 3, a API sobe normalmente mas pula a sincronização (`docker compose logs api | grep Sync` mostra "ignorada").
+5. Apague do `deploy/.env` as cinco variáveis antigas: elas não são mais repassadas para a API.
+
+### Atualizando para a versão multiusuário
+
+A migration 0007 cria a tabela `users` e passa todos os dados que já existem (contas, transações, planejamento, análises, configurações) para um usuário só:
+
+- se a Pluggy ou a chave da Anthropic já estavam cadastradas em **Configurações**, para quem as salvou;
+- se não, para **o primeiro login depois da atualização**. Entre você primeiro, logo depois do `docker compose up -d --build`, antes de convidar alguém.
+
+O `MCP_ACCESS_TOKEN` deixa de valer: gere o seu token pessoal em **Configurações → Token do MCP**, troque no Claude Code ou Desktop e apague a variável do `deploy/.env`. O conector do claude.ai (OAuth) continua funcionando sem mudança.
 
 **Pelo GitHub Actions (opcional):** o workflow **Deploy** (`.github/workflows/deploy.yml`) faz o mesmo por SSH, só quando você manda (Actions → Deploy → Run workflow); nunca roda em push. Configure em *Settings → Secrets and variables → Actions*:
 
@@ -334,7 +372,7 @@ Os logs são rotacionados pelo Docker (3 arquivos de 10 MB por container).
 : Falta a role `owner` (client `web`) no seu usuário; passo 9.
 
 **Container reiniciando** (`docker compose ps` mostra `Restarting`)
-: `docker compose logs <serviço>`. A API recusa subir com configuração inválida e diz qual variável falta (ex.: credenciais da Pluggy com `FINANCE_PROVIDER=pluggy`).
+: `docker compose logs <serviço>`. A API recusa subir com configuração inválida e diz qual variável falta (ex.: `SETTINGS_ENCRYPTION_KEY` com `FINANCE_PROVIDER=pluggy`).
 
 **Memória**
 : `docker stats`. Se o Droplet ficar sem memória (Keycloak lento, containers mortos por OOM), confirme o swap (`swapon --show`) ou passe para 4 GB (Droplet → Resize).

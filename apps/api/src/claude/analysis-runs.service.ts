@@ -15,8 +15,13 @@ import { today } from '../domain/dates.js';
 import { analysisReportInputSchema } from '../insights/analysis.schema.js';
 import { AnalysisService } from '../insights/analysis.service.js';
 import { InsightsService } from '../insights/insights.service.js';
-import { createInsightTools, type InsightTool } from '../insights/tools.js';
-import { ANTHROPIC_CLIENT, type AnthropicClient } from './anthropic.client.js';
+import { createInsightTools } from '../insights/tools.js';
+import {
+  ANTHROPIC_SOURCE,
+  type AnthropicClient,
+  type AnthropicSource,
+  type ClaudeConfig,
+} from './anthropic.client.js';
 import { ClaudeDisabledError } from './claude-disabled.error.js';
 import { describeForLog, failure, toClaudeFailure } from './claude-errors.js';
 import { toRunnableTool, type RunnableTool } from './claude-tools.js';
@@ -55,32 +60,30 @@ export interface StartedRun {
 /**
  * "Gerar análise": o Claude (API da Anthropic) roda as mesmas ferramentas do
  * servidor MCP em background e termina salvando o relatório com
- * `salvar_analise` (origem `APP`). Uma execução por vez.
+ * `salvar_analise` (origem `APP`). Uma execução por vez para cada usuário.
  */
 @Injectable()
 export class AnalysisRunsService implements OnApplicationBootstrap, OnApplicationShutdown {
   private readonly logger = new Logger(AnalysisRunsService.name);
-  private readonly tools: InsightTool[];
-  private current: Promise<unknown> | null = null;
+  private readonly running = new Set<Promise<unknown>>();
   private readonly aborts = new Set<AbortController>();
   private shuttingDown = false;
 
   constructor(
     @Inject(DATABASE) private readonly db: Database,
     @Inject(ENV) private readonly env: Env,
-    @Inject(ANTHROPIC_CLIENT) private readonly client: AnthropicClient | null,
-    insights: InsightsService,
-    analysis: AnalysisService,
-  ) {
-    this.tools = createInsightTools({ insights, analysis, source: 'APP' });
-  }
+    @Inject(ANTHROPIC_SOURCE) private readonly source: AnthropicSource,
+    private readonly insights: InsightsService,
+    private readonly analysis: AnalysisService,
+  ) {}
 
-  get enabled(): boolean {
-    return this.client !== null;
-  }
-
-  get model(): string | null {
-    return this.client ? this.env.ANTHROPIC_MODEL : null;
+  /** Chave salva e legível = ligada. Chave que não decifra conta como desligada. */
+  async status(userId: string): Promise<{ enabled: boolean; model: string | null }> {
+    const config = await this.source.get(userId).catch((error: unknown) => {
+      if (error instanceof ClaudeDisabledError) return null;
+      throw error;
+    });
+    return { enabled: config !== null, model: config?.model ?? null };
   }
 
   /**
@@ -104,45 +107,47 @@ export class AnalysisRunsService implements OnApplicationBootstrap, OnApplicatio
     await this.waitForIdle();
   }
 
-  async start(): Promise<StartedRun> {
-    const client = this.client;
-    if (!client) throw new ClaudeDisabledError();
+  async start(userId: string): Promise<StartedRun> {
+    const config = await this.source.get(userId);
+    if (!config) throw new ClaudeDisabledError();
     await this.failStaleRuns();
 
     let run: AnalysisRunRow;
     try {
       [run] = (await this.db
         .insert(analysisRuns)
-        .values({ status: 'RUNNING', model: this.env.ANTHROPIC_MODEL })
+        .values({ userId, status: 'RUNNING', model: config.model })
         .returning()) as [AnalysisRunRow];
     } catch (error) {
-      // Índice único parcial: já existe uma RUNNING.
+      // Índice único parcial: este usuário já tem uma RUNNING.
       if (isUniqueViolation(error)) throw new AnalysisRunInProgressError();
       throw error;
     }
 
-    const completion = this.execute(client, run);
+    const completion = this.execute(config, run);
     const tracked = completion.catch(() => undefined);
-    this.current = tracked;
-    void tracked.finally(() => {
-      if (this.current === tracked) this.current = null;
-    });
+    this.running.add(tracked);
+    void tracked.finally(() => this.running.delete(tracked));
     return { run: toDto(run), completion };
   }
 
   async waitForIdle(): Promise<void> {
-    await this.current;
+    await Promise.all(this.running);
   }
 
-  async get(id: string): Promise<AnalysisRunDto | null> {
-    const [run] = await this.db.select().from(analysisRuns).where(eq(analysisRuns.id, id));
-    return run ? toDto(run) : null;
-  }
-
-  async latest(): Promise<AnalysisRunDto | null> {
+  async get(userId: string, id: string): Promise<AnalysisRunDto | null> {
     const [run] = await this.db
       .select()
       .from(analysisRuns)
+      .where(and(eq(analysisRuns.id, id), eq(analysisRuns.userId, userId)));
+    return run ? toDto(run) : null;
+  }
+
+  async latest(userId: string): Promise<AnalysisRunDto | null> {
+    const [run] = await this.db
+      .select()
+      .from(analysisRuns)
+      .where(eq(analysisRuns.userId, userId))
       .orderBy(desc(analysisRuns.startedAt))
       .limit(1);
     return run ? toDto(run) : null;
@@ -162,8 +167,8 @@ export class AnalysisRunsService implements OnApplicationBootstrap, OnApplicatio
     for (const { id } of stale) this.logger.warn(`Análise ${id} marcada como falha: travada`);
   }
 
-  private async execute(client: AnthropicClient, run: AnalysisRunRow): Promise<AnalysisRunDto> {
-    this.logger.log(`Análise ${run.id} iniciada (${this.env.ANTHROPIC_MODEL})`);
+  private async execute(config: ClaudeConfig, run: AnalysisRunRow): Promise<AnalysisRunDto> {
+    this.logger.log(`Análise ${run.id} iniciada (${config.model})`);
     const usage = emptyUsage();
     const controller = new AbortController();
     this.aborts.add(controller);
@@ -175,12 +180,12 @@ export class AnalysisRunsService implements OnApplicationBootstrap, OnApplicatio
 
     const state: { reportId: string | null; model: string } = {
       reportId: null,
-      model: this.env.ANTHROPIC_MODEL,
+      model: config.model,
     };
     let status: 'SUCCEEDED' | 'FAILED' = 'FAILED';
     let error: string | null = null;
     try {
-      await this.converse(client, state, usage, controller.signal);
+      await this.converse(run.userId, config, state, usage, controller.signal);
       status = 'SUCCEEDED';
     } catch (cause) {
       const failed = toClaudeFailure(cause, timedOut);
@@ -215,14 +220,15 @@ export class AnalysisRunsService implements OnApplicationBootstrap, OnApplicatio
 
   /** O loop com o Claude; lança `ClaudeFailure` (ou erro do SDK) se não terminar salvando. */
   private async converse(
-    client: AnthropicClient,
+    userId: string,
+    { client, model }: { client: AnthropicClient; model: string },
     state: { reportId: string | null; model: string },
     usage: AnalysisRunUsage,
     signal: AbortSignal,
   ): Promise<void> {
     const params = buildRunParams({
-      model: this.env.ANTHROPIC_MODEL,
-      tools: this.runTools(state),
+      model,
+      tools: this.runTools(userId, state),
       today: today(this.env.TIMEZONE),
       timeZone: this.env.TIMEZONE,
     });
@@ -263,8 +269,17 @@ export class AnalysisRunsService implements OnApplicationBootstrap, OnApplicatio
    * Ferramentas da execução: as mesmas do MCP, com `salvar_analise` gravando o
    * modelo que de fato respondeu (o fallback pode trocar) e uma vez só.
    */
-  private runTools(state: { reportId: string | null; model: string }): RunnableTool[] {
-    return this.tools.map((tool) => {
+  private runTools(
+    userId: string,
+    state: { reportId: string | null; model: string },
+  ): RunnableTool[] {
+    const tools = createInsightTools({
+      insights: this.insights,
+      analysis: this.analysis,
+      source: 'APP',
+      userId,
+    });
+    return tools.map((tool) => {
       if (tool.name !== SAVE_TOOL_NAME) return toRunnableTool(tool);
       return toRunnableTool({
         ...tool,
