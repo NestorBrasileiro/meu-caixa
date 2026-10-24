@@ -27,8 +27,8 @@ export class SettingsService {
     @Inject(ENV) private readonly env: Env,
   ) {}
 
-  async pluggy(): Promise<PluggySettingsView> {
-    return this.view(await this.store.find());
+  async pluggy(userId: string): Promise<PluggySettingsView> {
+    return this.view(await this.store.find(userId));
   }
 
   /** Confere as credenciais na Pluggy antes de gravar. */
@@ -36,15 +36,15 @@ export class SettingsService {
     this.store.assertCanEncrypt();
     const credentials: PluggyCredentials = {
       clientId: dto.clientId.trim(),
-      clientSecret: dto.clientSecret?.trim() || (await this.savedSecret()),
+      clientSecret: dto.clientSecret?.trim() || (await this.savedSecret(userId)),
       itemIds: [...new Set(dto.itemIds.map((id) => id.trim()))],
     };
     await this.verify(credentials);
     return this.view(await this.store.save(userId, credentials));
   }
 
-  private async savedSecret(): Promise<string> {
-    const current = await this.store.find();
+  private async savedSecret(userId: string): Promise<string> {
+    const current = await this.store.find(userId);
     if (!current) throw new BadRequestException('Informe o Client Secret');
     try {
       return this.store.decrypt(current).clientSecret;

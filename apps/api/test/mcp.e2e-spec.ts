@@ -3,12 +3,21 @@ import type { INestApplication } from '@nestjs/common';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
 import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
+import { sql } from 'drizzle-orm';
 import request from 'supertest';
+import { DATABASE, type Database } from '../src/database/database.module.js';
 import { today } from '../src/domain/dates.js';
 import type { Transaction } from '../src/domain/finance.js';
 import { monthOf, monthRange, shiftMonth } from '../src/domain/months.js';
 import { SyncService } from '../src/sync/sync.service.js';
-import { createTestApp, resetDatabase } from './app.js';
+import {
+  createTestApp,
+  OTHER_USER,
+  resetDatabase,
+  TEST_USER,
+  TEST_USER_HEADER,
+  userIdOf,
+} from './app.js';
 import { FakeKeycloak } from './fake-keycloak.js';
 import { InMemoryProvider } from './in-memory-provider.js';
 
@@ -19,7 +28,6 @@ const LAST_CLOSED = CLOSED[2]!;
 
 const RESOURCE = 'http://api.test/mcp';
 const METADATA_URL = 'http://api.test/.well-known/oauth-protected-resource/mcp';
-const ACCESS_TOKEN = 'segredo-de-acesso-ao-mcp-dos-testes-0123456789';
 
 const tx = (
   externalId: string,
@@ -151,6 +159,14 @@ describe('Servidor MCP (e2e)', () => {
 
   beforeAll(async () => {
     keycloak = new FakeKeycloak();
+    // O dono dos tokens do Keycloak é o mesmo usuário das chamadas a /api.
+    keycloak.user = {
+      ...keycloak.user,
+      sub: TEST_USER.sub,
+      username: TEST_USER.username!,
+      name: TEST_USER.name!,
+      email: TEST_USER.email!,
+    };
     await keycloak.start();
     provider = new InMemoryProvider();
     app = await createTestApp(provider, {
@@ -159,7 +175,6 @@ describe('Servidor MCP (e2e)', () => {
         KEYCLOAK_REALM: keycloak.realm,
         KEYCLOAK_CLIENT_ID: keycloak.clientId,
         KEYCLOAK_CLIENT_SECRET: keycloak.clientSecret,
-        MCP_ACCESS_TOKEN: ACCESS_TOKEN,
       },
     });
     const server = app.getHttpServer();
@@ -168,7 +183,9 @@ describe('Servidor MCP (e2e)', () => {
 
     await resetDatabase(app);
     seed(provider);
-    expect(await app.get(SyncService).run('MANUAL')).toMatchObject({ status: 'SUCCEEDED' });
+    expect(await app.get(SyncService).run(await userIdOf(app), 'MANUAL')).toMatchObject({
+      status: 'SUCCEEDED',
+    });
 
     const category = await http()
       .post('/api/planning/categories')
@@ -321,16 +338,57 @@ describe('Servidor MCP (e2e)', () => {
       await expect(connect(token)).rejects.toMatchObject({ code: 403 });
     });
 
-    it('aceita o MCP_ACCESS_TOKEN e recusa um parecido', async () => {
-      const client = await connect(ACCESS_TOKEN);
-      expect((await client.listTools()).tools.length).toBeGreaterThan(0);
-      await expect(connect(`${ACCESS_TOKEN}x`)).rejects.toMatchObject({ code: 401 });
+    it('token pessoal: vale até ser revogado ou trocado, e só o hash fica no banco', async () => {
+      const issued = await http().post('/api/settings/mcp-token').expect(201);
+      const token: string = issued.body.token;
+      expect(token).toMatch(/^mcx_[A-Za-z0-9_-]{43}$/);
+
+      const client = await connect(token);
+      const summary = await call(client, 'resumo_financeiro');
+      expect(summary.quantidade_de_contas).toEqual({ contas: 1, cartoes: 1 });
+      await expect(connect(`${token}x`)).rejects.toMatchObject({ code: 401 });
+
+      const view = await http().get('/api/settings/mcp-token').expect(200);
+      expect(view.body).toMatchObject({ exists: true, hint: token.slice(-4) });
+      expect(view.body.lastUsedAt).toEqual(expect.any(String));
+      expect(JSON.stringify(view.body)).not.toContain(token);
+      const { rows } = await app
+        .get<Database>(DATABASE)
+        .execute<{ token_hash: string }>(sql`select token_hash from mcp_tokens`);
+      expect(rows[0]!.token_hash).not.toContain(token.slice(4));
+
+      const replaced = await http().post('/api/settings/mcp-token').expect(201);
+      await expect(connect(token)).rejects.toMatchObject({ code: 401 });
+      await http().delete('/api/settings/mcp-token').expect(204);
+      await expect(connect(replaced.body.token)).rejects.toMatchObject({ code: 401 });
+      expect((await http().get('/api/settings/mcp-token').expect(200)).body.exists).toBe(false);
+    });
+
+    it('cada token só enxerga os dados do próprio usuário', async () => {
+      const otherOAuth = keycloak.mintAccessToken({
+        audience: [RESOURCE],
+        user: { sub: OTHER_USER.sub, username: OTHER_USER.username! },
+      });
+      const viaOAuth = await call(await connect(otherOAuth), 'listar_contas');
+      expect(viaOAuth.contas).toEqual([]);
+
+      const issued = await http()
+        .post('/api/settings/mcp-token')
+        .set(TEST_USER_HEADER, OTHER_USER.sub)
+        .expect(201);
+      const viaToken = await connect(issued.body.token);
+      expect((await call(viaToken, 'listar_contas')).contas).toEqual([]);
+      expect((await call(viaToken, 'ultima_analise')).analise).toBeNull();
+
+      const own = await call(await connect(claudeToken()), 'listar_contas');
+      expect(own.contas).toHaveLength(2);
     });
 
     it('GET e DELETE não existem no modo sem estado; /api/mcp também não', async () => {
-      await http().get('/mcp').set('Authorization', `Bearer ${ACCESS_TOKEN}`).expect(405);
-      await http().delete('/mcp').set('Authorization', `Bearer ${ACCESS_TOKEN}`).expect(405);
-      await http().post('/api/mcp').set('Authorization', `Bearer ${ACCESS_TOKEN}`).expect(404);
+      const token = claudeToken();
+      await http().get('/mcp').set('Authorization', `Bearer ${token}`).expect(405);
+      await http().delete('/mcp').set('Authorization', `Bearer ${token}`).expect(405);
+      await http().post('/api/mcp').set('Authorization', `Bearer ${token}`).expect(404);
     });
   });
 

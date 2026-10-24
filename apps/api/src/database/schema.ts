@@ -1,16 +1,18 @@
 import { sql } from 'drizzle-orm';
 import {
   bigint,
-  check,
   date,
   doublePrecision,
+  foreignKey,
   index,
   integer,
   jsonb,
   pgEnum,
   pgTable,
+  primaryKey,
   text,
   timestamp,
+  unique,
   uniqueIndex,
   uuid,
 } from 'drizzle-orm/pg-core';
@@ -51,10 +53,34 @@ const providerRef = {
   externalId: text('external_id').notNull(),
 };
 
+/**
+ * Usuários do app (quem entra pelo Keycloak). Todo dado pertence a um
+ * usuário e some junto com ele (on delete cascade).
+ */
+export const users = pgTable('users', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  /**
+   * `sub` do Keycloak. Nulo só no usuário criado pela migration 0007 para os
+   * dados de antes do multiusuário, até o primeiro login assumi-lo.
+   */
+  keycloakId: text('keycloak_id').unique(),
+  username: text('username'),
+  name: text('name'),
+  email: text('email'),
+  ...timestamps,
+});
+
+/** Dono do registro. */
+const ownerId = () =>
+  uuid('user_id')
+    .notNull()
+    .references(() => users.id, { onDelete: 'cascade' });
+
 export const connections = pgTable(
   'connections',
   {
     id: uuid('id').primaryKey().defaultRandom(),
+    userId: ownerId(),
     ...providerRef,
     institutionName: text('institution_name').notNull(),
     institutionLogoUrl: text('institution_logo_url'),
@@ -62,16 +88,23 @@ export const connections = pgTable(
     lastRefreshedAt: timestamp('last_refreshed_at', { withTimezone: true }),
     ...timestamps,
   },
-  (t) => [uniqueIndex('connections_provider_external_id_key').on(t.provider, t.externalId)],
+  (t) => [
+    uniqueIndex('connections_user_id_provider_external_id_key').on(
+      t.userId,
+      t.provider,
+      t.externalId,
+    ),
+    // Alvo das chaves compostas: o filho só aponta para um pai do mesmo usuário.
+    unique('connections_id_user_id_key').on(t.id, t.userId),
+  ],
 );
 
 export const accounts = pgTable(
   'accounts',
   {
     id: uuid('id').primaryKey().defaultRandom(),
-    connectionId: uuid('connection_id')
-      .notNull()
-      .references(() => connections.id, { onDelete: 'cascade' }),
+    userId: ownerId(),
+    connectionId: uuid('connection_id').notNull(),
     ...providerRef,
     type: accountType('type').notNull(),
     name: text('name').notNull(),
@@ -85,7 +118,13 @@ export const accounts = pgTable(
     ...timestamps,
   },
   (t) => [
-    uniqueIndex('accounts_provider_external_id_key').on(t.provider, t.externalId),
+    uniqueIndex('accounts_user_id_provider_external_id_key').on(t.userId, t.provider, t.externalId),
+    unique('accounts_id_user_id_key').on(t.id, t.userId),
+    foreignKey({
+      name: 'accounts_connection_id_user_id_fkey',
+      columns: [t.connectionId, t.userId],
+      foreignColumns: [connections.id, connections.userId],
+    }).onDelete('cascade'),
     index('accounts_connection_id_idx').on(t.connectionId),
   ],
 );
@@ -94,9 +133,8 @@ export const transactions = pgTable(
   'transactions',
   {
     id: uuid('id').primaryKey().defaultRandom(),
-    accountId: uuid('account_id')
-      .notNull()
-      .references(() => accounts.id, { onDelete: 'cascade' }),
+    userId: ownerId(),
+    accountId: uuid('account_id').notNull(),
     ...providerRef,
     date: date('date', { mode: 'string' }).notNull(),
     description: text('description').notNull(),
@@ -113,9 +151,18 @@ export const transactions = pgTable(
     ...timestamps,
   },
   (t) => [
-    uniqueIndex('transactions_provider_external_id_key').on(t.provider, t.externalId),
+    uniqueIndex('transactions_user_id_provider_external_id_key').on(
+      t.userId,
+      t.provider,
+      t.externalId,
+    ),
+    foreignKey({
+      name: 'transactions_account_id_user_id_fkey',
+      columns: [t.accountId, t.userId],
+      foreignColumns: [accounts.id, accounts.userId],
+    }).onDelete('cascade'),
     index('transactions_account_id_date_idx').on(t.accountId, t.date),
-    index('transactions_date_idx').on(t.date),
+    index('transactions_user_id_date_idx').on(t.userId, t.date),
   ],
 );
 
@@ -123,9 +170,8 @@ export const invoices = pgTable(
   'invoices',
   {
     id: uuid('id').primaryKey().defaultRandom(),
-    accountId: uuid('account_id')
-      .notNull()
-      .references(() => accounts.id, { onDelete: 'cascade' }),
+    userId: ownerId(),
+    accountId: uuid('account_id').notNull(),
     ...providerRef,
     dueDate: date('due_date', { mode: 'string' }).notNull(),
     closingDate: date('closing_date', { mode: 'string' }),
@@ -135,7 +181,12 @@ export const invoices = pgTable(
     ...timestamps,
   },
   (t) => [
-    uniqueIndex('invoices_provider_external_id_key').on(t.provider, t.externalId),
+    uniqueIndex('invoices_user_id_provider_external_id_key').on(t.userId, t.provider, t.externalId),
+    foreignKey({
+      name: 'invoices_account_id_user_id_fkey',
+      columns: [t.accountId, t.userId],
+      foreignColumns: [accounts.id, accounts.userId],
+    }).onDelete('cascade'),
     index('invoices_account_id_due_date_idx').on(t.accountId, t.dueDate),
   ],
 );
@@ -145,9 +196,8 @@ export const loans = pgTable(
   'loans',
   {
     id: uuid('id').primaryKey().defaultRandom(),
-    connectionId: uuid('connection_id')
-      .notNull()
-      .references(() => connections.id, { onDelete: 'cascade' }),
+    userId: ownerId(),
+    connectionId: uuid('connection_id').notNull(),
     ...providerRef,
     productName: text('product_name').notNull(),
     type: text('type'),
@@ -178,7 +228,13 @@ export const loans = pgTable(
     ...timestamps,
   },
   (t) => [
-    uniqueIndex('loans_provider_external_id_key').on(t.provider, t.externalId),
+    uniqueIndex('loans_user_id_provider_external_id_key').on(t.userId, t.provider, t.externalId),
+    // Como contas: o empréstimo só aponta para uma conexão do mesmo usuário.
+    foreignKey({
+      name: 'loans_connection_id_user_id_fkey',
+      columns: [t.connectionId, t.userId],
+      foreignColumns: [connections.id, connections.userId],
+    }).onDelete('cascade'),
     index('loans_connection_id_idx').on(t.connectionId),
   ],
 );
@@ -197,6 +253,7 @@ export const syncRuns = pgTable(
   'sync_runs',
   {
     id: uuid('id').primaryKey().defaultRandom(),
+    userId: ownerId(),
     provider: text('provider').notNull(),
     trigger: syncTrigger('trigger').notNull(),
     status: syncRunStatus('status').notNull(),
@@ -205,7 +262,7 @@ export const syncRuns = pgTable(
     stats: jsonb('stats').$type<SyncStats>(),
     errors: jsonb('errors').$type<string[]>().notNull().default([]),
   },
-  (t) => [index('sync_runs_started_at_idx').on(t.startedAt)],
+  (t) => [index('sync_runs_user_id_started_at_idx').on(t.userId, t.startedAt)],
 );
 
 // ------------------------------------------------------------- planejamento
@@ -216,6 +273,7 @@ export const budgetCategoryKind = pgEnum('budget_category_kind', BUDGET_CATEGORY
 /** Categoria de orçamento: agrupa categorias do agregador e tem um teto mensal. */
 export const budgetCategories = pgTable('budget_categories', {
   id: uuid('id').primaryKey().defaultRandom(),
+  userId: ownerId(),
   name: text('name').notNull(),
   kind: budgetCategoryKind('kind').notNull(),
   /** Categorias do agregador (ex.: "Groceries") que caem aqui. */
@@ -230,6 +288,7 @@ export const commitments = pgTable(
   'commitments',
   {
     id: uuid('id').primaryKey().defaultRandom(),
+    userId: ownerId(),
     name: text('name').notNull(),
     amount: money('amount').notNull(),
     dayOfMonth: integer('day_of_month').notNull(),
@@ -240,14 +299,23 @@ export const commitments = pgTable(
     /** Total de parcelas, para financiamentos; as pagas são derivadas da data. */
     installmentsTotal: integer('installments_total'),
     notes: text('notes'),
+    /**
+     * Assinatura de onde veio ("Adicionar ao planejamento" na aba Assinaturas):
+     * a mesma `recurrenceKey` das preferências. Liga os dois mesmo se renomear.
+     */
+    subscriptionKey: text('subscription_key'),
     ...timestamps,
   },
-  (t) => [index('commitments_category_id_idx').on(t.categoryId)],
+  (t) => [
+    index('commitments_user_id_idx').on(t.userId),
+    index('commitments_category_id_idx').on(t.categoryId),
+  ],
 );
 
 /** Meta de economia (ex.: entrada do carro). */
 export const goals = pgTable('goals', {
   id: uuid('id').primaryKey().defaultRandom(),
+  userId: ownerId(),
   name: text('name').notNull(),
   target: money('target').notNull(),
   saved: money('saved').notNull().default(0),
@@ -257,6 +325,7 @@ export const goals = pgTable('goals', {
   ...timestamps,
 });
 
+export type UserRow = typeof users.$inferSelect;
 export type ConnectionRow = typeof connections.$inferSelect;
 export type AccountRow = typeof accounts.$inferSelect;
 export type TransactionRow = typeof transactions.$inferSelect;
@@ -291,6 +360,7 @@ export const analysisReports = pgTable(
   'analysis_reports',
   {
     id: uuid('id').primaryKey().defaultRandom(),
+    userId: ownerId(),
     generatedAt: timestamp('generated_at', { withTimezone: true }).notNull().defaultNow(),
     source: analysisSource('source').notNull(),
     model: text('model'),
@@ -298,7 +368,7 @@ export const analysisReports = pgTable(
     periodTo: date('period_to', { mode: 'string' }).notNull(),
     report: jsonb('report').notNull(),
   },
-  (t) => [index('analysis_reports_generated_at_idx').on(t.generatedAt)],
+  (t) => [index('analysis_reports_user_id_generated_at_idx').on(t.userId, t.generatedAt)],
 );
 
 export type AnalysisReportRow = typeof analysisReports.$inferSelect;
@@ -319,12 +389,13 @@ export interface AnalysisRunUsage {
 
 /**
  * Execuções do botão "Gerar análise" (API da Anthropic). O índice único
- * parcial garante no banco que só existe uma RUNNING por vez.
+ * parcial garante no banco que cada usuário tem no máximo uma RUNNING.
  */
 export const analysisRuns = pgTable(
   'analysis_runs',
   {
     id: uuid('id').primaryKey().defaultRandom(),
+    userId: ownerId(),
     status: analysisRunStatus('status').notNull(),
     startedAt: timestamp('started_at', { withTimezone: true }).notNull().defaultNow(),
     finishedAt: timestamp('finished_at', { withTimezone: true }),
@@ -335,9 +406,9 @@ export const analysisRuns = pgTable(
     usage: jsonb('usage').$type<AnalysisRunUsage>(),
   },
   (t) => [
-    index('analysis_runs_started_at_idx').on(t.startedAt),
+    index('analysis_runs_user_id_started_at_idx').on(t.userId, t.startedAt),
     uniqueIndex('analysis_runs_single_running_key')
-      .on(t.status)
+      .on(t.userId)
       .where(sql`${t.status} = 'RUNNING'`),
   ],
 );
@@ -347,37 +418,76 @@ export type AnalysisRunStatus = (typeof ANALYSIS_RUN_STATUSES)[number];
 
 // ----------------------------------------------------------- configurações
 
-/** Credenciais da Pluggy (tela Configurações). Uma linha só: o app tem um dono. */
-export const pluggySettings = pgTable(
-  'pluggy_settings',
-  {
-    id: integer('id').primaryKey().default(1),
-    /** `sub` do Keycloak de quem salvou. */
-    userId: text('user_id').notNull(),
-    clientId: text('client_id').notNull(),
-    /** Cifrado com SETTINGS_ENCRYPTION_KEY (`common/secret-box.ts`). */
-    clientSecret: text('client_secret').notNull(),
-    itemIds: jsonb('item_ids').$type<string[]>().notNull(),
-    ...timestamps,
-  },
-  (t) => [check('pluggy_settings_singleton', sql`${t.id} = 1`)],
-);
+/** Credenciais da Pluggy de cada usuário (tela Configurações). */
+export const pluggySettings = pgTable('pluggy_settings', {
+  userId: uuid('user_id')
+    .primaryKey()
+    .references(() => users.id, { onDelete: 'cascade' }),
+  clientId: text('client_id').notNull(),
+  /** Cifrado com SETTINGS_ENCRYPTION_KEY (`common/secret-box.ts`). */
+  clientSecret: text('client_secret').notNull(),
+  itemIds: jsonb('item_ids').$type<string[]>().notNull(),
+  ...timestamps,
+});
 
 export type PluggySettingsRow = typeof pluggySettings.$inferSelect;
 
-/** Chave e modelo da Anthropic para a análise pelo app. Sem linha = desligada. */
-export const anthropicSettings = pgTable(
-  'anthropic_settings',
-  {
-    id: integer('id').primaryKey().default(1),
-    /** `sub` do Keycloak de quem salvou. */
-    userId: text('user_id').notNull(),
-    /** Cifrada com SETTINGS_ENCRYPTION_KEY (`common/secret-box.ts`). */
-    apiKey: text('api_key').notNull(),
-    model: text('model').notNull(),
-    ...timestamps,
-  },
-  (t) => [check('anthropic_settings_singleton', sql`${t.id} = 1`)],
-);
+/** Chave e modelo da Anthropic de cada usuário. Sem linha = análise pelo app desligada. */
+export const anthropicSettings = pgTable('anthropic_settings', {
+  userId: uuid('user_id')
+    .primaryKey()
+    .references(() => users.id, { onDelete: 'cascade' }),
+  /** Cifrada com SETTINGS_ENCRYPTION_KEY (`common/secret-box.ts`). */
+  apiKey: text('api_key').notNull(),
+  model: text('model').notNull(),
+  ...timestamps,
+});
 
 export type AnthropicSettingsRow = typeof anthropicSettings.$inferSelect;
+
+/**
+ * Token pessoal do MCP (Claude Code/Desktop sem OAuth), um por usuário. Só o
+ * sha256 fica no banco; o token aparece uma vez, quando é gerado.
+ */
+export const mcpTokens = pgTable('mcp_tokens', {
+  userId: uuid('user_id')
+    .primaryKey()
+    .references(() => users.id, { onDelete: 'cascade' }),
+  tokenHash: text('token_hash').notNull().unique(),
+  /** Últimos caracteres, para o usuário reconhecer o token na tela. */
+  hint: text('hint').notNull(),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  lastUsedAt: timestamp('last_used_at', { withTimezone: true }),
+});
+
+export type McpTokenRow = typeof mcpTokens.$inferSelect;
+
+// ---------------------------------------------------------------- assinaturas
+
+/** `SUBSCRIPTION` = o usuário diz que é assinatura; `IGNORED` = "não é assinatura". */
+export const SUBSCRIPTION_PREFERENCE_KINDS = ['SUBSCRIPTION', 'IGNORED'] as const;
+export const subscriptionPreferenceKind = pgEnum(
+  'subscription_preference_kind',
+  SUBSCRIPTION_PREFERENCE_KINDS,
+);
+
+/**
+ * Ajustes do usuário sobre as cobranças recorrentes detectadas, pela chave de
+ * `recurrenceKey` (a mesma em todas as sincronizações). Linha sem `kind` e sem
+ * `name` não existe: volta ao automático.
+ */
+export const subscriptionPreferences = pgTable(
+  'subscription_preferences',
+  {
+    userId: ownerId(),
+    key: text('key').notNull(),
+    kind: subscriptionPreferenceKind('kind'),
+    /** Nome escolhido; sem ele, vale a descrição do extrato. */
+    name: text('name'),
+    ...timestamps,
+  },
+  (t) => [primaryKey({ columns: [t.userId, t.key] })],
+);
+
+export type SubscriptionPreferenceRow = typeof subscriptionPreferences.$inferSelect;
+export type SubscriptionPreferenceKind = (typeof SUBSCRIPTION_PREFERENCE_KINDS)[number];

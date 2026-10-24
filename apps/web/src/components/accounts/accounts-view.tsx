@@ -1,4 +1,5 @@
-import { ExternalLink, Landmark } from "lucide-react"
+import { ExternalLink, Landmark, Settings } from "lucide-react"
+import Link from "next/link"
 import type { Loan } from "@/lib/api/loans"
 import type { Account, Connection, Invoice, IsoDate, IsoDateTime, SyncRun } from "@/lib/api/types"
 import { findActiveRun } from "@/components/shell/sync-status"
@@ -83,11 +84,17 @@ export function AccountsView({
               <h2>Nenhum banco conectado</h2>
             </EmptyTitle>
             <EmptyDescription>
-              Conecte seus bancos no Meu Pluggy e depois use “Sincronizar agora” para trazer contas, saldos e
-              faturas para cá.
+              Conecte seus bancos no Meu Pluggy, cadastre a sua Pluggy em Configurações e depois use “Sincronizar
+              agora” para trazer contas, saldos e faturas para cá.
             </EmptyDescription>
           </EmptyHeader>
-          <EmptyContent>
+          <EmptyContent className="flex-row flex-wrap justify-center">
+            <Button size="sm" asChild>
+              <Link href="/configuracoes">
+                <Settings aria-hidden />
+                Abrir Configurações
+              </Link>
+            </Button>
             <Button variant="outline" size="sm" asChild>
               <a href={MEU_PLUGGY_URL} target="_blank" rel="noopener noreferrer">
                 <ExternalLink aria-hidden />

@@ -7,7 +7,7 @@ import {
   ProviderNotConfiguredError,
   type FinanceProviderSource,
 } from '../src/integrations/finance-provider.js';
-import { createTestApp, resetDatabase, TEST_USER } from './app.js';
+import { createTestApp, OTHER_USER, resetDatabase, TEST_USER_HEADER, userIdOf } from './app.js';
 import { InMemoryProvider } from './in-memory-provider.js';
 
 const PLUGGY_URL = 'http://pluggy.test';
@@ -104,9 +104,9 @@ describe('Configurações da Pluggy (e2e)', () => {
 
     const sync = await request(app.getHttpServer()).post('/api/sync').expect(412);
     expect(sync.body.message).toContain('Configurações');
-    await expect(app.get<FinanceProviderSource>(FINANCE_PROVIDER_SOURCE).get()).rejects.toThrow(
-      ProviderNotConfiguredError,
-    );
+    await expect(
+      app.get<FinanceProviderSource>(FINANCE_PROVIDER_SOURCE).get(await userIdOf(app)),
+    ).rejects.toThrow(ProviderNotConfiguredError);
   });
 
   it('salva cifrado, sem devolver o segredo, e o provedor passa a usar', async () => {
@@ -127,11 +127,13 @@ describe('Configurações da Pluggy (e2e)', () => {
       sql`select user_id, client_secret from pluggy_settings`,
     );
     expect(rows).toHaveLength(1);
-    expect(rows[0]!.user_id).toBe(TEST_USER.id);
+    expect(rows[0]!.user_id).toBe(await userIdOf(app));
     expect(rows[0]!.client_secret).toMatch(/^v1:/);
     expect(rows[0]!.client_secret).not.toContain(SECRET);
 
-    const provider = await app.get<FinanceProviderSource>(FINANCE_PROVIDER_SOURCE).get();
+    const provider = await app
+      .get<FinanceProviderSource>(FINANCE_PROVIDER_SOURCE)
+      .get(await userIdOf(app));
     expect(provider.name).toBe('pluggy');
   });
 
@@ -168,6 +170,28 @@ describe('Configurações da Pluggy (e2e)', () => {
   it('valida o formato do corpo', async () => {
     await save({ clientId: CLIENT_ID, clientSecret: SECRET, itemIds: [] }).expect(400);
     await save({ clientId: CLIENT_ID, clientSecret: SECRET, itemIds: ['nao-e-uuid'] }).expect(400);
+  });
+
+  it('cada usuário tem a sua: a de um não aparece nem vale para o outro', async () => {
+    await save({ clientId: CLIENT_ID, clientSecret: SECRET, itemIds: [ITEM] }).expect(200);
+    const asOther = () => request(app.getHttpServer());
+
+    const other = await asOther()
+      .get('/api/settings/pluggy')
+      .set(TEST_USER_HEADER, OTHER_USER.sub)
+      .expect(200);
+    expect(other.body).toMatchObject({ configured: false, clientId: null, itemIds: [] });
+    await asOther().post('/api/sync').set(TEST_USER_HEADER, OTHER_USER.sub).expect(412);
+    // Sem Client Secret salvo para ele, não herda o do outro.
+    const res = await asOther()
+      .put('/api/settings/pluggy')
+      .set(TEST_USER_HEADER, OTHER_USER.sub)
+      .send({ clientId: CLIENT_ID, itemIds: [OTHER_ITEM] })
+      .expect(400);
+    expect(res.body.message).toBe('Informe o Client Secret');
+
+    const source = app.get<FinanceProviderSource>(FINANCE_PROVIDER_SOURCE);
+    expect(await source.configuredUserIds()).toEqual([await userIdOf(app)]);
   });
 });
 
@@ -213,7 +237,7 @@ describe('Configurações da Anthropic (e2e)', () => {
     const { rows } = await db.execute<{ user_id: string; api_key: string }>(
       sql`select user_id, api_key from anthropic_settings`,
     );
-    expect(rows[0]!.user_id).toBe(TEST_USER.id);
+    expect(rows[0]!.user_id).toBe(await userIdOf(app));
     expect(rows[0]!.api_key).toMatch(/^v1:/);
     expect(rows[0]!.api_key).not.toContain(API_KEY);
 
@@ -244,5 +268,20 @@ describe('Configurações da Anthropic (e2e)', () => {
     await http().delete('/api/settings/anthropic').expect(204);
     expect(await status()).toEqual({ enabled: false, model: null });
     await http().post('/api/analysis/runs').expect(503);
+  });
+
+  it('cada usuário tem a sua chave: a de um não liga a análise do outro', async () => {
+    await save({ apiKey: API_KEY, model: 'claude-opus-5-5' }).expect(200);
+    const other = await http()
+      .get('/api/analysis/status')
+      .set(TEST_USER_HEADER, OTHER_USER.sub)
+      .expect(200);
+    expect(other.body.app).toEqual({ enabled: false, model: null });
+    await http().post('/api/analysis/runs').set(TEST_USER_HEADER, OTHER_USER.sub).expect(503);
+    await http()
+      .delete('/api/settings/anthropic')
+      .set(TEST_USER_HEADER, OTHER_USER.sub)
+      .expect(204);
+    expect(await status()).toEqual({ enabled: true, model: 'claude-opus-5-5' });
   });
 });

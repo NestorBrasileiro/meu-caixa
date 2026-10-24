@@ -1,8 +1,9 @@
 import type { AnalysisStatus, ShownAnalysis } from "@/lib/api/analysis"
 import { EXPORT_FORMATS, EXPORT_MAX_MONTHS, EXPORT_SECTIONS, type ExportOptions } from "@/lib/api/export"
 import type { Loan } from "@/lib/api/loans"
-import type { PlanningOverview } from "@/lib/api/planning"
-import type { AnthropicSettings, PluggySettings } from "@/lib/api/settings"
+import type { BudgetCategory, PlanningOverview } from "@/lib/api/planning"
+import type { AnthropicSettings, McpTokenStatus, PluggySettings } from "@/lib/api/settings"
+import type { SubscriptionsOverview } from "@/lib/api/subscriptions"
 import type {
   Account,
   AuthUser,
@@ -18,7 +19,8 @@ import type {
 import { buildAnalysis } from "@/lib/mock/analysis"
 import { MOCK_NOW, MOCK_TODAY, mockDataset } from "@/lib/mock/generator"
 import { buildLoans } from "@/lib/mock/loans"
-import { buildPlanning } from "@/lib/mock/planning"
+import { BUDGET_CATEGORIES, buildPlanning } from "@/lib/mock/planning"
+import { buildSubscriptions } from "@/lib/mock/subscriptions"
 
 /**
  * Fonte mocada (DATA_SOURCE=mock): mesmos contratos da API, com o dataset
@@ -38,7 +40,8 @@ export async function getNow(): Promise<IsoDateTime> {
 
 export async function getCurrentUser(): Promise<AuthUser> {
   return {
-    id: "user-1",
+    id: "00000000-0000-4000-8000-000000000001",
+    keycloakId: "user-1",
     username: "nestor",
     name: "Nestor Brasileiro",
     email: "nestor@example.com",
@@ -88,6 +91,14 @@ export async function getSyncRuns(): Promise<SyncRun[]> {
 
 export async function getPlanning(): Promise<PlanningOverview> {
   return buildPlanning(mockDataset())
+}
+
+export async function getBudgetCategories(): Promise<BudgetCategory[]> {
+  return BUDGET_CATEGORIES
+}
+
+export async function getSubscriptions(): Promise<SubscriptionsOverview> {
+  return buildSubscriptions(mockDataset())
 }
 
 /** Relatório ilustrativo, montado com o dataset fictício: as telas o mostram como exemplo. */
@@ -141,4 +152,9 @@ export async function getExportOptions(): Promise<ExportOptions> {
     defaultPeriod: { from: "2026-08-01", to: MOCK_TODAY },
     maxMonths: EXPORT_MAX_MONTHS,
   }
+}
+
+/** Sem API não há servidor MCP: nenhum token. */
+export async function getMcpToken(): Promise<McpTokenStatus> {
+  return { exists: false, hint: null, createdAt: null, lastUsedAt: null }
 }

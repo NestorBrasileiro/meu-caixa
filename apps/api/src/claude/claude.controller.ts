@@ -22,6 +22,7 @@ import {
   MinLength,
   ValidateNested,
 } from 'class-validator';
+import { CurrentUser } from '../auth/current-user.decorator.js';
 import {
   type AnalysisRunDto,
   AnalysisRunInProgressError,
@@ -75,17 +76,20 @@ export class ClaudeController {
   ) {}
 
   @Get('status')
-  async status(): Promise<AnalysisStatus> {
-    const [app, latestRun] = await Promise.all([this.runs.status(), this.runs.latest()]);
+  async status(@CurrentUser() userId: string): Promise<AnalysisStatus> {
+    const [app, latestRun] = await Promise.all([
+      this.runs.status(userId),
+      this.runs.latest(userId),
+    ]);
     return { app, latestRun };
   }
 
   /** Começa a gerar uma análise em background; acompanhe em `GET /analysis/runs/:id`. */
   @Post('runs')
   @HttpCode(HttpStatus.ACCEPTED)
-  async start(): Promise<AnalysisRunDto> {
+  async start(@CurrentUser() userId: string): Promise<AnalysisRunDto> {
     try {
-      const { run } = await this.runs.start();
+      const { run } = await this.runs.start(userId);
       return run;
     } catch (error) {
       throw toHttpError(error);
@@ -93,17 +97,17 @@ export class ClaudeController {
   }
 
   @Get('runs/:id')
-  async run(@Param('id') id: string): Promise<AnalysisRunDto> {
-    const run = UUID.test(id) ? await this.runs.get(id) : null;
+  async run(@CurrentUser() userId: string, @Param('id') id: string): Promise<AnalysisRunDto> {
+    const run = UUID.test(id) ? await this.runs.get(userId, id) : null;
     if (!run) throw new NotFoundException('Execução de análise não encontrada');
     return run;
   }
 
   @Post('ask')
   @HttpCode(HttpStatus.OK)
-  async ask(@Body() body: AskDto): Promise<AskAnswer> {
+  async ask(@CurrentUser() userId: string, @Body() body: AskDto): Promise<AskAnswer> {
     try {
-      return await this.asker.ask(body.question, body.history ?? []);
+      return await this.asker.ask(userId, body.question, body.history ?? []);
     } catch (error) {
       throw toHttpError(error);
     }

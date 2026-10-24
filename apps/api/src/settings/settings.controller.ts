@@ -5,13 +5,14 @@ import {
   Get,
   HttpCode,
   HttpStatus,
+  Post,
   PreconditionFailedException,
   Put,
-  Req,
 } from '@nestjs/common';
-import type { Request } from 'express';
+import { CurrentUser } from '../auth/current-user.decorator.js';
 import { ClaudeDisabledError } from '../claude/claude-disabled.error.js';
 import { ProviderNotConfiguredError } from '../integrations/finance-provider.js';
+import { McpTokenStore, type McpTokenView } from '../mcp/mcp-token.store.js';
 import {
   AnthropicSettingsService,
   type AnthropicSettingsView,
@@ -24,37 +25,38 @@ export class SettingsController {
   constructor(
     private readonly settings: SettingsService,
     private readonly anthropic: AnthropicSettingsService,
+    private readonly mcpTokens: McpTokenStore,
   ) {}
 
   @Get('pluggy')
-  pluggy(): Promise<PluggySettingsView> {
-    return this.settings.pluggy();
+  pluggy(@CurrentUser() userId: string): Promise<PluggySettingsView> {
+    return this.settings.pluggy(userId);
   }
 
   @Put('pluggy')
   async savePluggy(
-    @Req() req: Request,
+    @CurrentUser() userId: string,
     @Body() dto: UpdatePluggySettingsDto,
   ): Promise<PluggySettingsView> {
     try {
-      return await this.settings.savePluggy(req.user!.id, dto);
+      return await this.settings.savePluggy(userId, dto);
     } catch (error) {
       throw missingKey(error);
     }
   }
 
   @Get('anthropic')
-  anthropicSettings(): Promise<AnthropicSettingsView> {
-    return this.anthropic.view();
+  anthropicSettings(@CurrentUser() userId: string): Promise<AnthropicSettingsView> {
+    return this.anthropic.view(userId);
   }
 
   @Put('anthropic')
   async saveAnthropic(
-    @Req() req: Request,
+    @CurrentUser() userId: string,
     @Body() dto: UpdateAnthropicSettingsDto,
   ): Promise<AnthropicSettingsView> {
     try {
-      return await this.anthropic.save(req.user!.id, dto);
+      return await this.anthropic.save(userId, dto);
     } catch (error) {
       throw missingKey(error);
     }
@@ -62,8 +64,26 @@ export class SettingsController {
 
   @Delete('anthropic')
   @HttpCode(HttpStatus.NO_CONTENT)
-  removeAnthropic(): Promise<void> {
-    return this.anthropic.remove();
+  removeAnthropic(@CurrentUser() userId: string): Promise<void> {
+    return this.anthropic.remove(userId);
+  }
+
+  /** Se há token pessoal do MCP (nunca o token em si). */
+  @Get('mcp-token')
+  mcpToken(@CurrentUser() userId: string): Promise<McpTokenView> {
+    return this.mcpTokens.view(userId);
+  }
+
+  /** Gera um token novo, que substitui o anterior. É a única vez que ele aparece. */
+  @Post('mcp-token')
+  async issueMcpToken(@CurrentUser() userId: string): Promise<{ token: string }> {
+    return { token: await this.mcpTokens.issue(userId) };
+  }
+
+  @Delete('mcp-token')
+  @HttpCode(HttpStatus.NO_CONTENT)
+  revokeMcpToken(@CurrentUser() userId: string): Promise<void> {
+    return this.mcpTokens.revoke(userId);
   }
 }
 

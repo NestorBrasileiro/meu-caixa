@@ -31,8 +31,8 @@ export class ExportService {
     return this.data.today();
   }
 
-  async export(request: ExportRequest): Promise<ExportFile> {
-    const report = await this.data.build(request);
+  async export(userId: string, request: ExportRequest): Promise<ExportFile> {
+    const report = await this.data.build(userId, request);
     const format = FORMATS[request.format];
     return {
       fileName: exportFileName(report.period, format.extension),

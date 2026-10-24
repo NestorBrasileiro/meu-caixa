@@ -8,7 +8,7 @@ import { SECTION_IDS } from '../src/export/export.catalog.js';
 import type { LoanDto } from '../src/loans/loan.dto.js';
 import { LoansService } from '../src/loans/loans.service.js';
 import { SyncService } from '../src/sync/sync.service.js';
-import { createTestApp, resetDatabase } from './app.js';
+import { createTestApp, OTHER_USER, resetDatabase, TEST_USER_HEADER, userIdOf } from './app.js';
 import { FakeKeycloak } from './fake-keycloak.js';
 import { InMemoryProvider } from './in-memory-provider.js';
 
@@ -141,7 +141,7 @@ describe('Exportação (e2e)', () => {
     app = await createTestApp(provider);
     await resetDatabase(app);
     seed(provider);
-    await app.get(SyncService).run('MANUAL');
+    await app.get(SyncService).run(await userIdOf(app), 'MANUAL');
     await request(app.getHttpServer())
       .post('/api/planning/commitments')
       .send({
@@ -221,6 +221,29 @@ describe('Exportação (e2e)', () => {
     expect(md).toContain('Nenhuma análise do Claude salva ainda');
     // Fora do período.
     expect(md).not.toContain('Compra antiga');
+  });
+
+  it('a exportação de outro usuário não traz nada de quem sincronizou', async () => {
+    const md = (
+      (
+        await http()
+          .get('/api/export')
+          .set(TEST_USER_HEADER, OTHER_USER.sub)
+          .query({ format: 'md' })
+          .buffer(true)
+          .parse(binary)
+          .expect(200)
+      ).body as Buffer
+    ).toString('utf8');
+    expect(md).toContain('# Meu Caixa');
+    for (const own of [
+      'R$ 5.432,10',
+      'Mercado São Jorge',
+      'Geladeira Nova',
+      'Parcela do terreno',
+    ]) {
+      expect(md).not.toContain(own);
+    }
   });
 
   it('sem empréstimos, explica que o banco pode não compartilhar', async () => {

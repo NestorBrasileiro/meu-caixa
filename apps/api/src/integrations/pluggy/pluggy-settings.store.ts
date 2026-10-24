@@ -7,15 +7,13 @@ import { DATABASE, type Database } from '../../database/database.module.js';
 import { pluggySettings, type PluggySettingsRow } from '../../database/schema.js';
 import { ProviderNotConfiguredError } from '../finance-provider.js';
 
-const SINGLETON_ID = 1;
-
 export interface PluggyCredentials {
   clientId: string;
   clientSecret: string;
   itemIds: string[];
 }
 
-/** Credenciais da Pluggy no banco, com o Client Secret cifrado. */
+/** Credenciais da Pluggy de cada usuário no banco, com o Client Secret cifrado. */
 @Injectable()
 export class PluggySettingsStore {
   constructor(
@@ -24,12 +22,18 @@ export class PluggySettingsStore {
   ) {}
 
   /** Linha como está no banco (segredo ainda cifrado). */
-  async find(): Promise<PluggySettingsRow | null> {
+  async find(userId: string): Promise<PluggySettingsRow | null> {
     const [row] = await this.db
       .select()
       .from(pluggySettings)
-      .where(eq(pluggySettings.id, SINGLETON_ID));
+      .where(eq(pluggySettings.userId, userId));
     return row ?? null;
+  }
+
+  /** Usuários com a Pluggy cadastrada (o agendador sincroniza só estes). */
+  async configuredUserIds(): Promise<string[]> {
+    const rows = await this.db.select({ userId: pluggySettings.userId }).from(pluggySettings);
+    return rows.map((row) => row.userId);
   }
 
   decrypt(row: PluggySettingsRow): PluggyCredentials {
@@ -47,15 +51,17 @@ export class PluggySettingsStore {
 
   async save(userId: string, credentials: PluggyCredentials): Promise<PluggySettingsRow> {
     const values = {
-      userId,
       clientId: credentials.clientId,
       clientSecret: encryptSecret(credentials.clientSecret, this.key()),
       itemIds: credentials.itemIds,
     };
     const [row] = await this.db
       .insert(pluggySettings)
-      .values({ id: SINGLETON_ID, ...values })
-      .onConflictDoUpdate({ target: pluggySettings.id, set: { ...values, updatedAt: new Date() } })
+      .values({ userId, ...values })
+      .onConflictDoUpdate({
+        target: pluggySettings.userId,
+        set: { ...values, updatedAt: new Date() },
+      })
       .returning();
     return row!;
   }

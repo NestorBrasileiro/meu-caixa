@@ -84,7 +84,12 @@ export class ExportDataService {
     return today(this.env.TIMEZONE);
   }
 
-  async build(request: ExportDataRequest, now: Date = new Date()): Promise<ExportReport> {
+  /** Relatório só com os dados de `userId`: cada fonte abaixo filtra pelo dono. */
+  async build(
+    userId: string,
+    request: ExportDataRequest,
+    now: Date = new Date(),
+  ): Promise<ExportReport> {
     const todayDate = today(this.env.TIMEZONE, now);
     const timezone = this.env.TIMEZONE;
     const period = { from: request.from, to: request.to };
@@ -95,15 +100,19 @@ export class ExportDataService {
       period.from,
       monthRange(shiftMonth(monthOf(period.to), 1 - RECURRENCE_WINDOW_MONTHS)).from,
     );
-    const loadAccounts = once(() => this.accounts.listAccounts());
-    const loadConnections = once(() => this.accounts.listConnections());
-    const loadInvoices = once(() => this.transactions.listInvoices({}));
-    const loadPlanning = once(() => this.planning.overview());
-    const loadLoans = once(() => this.loans.list());
-    const loadLastSync = once(() => this.lastSync());
+    const loadAccounts = once(() => this.accounts.listAccounts(userId));
+    const loadConnections = once(() => this.accounts.listConnections(userId));
+    const loadInvoices = once(() => this.transactions.listInvoices(userId, {}));
+    const loadPlanning = once(() => this.planning.overview(userId));
+    const loadLoans = once(() => this.loans.list(userId));
+    const loadLastSync = once(() => this.lastSync(userId));
     // Com recorrências, lê a janela maior uma vez e filtra o período em memória.
     const loadWindow = once(() =>
-      this.loadTransactions(wants('recorrencias') ? recurrenceFrom : period.from, period.to),
+      this.loadTransactions(
+        userId,
+        wants('recorrencias') ? recurrenceFrom : period.from,
+        period.to,
+      ),
     );
     const loadPeriod = once(async () =>
       (await loadWindow()).filter((tx) => tx.date >= period.from),
@@ -405,7 +414,7 @@ export class ExportDataService {
         ),
       }),
 
-      analise: () => this.analysis.latest(),
+      analise: () => this.analysis.latest(userId),
     };
 
     const data: Partial<ExportSectionData> = {};
@@ -427,8 +436,8 @@ export class ExportDataService {
   }
 
   /** Última sincronização registrada (qualquer status). */
-  private async lastSync(): Promise<LastSyncInfo | null> {
-    const [run] = await this.sync.listRuns(1);
+  private async lastSync(userId: string): Promise<LastSyncInfo | null> {
+    const [run] = await this.sync.listRuns(userId, 1);
     if (!run) return null;
     return {
       status: run.status,
@@ -440,7 +449,11 @@ export class ExportDataService {
   }
 
   /** Transações do período em ordem cronológica, lidas em páginas (keyset por data e id). */
-  private async loadTransactions(from: IsoDate, to: IsoDate): Promise<LoadedTransaction[]> {
+  private async loadTransactions(
+    userId: string,
+    from: IsoDate,
+    to: IsoDate,
+  ): Promise<LoadedTransaction[]> {
     const result: LoadedTransaction[] = [];
     let cursor: { date: IsoDate; id: string } | null = null;
     for (;;) {
@@ -467,6 +480,7 @@ export class ExportDataService {
         .innerJoin(connections, eq(accounts.connectionId, connections.id))
         .where(
           and(
+            eq(transactions.userId, userId),
             gte(transactions.date, from),
             lte(transactions.date, to),
             cursor

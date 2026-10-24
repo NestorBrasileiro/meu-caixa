@@ -128,6 +128,8 @@ describe('insights/aggregate', () => {
         tx(date, -55_90, 'Video streaming', {
           description: `STREAMING ${date.slice(5, 7)}/2026`,
           accountName: 'Cartão',
+          accountType: 'CREDIT_CARD',
+          paymentMethod: 'CARD',
         }),
     );
     // Delivery 3x por mês, valores variados.
@@ -181,6 +183,13 @@ describe('insights/aggregate', () => {
         label: 'STREAMING 10/2026',
         category: 'Video streaming',
         accounts: ['Cartão'],
+        account: 'Cartão',
+        priceChange: null,
+        fixedPrice: true,
+        intervalMonths: 1,
+        dayOfMonth: 1,
+        paymentMethod: 'CARD',
+        onCreditCard: true,
       });
       expect(byKey['delivery exemplo']).toMatchObject({
         pattern: 'HABITO_FREQUENTE',
@@ -197,6 +206,11 @@ describe('insights/aggregate', () => {
       expect(byKey['conta de luz']).toMatchObject({
         pattern: 'RECORRENTE_VARIAVEL',
         stableAmount: false,
+        lastAmount: 270_00,
+        priceChange: null,
+        fixedPrice: false,
+        paymentMethod: null,
+        onCreditCard: false,
       });
     });
 
@@ -216,6 +230,95 @@ describe('insights/aggregate', () => {
       );
       const [ride] = detectRecurrences(habit, { today, minMonths: 3 });
       expect(ride).toMatchObject({ occurrences: 9, estimatedMonthlyCost: 120_00, total: 270_00 });
+    });
+
+    it('reajuste grande continua assinatura, com o degrau de preço', () => {
+      const netflix = ['2026-06-05', '2026-07-05', '2026-08-05', '2026-09-05', '2026-10-05'].map(
+        (date, i) =>
+          tx(date, i < 4 ? -39_90 : -55_90, 'Video streaming', { description: 'Netflix' }),
+      );
+      const [result] = detectRecurrences(netflix, { today, minMonths: 2 });
+      expect(result).toMatchObject({
+        pattern: 'ASSINATURA_OU_CONTA_FIXA',
+        stableAmount: false,
+        fixedPrice: true,
+        priceChange: { from: 39_90, to: 55_90, on: '2026-10-05' },
+      });
+      // Só duas cobranças diferentes: não dá para saber se é reajuste.
+      const two = detectRecurrences(netflix.slice(3), { today, minMonths: 2 });
+      expect(two[0]).toMatchObject({ priceChange: null, pattern: 'RECORRENTE_VARIAVEL' });
+    });
+
+    it('intervalo entre cobranças: trimestral é 3', () => {
+      const quarterly = ['2026-01-10', '2026-04-10', '2026-07-10', '2026-10-10'].map((date) =>
+        tx(date, -300_00, 'Insurance', { description: 'Seguro' }),
+      );
+      const [result] = detectRecurrences(quarterly, { today: '2026-10-20', minMonths: 2 });
+      expect(result).toMatchObject({ intervalMonths: 3, pattern: 'ASSINATURA_OU_CONTA_FIXA' });
+    });
+
+    it('sem cadência reconhecível não é assinatura (duas compras a 10 meses, gás a cada 4)', () => {
+      const twice = ['2025-12-02', '2026-10-02'].map((date) =>
+        tx(date, -118_00, 'Restaurants', { description: 'Hamburgueria' }),
+      );
+      const gas = ['2026-02-16', '2026-06-16', '2026-10-16'].map((date) =>
+        tx(date, -128_00, null, { description: 'Gás' }),
+      );
+      // Mediana dos intervalos (5 e 1) dá 3, mas não é trimestral.
+      const irregular = ['2026-03-17', '2026-08-13', '2026-09-20'].map((date) =>
+        tx(date, -24_90, null, { description: 'Informática' }),
+      );
+      const result = detectRecurrences([...twice, ...gas, ...irregular], {
+        today: '2026-10-20',
+        minMonths: 2,
+      });
+      expect(result).toHaveLength(3);
+      for (const recurrence of result) {
+        expect(recurrence).toMatchObject({ intervalMonths: null, pattern: 'RECORRENTE_VARIAVEL' });
+      }
+      // Mensal com um mês pulado continua mensal.
+      const skipped = ['2026-06-05', '2026-07-05', '2026-09-05', '2026-10-05'].map((date) =>
+        tx(date, -20_00, null, { description: 'App' }),
+      );
+      expect(detectRecurrences(skipped, { today, minMonths: 2 })[0]!.intervalMonths).toBe(1);
+    });
+
+    it('dia de cobrança 31 não vira 28 por causa de fevereiro', () => {
+      const monthly = ['2026-12-31', '2027-01-31', '2027-02-28'].map((date) =>
+        tx(date, -20_00, null, { description: 'Plano' }),
+      );
+      const [result] = detectRecurrences(monthly, { today: '2027-03-05', minMonths: 2 });
+      expect(result!.dayOfMonth).toBe(31);
+    });
+
+    it('conta e forma de pagamento vêm da cobrança mais recente', () => {
+      const moved = [
+        tx('2026-07-01', -30_00, null, {
+          description: 'App',
+          accountName: 'Cartão',
+          accountType: 'CREDIT_CARD',
+          paymentMethod: 'CARD',
+        }),
+        tx('2026-08-01', -30_00, null, {
+          description: 'App',
+          accountName: 'Cartão',
+          accountType: 'CREDIT_CARD',
+          paymentMethod: 'CARD',
+        }),
+        tx('2026-09-01', -30_00, null, {
+          description: 'App',
+          accountName: 'Conta',
+          accountType: 'CHECKING',
+          paymentMethod: 'PIX',
+        }),
+      ];
+      const [result] = detectRecurrences(moved, { today, minMonths: 2 });
+      expect(result).toMatchObject({
+        accounts: ['Cartão', 'Conta'],
+        account: 'Conta',
+        onCreditCard: false,
+        paymentMethod: 'PIX',
+      });
     });
 
     it('respeita o mínimo de meses distintos', () => {

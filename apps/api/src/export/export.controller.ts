@@ -1,5 +1,6 @@
 import { BadRequestException, Controller, Get, Query, Res, StreamableFile } from '@nestjs/common';
 import type { Response } from 'express';
+import { CurrentUser } from '../auth/current-user.decorator.js';
 import {
   EXPORT_FORMATS,
   FORMATS,
@@ -34,6 +35,7 @@ export class ExportController {
    */
   @Get()
   async download(
+    @CurrentUser() userId: string,
     @Query() query: Record<string, unknown>,
     @Res({ passthrough: true }) res: Response,
   ): Promise<StreamableFile> {
@@ -44,7 +46,7 @@ export class ExportController {
       if (error instanceof ExportQueryError) throw new BadRequestException(error.message);
       throw error;
     }
-    const file = await this.exports.export(request);
+    const file = await this.exports.export(userId, request);
     res.setHeader('Cache-Control', 'no-store');
     return new StreamableFile(file.body, {
       type: file.contentType,

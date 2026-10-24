@@ -4,7 +4,7 @@ import { addDays, today } from '../src/domain/dates.js';
 import type { Transaction } from '../src/domain/finance.js';
 import { dueDate, monthOf, monthRange, shiftMonth } from '../src/domain/months.js';
 import { SyncService } from '../src/sync/sync.service.js';
-import { createTestApp, resetDatabase } from './app.js';
+import { createTestApp, resetDatabase, userIdOf } from './app.js';
 import { InMemoryProvider } from './in-memory-provider.js';
 
 const TODAY = today('America/Sao_Paulo');
@@ -313,7 +313,7 @@ describe('Planejamento (e2e)', () => {
   });
 
   it('projeta os próximos meses a partir dos meses fechados', async () => {
-    await app.get(SyncService).run('MANUAL');
+    await app.get(SyncService).run(await userIdOf(app), 'MANUAL');
     await http().post('/api/planning/commitments').send(terreno).expect(201);
     // Financiamento que acaba no 2º mês da projeção.
     await http()
@@ -373,7 +373,7 @@ describe('Planejamento (e2e)', () => {
 
   it('recategorização sobrevive à sincronização e pode ser desfeita', async () => {
     const sync = app.get(SyncService);
-    await sync.run('MANUAL');
+    await sync.run(await userIdOf(app), 'MANUAL');
     const month = CLOSED[2]!;
     const list = await http()
       .get('/api/transactions')
@@ -388,7 +388,7 @@ describe('Planejamento (e2e)', () => {
       .expect(200);
     expect(edited.body).toMatchObject({ category: 'Restaurants', originalCategory: 'Groceries' });
 
-    await sync.run('MANUAL');
+    await sync.run(await userIdOf(app), 'MANUAL');
     const afterSync = await http()
       .get('/api/transactions')
       .query({ search: `mercado-${month}` })

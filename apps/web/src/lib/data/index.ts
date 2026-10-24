@@ -29,6 +29,8 @@ export const getAllTransactions = source.getAllTransactions
 export const getInvoices = source.getInvoices
 export const getSyncRuns = source.getSyncRuns
 export const getPlanning = source.getPlanning
+export const getBudgetCategories = source.getBudgetCategories
+export const getSubscriptions = source.getSubscriptions
 /** Última análise; no modo mock, o relatório de exemplo (`sample: true`). */
 export const getAnalysis = source.getAnalysis
 export const getAnalysisStatus = source.getAnalysisStatus
@@ -38,3 +40,4 @@ export const getAnthropicSettings = source.getAnthropicSettings
 export const getLoans = source.getLoans
 /** Formatos, seções e período padrão da exportação; no modo mock, o catálogo do contrato. */
 export const getExportOptions = source.getExportOptions
+export const getMcpToken = source.getMcpToken

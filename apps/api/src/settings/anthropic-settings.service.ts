@@ -27,15 +27,15 @@ export class AnthropicSettingsService {
     @Inject(ENV) private readonly env: Env,
   ) {}
 
-  async view(): Promise<AnthropicSettingsView> {
-    return this.toView(await this.store.find());
+  async view(userId: string): Promise<AnthropicSettingsView> {
+    return this.toView(await this.store.find(userId));
   }
 
   /** Confere chave e modelo na Anthropic antes de gravar. */
   async save(userId: string, dto: UpdateAnthropicSettingsDto): Promise<AnthropicSettingsView> {
     this.store.assertCanEncrypt();
     const credentials: AnthropicCredentials = {
-      apiKey: dto.apiKey?.trim() || (await this.savedKey()),
+      apiKey: dto.apiKey?.trim() || (await this.savedKey(userId)),
       model: dto.model,
     };
     await this.verify(credentials);
@@ -43,12 +43,12 @@ export class AnthropicSettingsService {
   }
 
   /** Desliga a análise pelo app (a do MCP não depende disto). */
-  async remove(): Promise<void> {
-    await this.store.remove();
+  async remove(userId: string): Promise<void> {
+    await this.store.remove(userId);
   }
 
-  private async savedKey(): Promise<string> {
-    const current = await this.store.find();
+  private async savedKey(userId: string): Promise<string> {
+    const current = await this.store.find(userId);
     if (!current) throw new BadRequestException('Informe a chave da Anthropic');
     try {
       return this.store.decrypt(current).apiKey;

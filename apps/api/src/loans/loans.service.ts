@@ -17,11 +17,12 @@ export class LoansService {
   ) {}
 
   /** Do maior saldo devedor para o menor (sem saldo informado vão por último). */
-  async list(): Promise<LoanDto[]> {
+  async list(userId: string): Promise<LoanDto[]> {
     const rows = await this.db
       .select({ loan: loans, institutionName: connections.institutionName })
       .from(loans)
       .innerJoin(connections, eq(loans.connectionId, connections.id))
+      .where(eq(loans.userId, userId))
       .orderBy(
         sql`${loans.outstandingBalance} desc nulls last`,
         desc(loans.contractedAmount),

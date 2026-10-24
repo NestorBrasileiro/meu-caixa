@@ -5,7 +5,7 @@ import type { Request } from 'express';
 import { AppModule } from '../src/app.module.js';
 import { configureApp } from '../src/app.setup.js';
 import { AuthGuard } from '../src/auth/auth.guard.js';
-import type { AuthUser } from '../src/auth/auth.types.js';
+import type { KeycloakUser } from '../src/auth/auth.types.js';
 import {
   ANTHROPIC_SOURCE,
   staticAnthropicSource,
@@ -20,6 +20,7 @@ import {
   staticProviderSource,
   type FinanceProvider,
 } from '../src/integrations/finance-provider.js';
+import { UsersService } from '../src/users/users.service.js';
 
 /**
  * Variável própria (e não DATABASE_URL) porque os testes apagam as tabelas:
@@ -30,20 +31,47 @@ export const TEST_DATABASE_URL =
 
 export const FRONTEND_URL = 'http://frontend.test';
 
-export const TEST_USER: AuthUser = {
-  id: 'test-user',
+export const TEST_USER: KeycloakUser = {
+  sub: 'test-user',
   username: 'teste',
   name: 'Teste',
   email: 'teste@example.com',
   roles: ['owner'],
 };
 
-/** Substitui o login do Keycloak nos testes que não são sobre autenticação. */
+/** Outro usuário, para conferir que um não enxerga os dados do outro. */
+export const OTHER_USER: KeycloakUser = {
+  sub: 'other-user',
+  username: 'outra',
+  name: 'Outra Pessoa',
+  email: 'outra@example.com',
+  roles: ['owner'],
+};
+
+/** Header com o `sub` de quem está "logado" na requisição (padrão: `TEST_USER`). */
+export const TEST_USER_HEADER = 'x-test-user';
+const TEST_USERS = new Map([TEST_USER, OTHER_USER].map((user) => [user.sub, user]));
+
+/**
+ * Substitui o login do Keycloak nos testes que não são sobre autenticação.
+ * Resolve o usuário no banco como o guard de verdade.
+ */
 class AuthenticatedGuard implements CanActivate {
-  canActivate(context: ExecutionContext): boolean {
-    context.switchToHttp().getRequest<Request>().user = TEST_USER;
+  constructor(private readonly users: UsersService) {}
+
+  async canActivate(context: ExecutionContext): Promise<boolean> {
+    const request = context.switchToHttp().getRequest<Request>();
+    const sub = request.header(TEST_USER_HEADER);
+    const identity = sub ? TEST_USERS.get(sub) : TEST_USER;
+    if (!identity) throw new Error(`Usuário de teste desconhecido: ${sub}`);
+    request.user = await this.users.toAuthUser(identity);
     return true;
   }
+}
+
+/** Id no banco (`users.id`) de um usuário de teste, criando-o se preciso. */
+export function userIdOf(app: INestApplication, user: KeycloakUser = TEST_USER): Promise<string> {
+  return app.get(UsersService).resolve(user);
 }
 
 export interface TestAppOptions {
@@ -89,7 +117,10 @@ export async function createTestApp(
       .useValue(staticAnthropicSource({ client: options.anthropic, model: DEFAULT_CLAUDE_MODEL }));
   }
   if (!options.realAuth) {
-    builder = builder.overrideProvider(AuthGuard).useValue(new AuthenticatedGuard());
+    builder = builder.overrideProvider(AuthGuard).useFactory({
+      factory: (users: UsersService) => new AuthenticatedGuard(users),
+      inject: [UsersService],
+    });
   }
 
   const moduleRef = await builder.compile();
@@ -102,6 +133,6 @@ export async function createTestApp(
 export async function resetDatabase(app: INestApplication): Promise<void> {
   const db = app.get<Database>(DATABASE);
   await db.execute(
-    sql`truncate table sync_runs, loans, invoices, transactions, accounts, connections, sessions, commitments, goals, budget_categories, analysis_runs, analysis_reports, pluggy_settings, anthropic_settings cascade`,
+    sql`truncate table sync_runs, loans, invoices, transactions, accounts, connections, sessions, commitments, goals, budget_categories, analysis_runs, analysis_reports, pluggy_settings, anthropic_settings, mcp_tokens, subscription_preferences, users cascade`,
   );
 }

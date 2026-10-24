@@ -3,7 +3,7 @@ import * as oidc from 'openid-client';
 import { z } from 'zod';
 import { ENV } from '../config/config.module.js';
 import type { Env } from '../config/env.js';
-import type { AuthUser, PendingLogin, SessionTokens } from './auth.types.js';
+import type { KeycloakUser, PendingLogin, SessionTokens } from './auth.types.js';
 
 const SCOPE = 'openid profile email roles';
 
@@ -76,7 +76,7 @@ export class KeycloakClient {
   }
 
   /** `null` quando o token não está mais ativo (expirado, revogado, logout). */
-  async introspect(accessToken: string): Promise<AuthUser | null> {
+  async introspect(accessToken: string): Promise<KeycloakUser | null> {
     return (await this.introspectToken(accessToken))?.user ?? null;
   }
 
@@ -93,7 +93,7 @@ export class KeycloakClient {
     const clientRoles = claims.resource_access?.[this.env.KEYCLOAK_CLIENT_ID]?.roles ?? [];
     return {
       user: {
-        id: claims.sub,
+        sub: claims.sub,
         username: claims.preferred_username ?? null,
         name: claims.name ?? null,
         email: claims.email ?? null,
@@ -141,7 +141,7 @@ export class KeycloakClient {
 }
 
 export interface IntrospectedToken {
-  user: AuthUser;
+  user: KeycloakUser;
   /** Claim `aud`, sempre como lista. */
   audience: string[];
   /** Client que pediu o token (`azp`). */

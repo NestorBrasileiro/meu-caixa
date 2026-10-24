@@ -6,7 +6,7 @@ import { addDays, today } from '../src/domain/dates.js';
 import type { Loan } from '../src/domain/finance.js';
 import type { LoanDto } from '../src/loans/loan.dto.js';
 import { SyncService } from '../src/sync/sync.service.js';
-import { createTestApp, resetDatabase } from './app.js';
+import { createTestApp, OTHER_USER, resetDatabase, TEST_USER_HEADER, userIdOf } from './app.js';
 import { InMemoryProvider } from './in-memory-provider.js';
 
 const day = (offset: number) => addDays(today('America/Sao_Paulo'), offset);
@@ -110,7 +110,7 @@ describe('Empréstimos (e2e)', () => {
     (await http().get('/api/loans').expect(200)).body;
 
   it('sincroniza e expõe do maior saldo devedor para o menor', async () => {
-    const run = await sync.run('MANUAL');
+    const run = await sync.run(await userIdOf(app), 'MANUAL');
 
     expect(run).toMatchObject({ status: 'SUCCEEDED', stats: { connections: 2, loans: 4 } });
     const loans = await listLoans();
@@ -154,13 +154,27 @@ describe('Empréstimos (e2e)', () => {
     expect(loans[1]!.connectionId).toBe(bank.id);
   });
 
+  it('cada usuário vê só os próprios empréstimos (mesmos ids do banco para os dois)', async () => {
+    await sync.run(await userIdOf(app), 'MANUAL');
+    const other = await http().get('/api/loans').set(TEST_USER_HEADER, OTHER_USER.sub).expect(200);
+    expect(other.body).toEqual([]);
+
+    await sync.run(await userIdOf(app, OTHER_USER), 'MANUAL');
+    const mine = await listLoans();
+    const theirs = await http().get('/api/loans').set(TEST_USER_HEADER, OTHER_USER.sub).expect(200);
+    expect(mine).toHaveLength(4);
+    expect(theirs.body).toHaveLength(4);
+    const myIds = new Set(mine.map((loan) => loan.id));
+    expect(theirs.body.some((loan: LoanDto) => myIds.has(loan.id))).toBe(false);
+  });
+
   it('é idempotente e reflete mudanças', async () => {
-    await sync.run('MANUAL');
+    await sync.run(await userIdOf(app), 'MANUAL');
     const before = await listLoans();
 
     provider.loans[0]!.outstandingBalance = 7_800_00;
     provider.loans[0]!.installments = { total: 24, paid: 13, remaining: 11, overdue: 0 };
-    const second = await sync.run('MANUAL');
+    const second = await sync.run(await userIdOf(app), 'MANUAL');
 
     expect(second.stats).toMatchObject({ loans: 4 });
     const after = await listLoans();
@@ -173,12 +187,12 @@ describe('Empréstimos (e2e)', () => {
   });
 
   it('apaga os empréstimos que sumiram da conexão sincronizada', async () => {
-    await sync.run('MANUAL');
+    await sync.run(await userIdOf(app), 'MANUAL');
 
     // Quitado: some do banco. Na outra conexão não sobra nenhum.
     provider.loans = provider.loans.filter((l) => l.externalId !== 'veiculo');
     provider.loans = provider.loans.filter((l) => l.connectionExternalId !== 'item-2');
-    const run = await sync.run('MANUAL');
+    const run = await sync.run(await userIdOf(app), 'MANUAL');
 
     expect(run).toMatchObject({ status: 'SUCCEEDED', stats: { loans: 2 } });
     expect((await listLoans()).map((l) => l.productName)).toEqual([
@@ -188,11 +202,11 @@ describe('Empréstimos (e2e)', () => {
   });
 
   it('não falha nem apaga nada quando o banco não compartilha empréstimos', async () => {
-    await sync.run('MANUAL');
+    await sync.run(await userIdOf(app), 'MANUAL');
     provider.loansUnavailable.add('item-1');
     provider.loans = provider.loans.filter((l) => l.connectionExternalId !== 'item-1');
 
-    const run = await sync.run('MANUAL');
+    const run = await sync.run(await userIdOf(app), 'MANUAL');
 
     expect(run).toMatchObject({ status: 'SUCCEEDED', errors: [], stats: { loans: 1 } });
     expect(await listLoans()).toHaveLength(4);
@@ -202,7 +216,7 @@ describe('Empréstimos (e2e)', () => {
     provider.loansUnavailable.add('item-1');
     provider.loansUnavailable.add('item-2');
 
-    const run = await sync.run('MANUAL');
+    const run = await sync.run(await userIdOf(app), 'MANUAL');
 
     expect(run).toMatchObject({ status: 'SUCCEEDED', stats: { connections: 2, loans: 0 } });
     expect(await listLoans()).toEqual([]);
@@ -216,7 +230,7 @@ describe('Empréstimos (e2e)', () => {
     });
 
     try {
-      const run = await sync.run('MANUAL');
+      const run = await sync.run(await userIdOf(app), 'MANUAL');
 
       expect(run).toMatchObject({
         status: 'PARTIAL',
@@ -237,13 +251,17 @@ describe('Empréstimos (e2e)', () => {
       removedPendingTransactions: 0,
       invoices: 1,
     };
-    await app.get<Database>(DATABASE).insert(syncRuns).values({
-      provider: 'test',
-      trigger: 'SCHEDULED',
-      status: 'SUCCEEDED',
-      finishedAt: new Date(),
-      stats: legacyStats,
-    });
+    await app
+      .get<Database>(DATABASE)
+      .insert(syncRuns)
+      .values({
+        userId: await userIdOf(app),
+        provider: 'test',
+        trigger: 'SCHEDULED',
+        status: 'SUCCEEDED',
+        finishedAt: new Date(),
+        stats: legacyStats,
+      });
 
     const runs = await http().get('/api/sync/runs').expect(200);
     expect(runs.body).toEqual([expect.objectContaining({ stats: legacyStats })]);

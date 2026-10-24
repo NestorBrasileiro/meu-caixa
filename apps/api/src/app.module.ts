@@ -13,18 +13,22 @@ import { LoansModule } from './loans/loans.module.js';
 import { McpModule } from './mcp/mcp.module.js';
 import { PlanningModule } from './planning/planning.module.js';
 import { SettingsModule } from './settings/settings.module.js';
+import { SubscriptionsModule } from './subscriptions/subscriptions.module.js';
 import { SyncModule } from './sync/sync.module.js';
 import { TransactionsModule } from './transactions/transactions.module.js';
+import { UsersModule } from './users/users.module.js';
 
 @Module({
   imports: [
     ConfigModule,
     DatabaseModule,
+    UsersModule,
     AuthModule,
     IntegrationsModule,
     AccountsModule,
     TransactionsModule,
     PlanningModule,
+    SubscriptionsModule,
     SettingsModule,
     SyncModule,
     InsightsModule,

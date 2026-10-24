@@ -124,8 +124,7 @@ services:
       SETTINGS_ENCRYPTION_KEY: ${SETTINGS_ENCRYPTION_KEY:-}
       SYNC_ENABLED: ${SYNC_ENABLED:-true}
       SYNC_INTERVAL_HOURS: ${SYNC_INTERVAL_HOURS:-6}
-      # MCP (opcionais; vazias = recurso desligado). A chave da Anthropic fica no banco.
-      MCP_ACCESS_TOKEN: ${MCP_ACCESS_TOKEN:-}
+      # MCP (opcional). Chave da Anthropic e token do MCP ficam no banco, por usuário.
       MCP_ALLOWED_CLIENTS: ${MCP_ALLOWED_CLIENTS:-}
     networks: [backend, edge]
     depends_on:
