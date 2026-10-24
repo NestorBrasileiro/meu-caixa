@@ -7,3 +7,12 @@ onlyBuiltDependencies:
 ignoredBuiltDependencies:
   - sharp
   - unrs-resolver
+
+# Correções de segurança que o pai não entrega sozinho (ver chore/cve-deps).
+overrides:
+  # @nestjs/platform-express fixa "multer": "2.4.0" (inclusive no 12.2.0), então
+  # só um override alcança o 2.5.0 do GHSA-q7qp-rjg7-q26m / CVE-2026-113872.
+  multer: ^2.5.0
+  # @esbuild-kit/core-utils (abandonado, via drizzle-kit) fixa esbuild ~0.18.20,
+  # vulnerável no GHSA-67mh-4wv8-2f99. Escopado para não mexer no esbuild do vite.
+  "@esbuild-kit/core-utils>esbuild": ^0.25.0

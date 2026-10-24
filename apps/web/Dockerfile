@@ -12,7 +12,7 @@
 # Por isso o padrão é o endereço interno da rede do Docker Compose
 # (http://api:3000) nos dois. Se a API estiver em outro endereço, reconstrua a
 # imagem com --build-arg API_URL=... e defina a mesma API_URL no container.
-ARG NODE_IMAGE=node:24-alpine
+ARG NODE_IMAGE=node:24.22.1-alpine
 
 # ---------------------------------------------------------------------------
 FROM ${NODE_IMAGE} AS base
