@@ -1,0 +1,38 @@
+# O Droplet do banco: só o Postgres, escutando no IP privado da VPC (nada na
+# internet). O app roda no outro Droplet, com o docker-compose.external-db.yml.
+# Neste Droplet, o deploy/.env (a partir do .env.db.example) tem:
+#
+#   COMPOSE_FILE=docker-compose.db.yml
+#
+# e os comandos de sempre funcionam aqui: `docker compose up -d`, backup.sh.
+# Passo a passo em docs/deploy.md, "Banco num Droplet separado".
+name: meu-caixa-db
+
+services:
+  postgres:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?defina POSTGRES_PASSWORD no deploy/.env}
+      # Usado só pelo postgres/init.sh, na primeira subida (volume vazio).
+      APP_DB_PASSWORD: ${APP_DB_PASSWORD:?defina APP_DB_PASSWORD no deploy/.env}
+    ports:
+      # Só no IP privado: o firewall libera a 5432 apenas para o Droplet do app.
+      - '${DB_BIND_IP:?defina DB_BIND_IP (IP privado deste Droplet) no deploy/.env}:5432:5432'
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./postgres/init.sh:/docker-entrypoint-initdb.d/10-init.sh:ro
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -h 127.0.0.1 -U postgres -d meu_caixa']
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+    logging:
+      driver: json-file
+      options:
+        max-size: 10m
+        max-file: '3'
+
+volumes:
+  pgdata:

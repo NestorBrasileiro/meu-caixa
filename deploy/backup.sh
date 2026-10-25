@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # Backup dos bancos do deploy/docker-compose.yml: meu_caixa e, se o Keycloak
-# roda no próprio Droplet, keycloak.
+# roda no próprio Droplet, keycloak. Com o Postgres em outro Droplet
+# (docker-compose.external-db.yml), copia o meu_caixa de lá pela rede privada.
 #
 #   deploy/backup.sh
 #
@@ -58,16 +59,33 @@ stamp=$(date -u +%Y%m%dT%H%M%SZ)
 created=()
 
 databases=(meu_caixa)
-# Com o Keycloak externo, não existe banco keycloak aqui.
-if [[ $(compose exec -T postgres psql -U postgres -tAc "SELECT 1 FROM pg_database WHERE datname = 'keycloak'") == 1 ]]; then
-  databases+=(keycloak)
+if compose config --services | grep -qx postgres; then
+  dump() { compose exec -T postgres pg_dump -U postgres --clean --if-exists "$1"; }
+  # Com o Keycloak externo, não existe banco keycloak aqui.
+  if [[ $(compose exec -T postgres psql -U postgres -tAc "SELECT 1 FROM pg_database WHERE datname = 'keycloak'") == 1 ]]; then
+    databases+=(keycloak)
+  fi
+else
+  # Postgres em outro Droplet: pg_dump numa imagem descartável, com o usuário
+  # da aplicação. A URL vai por variável de ambiente (fora da lista de processos).
+  DATABASE_URL=$(env_get DATABASE_URL)
+  DATABASE_HOST=$(env_get DATABASE_HOST)
+  if [[ -z $DATABASE_URL && -z $DATABASE_HOST ]]; then
+    echo "backup: sem serviço postgres aqui e sem DATABASE_HOST/DATABASE_URL no $ENV_FILE" >&2
+    exit 1
+  fi
+  export DATABASE_URL=${DATABASE_URL:-postgres://meu_caixa:$(env_get APP_DB_PASSWORD)@$DATABASE_HOST:5432/meu_caixa}
+  dump() {
+    docker run --rm -e DATABASE_URL postgres:17-alpine \
+      sh -c 'exec pg_dump --clean --if-exists "$DATABASE_URL"'
+  }
 fi
 
 for db in "${databases[@]}"; do
   file="$BACKUP_DIR/meu-caixa-${db}-${stamp}.sql.gz"
   tmp="$file.partial"
   # pipefail: se o pg_dump falhar, o arquivo parcial não vira backup.
-  if compose exec -T postgres pg_dump -U postgres --clean --if-exists "$db" | gzip -9 > "$tmp"; then
+  if dump "$db" | gzip -9 > "$tmp"; then
     mv "$tmp" "$file"
     created+=("$file")
     echo "backup: $file ($(du -h "$file" | cut -f1))"

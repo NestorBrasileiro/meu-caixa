@@ -6,8 +6,9 @@
 #
 # Só o Caddy publica portas na internet (80/443). Postgres, API e interface
 # ficam nas redes internas do Docker. O login é um Keycloak que já existe
-# (KEYCLOAK_URL); para rodar um Keycloak aqui mesmo, some o
-# docker-compose.keycloak.yml (COMPOSE_FILE no .env).
+# (KEYCLOAK_URL). Pelo COMPOSE_FILE do .env dá para somar o
+# docker-compose.keycloak.yml (Keycloak aqui mesmo) ou o
+# docker-compose.external-db.yml (Postgres em outro Droplet).
 name: meu-caixa
 
 # Imagens: as publicadas pelo workflow Release (ghcr.io) a cada tag v*, na
@@ -56,7 +57,9 @@ services:
     environment:
       NODE_ENV: production
       PORT: '3000'
-      DATABASE_URL: postgres://meu_caixa:${APP_DB_PASSWORD}@postgres:5432/meu_caixa
+      # Banco local (serviço postgres) ou, com o docker-compose.external-db.yml, o
+      # de outro Droplet: DATABASE_HOST (IP privado) ou um DATABASE_URL completo.
+      DATABASE_URL: ${DATABASE_URL:-postgres://meu_caixa:${APP_DB_PASSWORD}@${DATABASE_HOST:-postgres}:5432/meu_caixa}
       DATABASE_MIGRATE_ON_START: 'true'
       # O browser chega na API pela interface (proxy de /api e /auth do Next).
       APP_URL: https://${DOMAIN}

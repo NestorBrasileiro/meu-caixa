@@ -1,0 +1,19 @@
+# Postgres em outro Droplet (o docker-compose.db.yml roda lá). Some ao
+# docker-compose.yml pelo .env:
+#
+#   COMPOSE_FILE=docker-compose.yml:docker-compose.external-db.yml
+#
+# e aponte a API para o banco com DATABASE_HOST (o IP privado do Droplet do
+# banco, com o mesmo APP_DB_PASSWORD de lá) ou com um DATABASE_URL completo
+# (docs/deploy.md, "Banco num Droplet separado"). O Keycloak do próprio Droplet
+# (docker-compose.keycloak.yml) precisa do Postgres local: não combine os dois.
+services:
+  # Fica desligado: só sobe com o profile "banco-local", que nada ativa.
+  postgres:
+    profiles: [banco-local]
+
+  api:
+    depends_on: !reset {}
+    # Sem a rede interna do Postgres local: a API sai pela rede edge até o
+    # IP privado do outro Droplet.
+    networks: !override [edge]

@@ -2,7 +2,7 @@
 
 Passo a passo para colocar o Meu Caixa no ar num único Droplet da DigitalOcean, com HTTPS, login por um Keycloak, backups e atualização automática a cada release. Foi escrito para quem está fazendo isso pela primeira vez: siga na ordem.
 
-Tudo roda com Docker Compose, a partir da pasta `deploy/` deste repositório. O login fica num **Keycloak que você já tem** (o caminho deste guia; ex.: `https://auth.cronoflow.app`). Não tem um? Dá para rodar o Keycloak no próprio Droplet: veja [Keycloak no próprio Droplet](#keycloak-no-próprio-droplet).
+Tudo roda com Docker Compose, a partir da pasta `deploy/` deste repositório. O login fica num **Keycloak que você já tem** (o caminho deste guia; ex.: `https://auth.cronoflow.app`). Não tem um? Dá para rodar o Keycloak no próprio Droplet: veja [Keycloak no próprio Droplet](#keycloak-no-próprio-droplet). O Postgres roda no mesmo Droplet do app; para deixá-lo num Droplet só dele, veja [Banco num Droplet separado](#banco-num-droplet-separado).
 
 ```
                  internet (80/443)
@@ -29,6 +29,8 @@ Tudo roda com Docker Compose, a partir da pasta `deploy/` deste repositório. O 
 | --- | --- |
 | `deploy/docker-compose.yml` | A pilha de produção: Postgres, API, interface e Caddy |
 | `deploy/docker-compose.keycloak.yml` | Opcional: o Keycloak no próprio Droplet |
+| `deploy/docker-compose.external-db.yml` | Opcional: o Postgres em outro Droplet (desliga o local) |
+| `deploy/docker-compose.db.yml` e `deploy/.env.db.example` | O Droplet do banco, quando ele fica separado |
 | `deploy/.env.example` | Todas as variáveis, comentadas. Vira o `deploy/.env` (que nunca vai para o git) |
 | `deploy/caddy/` | Configuração do Caddy (HTTPS e rotas) |
 | `deploy/keycloak/realm.json` | O realm `meu-caixa` (clients `web` e `claude`, role `owner`), para importar no Keycloak |
@@ -424,6 +426,65 @@ Os logs são rotacionados pelo Docker (3 arquivos de 10 MB por container). As at
 - **`SESSION_SECRET`:** basta trocar no `.env` e `docker compose up -d` (todo mundo precisa entrar de novo).
 - **Domínio:** troque `DOMAIN` no `.env`, crie o registro DNS novo, ajuste as URLs do client `web` e a audiência do client `claude` (`https://<DOMAIN>/mcp`) no console do Keycloak e rode `docker compose up -d`.
 
+## Banco num Droplet separado
+
+O Postgres num Droplet só dele, ligado ao do app pela rede privada (VPC) da DigitalOcean: o banco nunca fica exposto na internet, e o Droplet do app pode ser recriado ou aumentado sem tocar nos dados.
+
+1. **Criar o Droplet do banco** (passo 2): Ubuntu 24.04, Basic de 1 GB, **na mesma região do app** (a VPC é por região; os dois entram na VPC padrão dela). Anote o **IP privado** dos dois Droplets (Droplet → *Networking* → *Private IP*, ou `ip -4 addr show eth1` dentro dele).
+2. **Firewall do Droplet do banco** (um Cloud Firewall só para ele):
+
+   | Entrada | Protocolo | Porta | Origem |
+   | --- | --- | --- | --- |
+   | SSH | TCP | 22 | o seu IP, se for fixo; senão, todos |
+   | Postgres | TCP | 5432 | **só o Droplet do app** (escolha o Droplet ou uma tag dele) |
+
+   Nada de 80/443 aqui. Saída liberada (atualizações e o Spaces, se usar).
+3. **Preparar o servidor:** o passo 5, neste Droplet (Docker, usuário `deploy`, pasta dos backups).
+4. **Subir o Postgres**, como `deploy`:
+
+   ```bash
+   git clone https://github.com/NestorBrasileiro/meu-caixa.git ~/meu-caixa
+   cd ~/meu-caixa && git checkout v1.1.0 && cd deploy     # a mesma versão do app
+   cp .env.db.example .env && chmod 600 .env
+   for v in POSTGRES_PASSWORD APP_DB_PASSWORD; do
+     sed -i "s|^$v=.*|$v=$(openssl rand -hex 32)|" .env
+   done
+   nano .env                  # DB_BIND_IP = o IP privado DESTE Droplet
+   docker compose up -d --wait
+   ```
+
+   O `COMPOSE_FILE=docker-compose.db.yml` do `.env` faz o `docker compose` daqui subir só o Postgres, escutando apenas no IP privado. Guarde uma cópia deste `.env` também.
+5. **Backups aqui**, onde os dados moram: o `backup.sh` e o cron do passo 14 funcionam igual neste Droplet.
+6. **No Droplet do app**, no `deploy/.env`, descomente e preencha:
+
+   ```bash
+   COMPOSE_FILE=docker-compose.yml:docker-compose.external-db.yml
+   DATABASE_HOST=10.116.0.3          # o IP privado do Droplet do banco
+   APP_DB_PASSWORD=<a mesma do .env do Droplet do banco>
+   ```
+
+   Antes de subir (passo 9), confira que o app alcança o banco: `docker run --rm postgres:17-alpine pg_isready -h 10.116.0.3` deve dizer `accepting connections`. Daí em diante, as migrations rodam do app para o banco na subida, como sempre, e o backup que o `update.sh` faz antes de cada atualização copia o banco pela rede para o Droplet do app.
+
+**Já tem um Postgres** (ex.: o servidor de banco do cronoflow)? Pule os passos 1 a 5 e crie o usuário e o banco do Meu Caixa nele, separados dos outros:
+
+```sql
+CREATE ROLE meu_caixa LOGIN PASSWORD 'SENHA';
+CREATE DATABASE meu_caixa OWNER meu_caixa;
+REVOKE ALL ON DATABASE meu_caixa FROM PUBLIC;
+```
+
+No `.env` do app, use `DATABASE_HOST` (porta 5432) ou, se o servidor usar outra porta ou exigir TLS, um `DATABASE_URL` completo (`postgres://meu_caixa:SENHA@host:porta/meu_caixa?...`). O app é testado com o Postgres 17; use 15 ou mais novo.
+
+**Restaurar** com o banco separado: pare o app (`docker compose stop api web`, no Droplet do app), restaure **no Droplet do banco** e suba o app de novo (`docker compose up -d`):
+
+```bash
+cd ~/meu-caixa/deploy                          # no Droplet do banco
+gunzip -c /var/backups/meu-caixa/meu-caixa-meu_caixa-AAAAMMDDTHHMMSSZ.sql.gz |
+  docker compose exec -T postgres psql -U postgres -d meu_caixa -v ON_ERROR_STOP=1 -q
+```
+
+**Trocar a senha do `meu_caixa`:** `ALTER ROLE meu_caixa PASSWORD '...'` no Droplet do banco, a mesma senha no `APP_DB_PASSWORD` dos **dois** `.env`, e `docker compose up -d` no do app.
+
 ## Keycloak no próprio Droplet
 
 Sem um Keycloak para usar, o `docker-compose.keycloak.yml` sobe um no Droplet, com banco próprio no mesmo Postgres e um segundo domínio para o login (ex.: `auth.meucaixa.exemplo.com.br`). Ele precisa de **2 GB de RAM** no mínimo (o Keycloak usa ~650 MB).
@@ -465,7 +526,7 @@ Neste modo, o backup inclui o banco `keycloak` (restaure os dois: troque `meu_ca
 - **Login num Keycloak externo por padrão.** Quem já tem um Keycloak (como o do cronoflow) ganha só um realm a mais, e o Droplet fica pequeno. O Keycloak no próprio Droplet continua a um `COMPOSE_FILE` de distância.
 - **Imagens geradas uma vez, no GitHub.** O Droplet só baixa a versão publicada: nada de build pesado no servidor, e voltar uma versão é baixar as imagens anteriores. Cada atualização faz backup antes e confere o `/health` depois.
 - **O proxy de `/api` e `/auth` do Next é gravado no build.** Os rewrites do `next.config.ts` são calculados no `next build`, então a imagem da interface recebe `API_URL=http://api:3000` (o nome do serviço no compose): a mesma imagem serve qualquer domínio.
-- **O Postgres fica numa rede interna**, sem porta publicada; a API sai para a internet (Pluggy, Keycloak) pela rede do Caddy.
+- **O Postgres fica numa rede interna**, sem porta publicada; a API sai para a internet (Pluggy, Keycloak) pela rede do Caddy. Num Droplet separado, ele escuta só no IP privado da VPC, com o firewall liberando a porta apenas para o Droplet do app.
 - **Limites de memória:** Postgres, API e interface 384 MB cada, Caddy 128 MB (e o Keycloak 1 GB, heap até 50%, se rodar aqui).
 
 ## Testar na sua máquina
