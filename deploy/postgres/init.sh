@@ -1,6 +1,6 @@
 #!/bin/sh
 # Roda UMA vez, na primeira subida do Postgres (volume vazio): cria um banco e
-# um usuário para a aplicação e, se o Keycloak rodar no próprio Droplet
+# um usuário para a aplicação e, se houver um Keycloak usando este Postgres
 # (KEYCLOAK_DB_PASSWORD definido), outro par, separado, para ele.
 # Para mudar senhas depois disso, use ALTER ROLE (veja docs/deploy.md).
 set -eu

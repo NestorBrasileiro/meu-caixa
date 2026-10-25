@@ -454,6 +454,8 @@ O Postgres num Droplet só dele, ligado ao do app pela rede privada (VPC) da Dig
    ```
 
    O `COMPOSE_FILE=docker-compose.db.yml` do `.env` faz o `docker compose` daqui subir só o Postgres, escutando apenas no IP privado. Guarde uma cópia deste `.env` também.
+
+   **O Keycloak vai usar este mesmo servidor?** Antes do `up`, gere também a senha dele (`KEYCLOAK_DB_PASSWORD` no `sed` acima): a primeira subida cria o banco e o usuário `keycloak`, separados do `meu_caixa`, e o `backup.sh` passa a copiá-lo. Libere a 5432 no firewall também para a máquina do Keycloak (pela VPC, então na mesma região) e aponte-o para cá com `KC_DB=postgres`, `KC_DB_URL=jdbc:postgresql://<IP privado deste Droplet>:5432/keycloak`, `KC_DB_USERNAME=keycloak` e `KC_DB_PASSWORD`. Um Keycloak que já tem dados sobe vazio num banco novo: migre antes (`pg_dump` do banco antigo, ou `kc.sh export`/`kc.sh import`).
 5. **Backups aqui**, onde os dados moram: o `backup.sh` e o cron do passo 14 funcionam igual neste Droplet.
 6. **No Droplet do app**, no `deploy/.env`, descomente e preencha:
 

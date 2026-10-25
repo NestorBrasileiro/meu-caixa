@@ -16,6 +16,9 @@ services:
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?defina POSTGRES_PASSWORD no deploy/.env}
       # Usado só pelo postgres/init.sh, na primeira subida (volume vazio).
       APP_DB_PASSWORD: ${APP_DB_PASSWORD:?defina APP_DB_PASSWORD no deploy/.env}
+      # Opcional: cria também o banco e o usuário "keycloak", para um Keycloak de
+      # outra máquina usar este mesmo servidor.
+      KEYCLOAK_DB_PASSWORD: ${KEYCLOAK_DB_PASSWORD:-}
     ports:
       # Só no IP privado: o firewall libera a 5432 apenas para o Droplet do app.
       - '${DB_BIND_IP:?defina DB_BIND_IP (IP privado deste Droplet) no deploy/.env}:5432:5432'
