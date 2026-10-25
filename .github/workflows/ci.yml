@@ -110,5 +110,11 @@ jobs:
       - name: Compose de produção válido
         run: |
           cp deploy/.env.example deploy/.env
+          # Login num Keycloak externo (o padrão do .env.example).
           docker compose -f deploy/docker-compose.yml config -q
-          docker compose -f deploy/docker-compose.yml -f deploy/docker-compose.local.yml config -q
+          # Keycloak no próprio Droplet e o teste local (smoke-local.sh).
+          printf 'AUTH_DOMAIN=auth.exemplo.com.br\nKEYCLOAK_DB_PASSWORD=x\nKEYCLOAK_ADMIN_PASSWORD=x\n' >> deploy/.env
+          docker compose -f deploy/docker-compose.yml -f deploy/docker-compose.keycloak.yml config -q
+          docker compose -f deploy/docker-compose.yml -f deploy/docker-compose.keycloak.yml \
+            -f deploy/docker-compose.local.yml config -q
+          for script in deploy/*.sh deploy/postgres/*.sh; do bash -n "$script"; done

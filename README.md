@@ -307,12 +307,15 @@ No `apps/web`: `pnpm dev`, `pnpm lint`, `pnpm typecheck`, `pnpm test` e `pnpm bu
 
 ## Deploy
 
-Produção num Droplet da DigitalOcean com Docker Compose: Postgres, Keycloak, API, interface e Caddy (HTTPS automático). Passo a passo completo, de criar o servidor a backups e conectar o Claude via MCP, em **[docs/deploy.md](docs/deploy.md)**. Arquivos em `deploy/`; as imagens saem de `apps/api/Dockerfile` e `apps/web/Dockerfile` (contexto: raiz do repositório).
+Produção num Droplet da DigitalOcean com Docker Compose: Postgres, API, interface e Caddy (HTTPS automático), com o login num Keycloak que você já tem (ou, opcionalmente, um Keycloak no próprio Droplet). Passo a passo completo, de criar o servidor a backups e conectar o Claude via MCP, em **[docs/deploy.md](docs/deploy.md)**. Arquivos em `deploy/`; as imagens saem de `apps/api/Dockerfile` e `apps/web/Dockerfile` (contexto: raiz do repositório).
+
+Cada tag `vX.Y.Z` publica as imagens no ghcr.io (workflow **Release**) e atualiza o Droplet sozinha (workflow **Deploy**, com backup antes, `/health` depois e volta para a versão anterior se falhar).
 
 ```bash
-deploy/smoke-local.sh                # na sua máquina: sobe e testa a pilha de produção inteira
-cd deploy && cp .env.example .env    # no servidor: preencha o .env e suba
-docker compose up -d --build
+deploy/smoke-local.sh                     # na sua máquina: sobe e testa a pilha de produção inteira
+cd deploy && cp .env.example .env         # no servidor: preencha o .env e suba
+docker compose pull && docker compose up -d
+git tag -a v1.1.0 -m "Meu Caixa 1.1.0" && git push origin v1.1.0   # publicar uma versão
 ```
 
 ## Roadmap

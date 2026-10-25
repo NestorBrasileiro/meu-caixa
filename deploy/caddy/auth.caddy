@@ -1,35 +1,5 @@
-# Sites atendidos pelo Caddy (importado por Caddyfile e Caddyfile.local).
-
-# Interface: tudo vai para o Next, que faz proxy de /api e /auth para a API.
-# MCP, metadados OAuth do recurso protegido e /health vão direto para a API,
-# sem passar pelo Next (respostas em streaming, sem compressão).
-{$DOMAIN} {
-	@api path /mcp /mcp/* /.well-known/oauth-protected-resource /.well-known/oauth-protected-resource/* /health
-	handle @api {
-		reverse_proxy api:3000 {
-			# Repassa cada pedaço da resposta na hora (streaming do MCP).
-			flush_interval -1
-		}
-	}
-
-	handle {
-		encode zstd gzip
-		reverse_proxy web:3000
-	}
-
-	header {
-		Strict-Transport-Security "max-age=31536000"
-		X-Content-Type-Options "nosniff"
-		X-Frame-Options "DENY"
-		Referrer-Policy "strict-origin-when-cross-origin"
-		-Server
-	}
-
-	log {
-		output stdout
-		format console
-	}
-}
+# Site do login, quando o Keycloak roda no próprio Droplet
+# (docker-compose.keycloak.yml). Importado por Caddyfile.keycloak e Caddyfile.local.
 
 # Keycloak (login). O console de administração (/admin) fica bloqueado na
 # internet, a menos que KEYCLOAK_ADMIN_PUBLIC=true; o caminho recomendado é o

@@ -1,0 +1,85 @@
+# Keycloak no próprio Droplet, para quem não tem um. Some ao docker-compose.yml
+# pelo .env (o `docker compose` lê esta variável de lá):
+#
+#   COMPOSE_FILE=docker-compose.yml:docker-compose.keycloak.yml
+#
+# e preencha AUTH_DOMAIN, KEYCLOAK_URL=https://<AUTH_DOMAIN>, KEYCLOAK_DB_PASSWORD
+# e KEYCLOAK_ADMIN_PASSWORD (docs/deploy.md, "Keycloak no próprio Droplet").
+# O console de administração escuta só em 127.0.0.1:8180 (acesso por túnel SSH).
+services:
+  keycloak:
+    build:
+      context: ./keycloak
+      args:
+        KEYCLOAK_IMAGE: ${KEYCLOAK_IMAGE:-quay.io/keycloak/keycloak:26.3.4}
+    image: ${IMAGE_PREFIX:-ghcr.io/nestorbrasileiro/meu-caixa}-keycloak:${APP_VERSION:-latest}
+    restart: unless-stopped
+    environment:
+      KC_DB: postgres
+      KC_DB_URL: jdbc:postgresql://postgres:5432/keycloak
+      KC_DB_USERNAME: keycloak
+      KC_DB_PASSWORD: ${KEYCLOAK_DB_PASSWORD:?defina KEYCLOAK_DB_PASSWORD no deploy/.env}
+      # URL pública: é o "issuer" dos tokens e o endereço que o browser vê.
+      KC_HOSTNAME: https://${AUTH_DOMAIN:?defina AUTH_DOMAIN no deploy/.env}
+      # Console de administração: pelo túnel SSH (padrão) ou pelo AUTH_DOMAIN.
+      KC_HOSTNAME_ADMIN: ${KEYCLOAK_ADMIN_URL:-http://localhost:8180}
+      # TLS termina no Caddy; o Keycloak confia nos cabeçalhos X-Forwarded-*.
+      KC_HTTP_ENABLED: 'true'
+      KC_PROXY_HEADERS: xforwarded
+      KC_HEALTH_ENABLED: 'true'
+      # Admin temporário criado na primeira subida (veja docs/deploy.md).
+      KC_BOOTSTRAP_ADMIN_USERNAME: ${KEYCLOAK_ADMIN:-admin}
+      KC_BOOTSTRAP_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD:?defina KEYCLOAK_ADMIN_PASSWORD no deploy/.env}
+      # Limita o heap a metade do limite de memória do container.
+      JAVA_OPTS_KC_HEAP: -XX:MaxRAMPercentage=50 -XX:InitialRAMPercentage=25
+      # Lidos pelos placeholders do keycloak/realm.json na importação do realm.
+      DOMAIN: ${DOMAIN}
+      KEYCLOAK_CLIENT_SECRET: ${KEYCLOAK_CLIENT_SECRET}
+    ports:
+      # Só na interface local do Droplet: ssh -L 8180:127.0.0.1:8180 ...
+      - '127.0.0.1:8180:8080'
+    networks: [backend, edge]
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      # A imagem do Keycloak não tem curl/wget: HTTP "na mão" pela porta de gerenciamento.
+      test:
+        - CMD
+        - bash
+        - -c
+        - "exec 3<>/dev/tcp/127.0.0.1/9000 && printf 'GET /health/ready HTTP/1.1\\r\\nHost: localhost\\r\\nConnection: close\\r\\n\\r\\n' >&3 && grep -q UP <&3"
+      interval: 15s
+      timeout: 5s
+      retries: 10
+      start_period: 120s
+    deploy:
+      resources:
+        limits:
+          memory: 1G
+    logging:
+      driver: json-file
+      options:
+        max-size: 10m
+        max-file: '3'
+
+  postgres:
+    environment:
+      # O postgres/init.sh cria o banco e o usuário "keycloak" na primeira subida.
+      KEYCLOAK_DB_PASSWORD: ${KEYCLOAK_DB_PASSWORD}
+
+  caddy:
+    # Atende também o AUTH_DOMAIN (login), com o console de administração bloqueado.
+    command: ['caddy', 'run', '--config', '/etc/caddy/Caddyfile.keycloak', '--adapter', 'caddyfile']
+    environment:
+      AUTH_DOMAIN: ${AUTH_DOMAIN}
+      KEYCLOAK_ADMIN_PUBLIC: ${KEYCLOAK_ADMIN_PUBLIC:-false}
+    networks:
+      edge:
+        # A API fala com o Keycloak pela URL pública, resolvida aqui dentro:
+        # não depende de sair para a internet.
+        aliases:
+          - ${AUTH_DOMAIN}
+    depends_on:
+      keycloak:
+        condition: service_started

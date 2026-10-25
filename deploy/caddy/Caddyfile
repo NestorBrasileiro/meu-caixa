@@ -1,7 +1,9 @@
-# Produção: HTTPS automático (Let's Encrypt) para DOMAIN e AUTH_DOMAIN.
-# As variáveis {$...} vêm do deploy/.env (repassadas pelo docker-compose.yml).
+# Produção: HTTPS automático (Let's Encrypt) para DOMAIN. O login fica num
+# Keycloak externo (KEYCLOAK_URL); com o Keycloak no Droplet, o compose usa o
+# Caddyfile.keycloak. As variáveis {$...} vêm do deploy/.env (repassadas pelo
+# docker-compose.yml).
 {
 	email {$ACME_EMAIL}
 }
 
-import sites.caddy
+import app.caddy

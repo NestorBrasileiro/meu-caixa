@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Backup dos dois bancos (meu_caixa e keycloak) do deploy/docker-compose.yml.
+# Backup dos bancos do deploy/docker-compose.yml: meu_caixa e, se o Keycloak
+# roda no próprio Droplet, keycloak.
 #
 #   deploy/backup.sh
 #
@@ -56,7 +57,13 @@ mkdir -p "$BACKUP_DIR"
 stamp=$(date -u +%Y%m%dT%H%M%SZ)
 created=()
 
-for db in meu_caixa keycloak; do
+databases=(meu_caixa)
+# Com o Keycloak externo, não existe banco keycloak aqui.
+if [[ $(compose exec -T postgres psql -U postgres -tAc "SELECT 1 FROM pg_database WHERE datname = 'keycloak'") == 1 ]]; then
+  databases+=(keycloak)
+fi
+
+for db in "${databases[@]}"; do
   file="$BACKUP_DIR/meu-caixa-${db}-${stamp}.sql.gz"
   tmp="$file.partial"
   # pipefail: se o pg_dump falhar, o arquivo parcial não vira backup.

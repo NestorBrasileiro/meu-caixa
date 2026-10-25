@@ -1,0 +1,32 @@
+# Site do Meu Caixa (importado por Caddyfile, Caddyfile.keycloak e Caddyfile.local).
+
+# Interface: tudo vai para o Next, que faz proxy de /api e /auth para a API.
+# MCP, metadados OAuth do recurso protegido e /health vão direto para a API,
+# sem passar pelo Next (respostas em streaming, sem compressão).
+{$DOMAIN} {
+	@api path /mcp /mcp/* /.well-known/oauth-protected-resource /.well-known/oauth-protected-resource/* /health
+	handle @api {
+		reverse_proxy api:3000 {
+			# Repassa cada pedaço da resposta na hora (streaming do MCP).
+			flush_interval -1
+		}
+	}
+
+	handle {
+		encode zstd gzip
+		reverse_proxy web:3000
+	}
+
+	header {
+		Strict-Transport-Security "max-age=31536000"
+		X-Content-Type-Options "nosniff"
+		X-Frame-Options "DENY"
+		Referrer-Policy "strict-origin-when-cross-origin"
+		-Server
+	}
+
+	log {
+		output stdout
+		format console
+	}
+}

@@ -1,8 +1,11 @@
 name: Deploy
 
-# Só manual (Actions → Deploy → Run workflow). Nunca roda em push.
-# Faz no Droplet o mesmo que o passo "Atualizar" do docs/deploy.md:
-# git pull + docker compose up -d --build.
+# Atualiza o Droplet para uma versão já publicada pelo workflow Release, com o
+# deploy/update.sh dessa versão: backup, imagens novas, /health e, se algo
+# falhar, volta para a versão anterior.
+#
+# Roda sozinho no fim do Release (a cada tag vX.Y.Z). À mão (Actions → Deploy →
+# Run workflow), serve para reinstalar uma versão ou voltar para uma anterior.
 #
 # Segredos do repositório (Settings → Secrets and variables → Actions):
 #   DEPLOY_HOST         IP ou nome do Droplet
@@ -16,10 +19,14 @@ name: Deploy
 on:
   workflow_dispatch:
     inputs:
-      ref:
-        description: Branch a publicar
+      version:
+        description: Versão publicada (tag), ex. v1.1.0
         required: true
-        default: main
+  workflow_call:
+    inputs:
+      version:
+        type: string
+        required: true
 
 concurrency:
   group: deploy
@@ -27,6 +34,8 @@ concurrency:
 
 permissions:
   contents: read
+  # Baixar as imagens do ghcr.io no Droplet, se forem privadas.
+  packages: read
 
 jobs:
   deploy:
@@ -38,7 +47,9 @@ jobs:
       DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
       DEPLOY_KNOWN_HOSTS: ${{ secrets.DEPLOY_KNOWN_HOSTS }}
       DEPLOY_PATH: ${{ secrets.DEPLOY_PATH }}
-      REF: ${{ inputs.ref }}
+      VERSION: ${{ inputs.version }}
+      GHCR_TOKEN: ${{ github.token }}
+      GHCR_USER: ${{ github.actor }}
     steps:
       - name: Conferir segredos
         id: check
@@ -67,19 +78,25 @@ jobs:
       - name: Atualizar o Droplet
         if: steps.check.outputs.ready == 'true'
         run: |
-          case "$REF" in
-            "" | -* | *[!A-Za-z0-9._/-]*) echo "::error::branch inválida: $REF"; exit 1 ;;
-          esac
+          if [[ ! $VERSION =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$ ]]; then
+            echo "::error::versão inválida: $VERSION (use a tag de uma release, ex. v1.1.0)"
+            exit 1
+          fi
           # Caminho relativo = a partir do home do usuário no Droplet.
           DIR=${DEPLOY_PATH:-meu-caixa}
-          ssh -i ~/.ssh/id_deploy -o StrictHostKeyChecking="$STRICT" -o BatchMode=yes \
-            "$DEPLOY_USER@$DEPLOY_HOST" \
-            "set -e
-             cd '$DIR'
-             git fetch --prune origin
-             # O clone do Droplet só acompanha o GitHub: fica igual a origin/<branch>.
-             git checkout --quiet -B '$REF' 'origin/$REF'
-             cd deploy
-             docker compose up -d --build --wait --wait-timeout 600
-             docker image prune -f
-             docker compose ps"
+          droplet() {
+            ssh -i ~/.ssh/id_deploy -o StrictHostKeyChecking="$STRICT" -o BatchMode=yes \
+              "$DEPLOY_USER@$DEPLOY_HOST" "$@"
+          }
+
+          # Login no ghcr.io só durante o deploy: o token do job expira quando ele acaba.
+          printf '%s' "$GHCR_TOKEN" | droplet "docker login ghcr.io -u '$GHCR_USER' --password-stdin" > /dev/null
+          trap 'droplet "docker logout ghcr.io" > /dev/null || true' EXIT
+
+          # Roda o update.sh da versão de destino (o clone pode estar numa versão
+          # anterior a ele).
+          droplet "set -e
+            cd '$DIR'
+            git fetch --quiet --tags --force origin
+            git show 'refs/tags/$VERSION:deploy/update.sh' > /tmp/meu-caixa-update.sh
+            DEPLOY_DIR=\"\$PWD/deploy\" UPDATE_SCRIPT_VERSION='$VERSION' bash /tmp/meu-caixa-update.sh '$VERSION'"

@@ -1,0 +1,8 @@
+# Produção com o Keycloak no próprio Droplet (docker-compose.keycloak.yml):
+# HTTPS automático (Let's Encrypt) para DOMAIN e AUTH_DOMAIN.
+{
+	email {$ACME_EMAIL}
+}
+
+import app.caddy
+import auth.caddy

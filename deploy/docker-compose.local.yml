@@ -5,11 +5,12 @@
 #
 #   deploy/smoke-local.sh          # sobe, testa e derruba (apaga os volumes)
 #
-# Ou, à mão (o .env.local é gerado pelo script na primeira execução):
+# Ou, à mão (o .env.local é gerado pelo script na primeira execução). Usa o
+# Keycloak do próprio compose (docker-compose.keycloak.yml):
 #
 #   cd deploy
-#   docker compose -p meu-caixa-local -f docker-compose.yml -f docker-compose.local.yml \
-#     --env-file .env.local up -d --build
+#   docker compose -p meu-caixa-local -f docker-compose.yml -f docker-compose.keycloak.yml \
+#     -f docker-compose.local.yml --env-file .env.local up -d --build
 #
 # Portas usadas no host: 8443 (HTTPS) e 8180 (console do Keycloak), só em 127.0.0.1.
 services:
