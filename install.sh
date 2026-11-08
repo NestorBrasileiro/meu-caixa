@@ -231,7 +231,8 @@ project_deps() { step "Dependências (pnpm install)"; pnpm install; }
 
 project_env() {
   make_env apps/api/.env.example apps/api/.env \
-    "SESSION_SECRET=$(gen_secret)" || true
+    "SESSION_SECRET=$(gen_secret)" \
+    "SETTINGS_ENCRYPTION_KEY=$(gen_secret)" || true
   make_env apps/web/.env.example apps/web/.env.local || true
 
   if has_flag --prod; then
@@ -243,7 +244,8 @@ project_env() {
       "KEYCLOAK_ADMIN_PASSWORD=$(gen_secret)" \
       "KEYCLOAK_CLIENT_SECRET=$(gen_secret)" \
       "SESSION_SECRET=$(gen_secret)" \
-      && warn "deploy/.env: preencha DOMAIN, AUTH_DOMAIN, ACME_EMAIL e as chaves da Pluggy" || true
+      "SETTINGS_ENCRYPTION_KEY=$(gen_secret)" \
+      && warn "deploy/.env: preencha DOMAIN, AUTH_DOMAIN e ACME_EMAIL (Pluggy e Anthropic vão na tela Configurações)" || true
   fi
 }
 
