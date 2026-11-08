@@ -35,6 +35,8 @@ Tudo roda com Docker Compose, a partir da pasta `deploy/` deste repositório:
 | `deploy/backup.sh` | Backup dos dois bancos, com retenção e cópia opcional para o Spaces |
 | `deploy/smoke-local.sh` | Testa a pilha inteira na sua máquina antes de subir (seção [Testar na sua máquina](#testar-na-sua-máquina)) |
 | `.github/workflows/deploy.yml` | Deploy manual pelo GitHub Actions (opcional) |
+| `deploy/docker-compose.app.yml` | Só API + interface, a partir das imagens do GHCR (seção [Só a aplicação](#só-a-aplicação-imagens-prontas)) |
+| `.github/workflows/publish.yml` | Publica as imagens da API e da interface no GHCR |
 
 ## 1. Antes de começar
 
@@ -338,6 +340,92 @@ Os logs são rotacionados pelo Docker (3 arquivos de 10 MB por container).
 
 **Memória**
 : `docker stats`. Se o Droplet ficar sem memória (Keycloak lento, containers mortos por OOM), confirme o swap (`swapon --show`) ou passe para 4 GB (Droplet → Resize).
+
+## Só a aplicação (imagens prontas)
+
+Para quando o Postgres e o Keycloak já rodam em outros servidores (por exemplo, Droplets na mesma VPC) e o HTTPS fica num proxy seu (nginx etc.). O servidor da aplicação **não precisa do repositório**: só do Docker, do `docker-compose.app.yml` e do `.env`.
+
+As imagens são publicadas pelo workflow **Publicar imagens** (`.github/workflows/publish.yml`) a cada push na `master`, depois que o CI passa:
+
+| Imagem | Tags |
+| --- | --- |
+| `ghcr.io/nestorbrasileiro/meu-caixa-api` | `latest`, `sha-<commit>`, `vX.Y.Z` (tags de versão) |
+| `ghcr.io/nestorbrasileiro/meu-caixa-web` | idem |
+
+Na primeira publicação, confira em **github.com/NestorBrasileiro?tab=packages** se os dois pacotes estão públicos (*Package settings → Change visibility*). Se preferir deixá-los privados, faça login no servidor com um token que tenha só `read:packages`: `echo TOKEN | docker login ghcr.io -u NestorBrasileiro --password-stdin`.
+
+**Antes:** o banco `meu_caixa` precisa existir e ter o usuário da aplicação como dono (as migrations rodam na subida da API). No Keycloak, o realm `meu-caixa` precisa ter o client `web` com `https://<DOMAIN>/auth/callback` em *Valid redirect URIs*.
+
+**No servidor** (Docker instalado como no [passo 5](#5-preparar-o-servidor)):
+
+```bash
+mkdir -p ~/meu-caixa && cd ~/meu-caixa
+curl -fsSLo docker-compose.app.yml \
+  https://raw.githubusercontent.com/NestorBrasileiro/meu-caixa/master/deploy/docker-compose.app.yml
+nano .env && chmod 600 .env
+```
+
+O `.env` precisa de:
+
+```bash
+DOMAIN=meucaixa.exemplo.com.br
+AUTH_DOMAIN=auth.meucaixa.exemplo.com.br      # Keycloak público (issuer dos tokens)
+DATABASE_URL=postgres://meu_caixa:SENHA@10.0.0.2:5432/meu_caixa
+SESSION_SECRET=...                            # openssl rand -hex 32
+KEYCLOAK_CLIENT_SECRET=...                    # secret do client "web"
+FINANCE_PROVIDER=pluggy
+PLUGGY_CLIENT_ID=...
+PLUGGY_CLIENT_SECRET=...
+PLUGGY_ITEM_IDS=...
+```
+
+Opcionais: `KEYCLOAK_URL` (se o Keycloak não estiver em `https://AUTH_DOMAIN`), `MEU_CAIXA_TAG` (fixa uma versão, ex.: `sha-73c946a`), `APP_BIND`, `API_PORT` e `WEB_PORT` (padrão `127.0.0.1`, `3000` e `3001`), e as variáveis do Claude.
+
+```bash
+docker compose -f docker-compose.app.yml pull
+docker compose -f docker-compose.app.yml up -d
+docker compose -f docker-compose.app.yml ps
+curl http://127.0.0.1:3000/health        # {"status":"ok","database":"up"}
+```
+
+**Proxy:** no `DOMAIN`, com HTTPS, mande `/mcp`, `/health` e `/.well-known/oauth-protected-resource` para a API (`127.0.0.1:3000`, **sem buffering**, por causa do streaming do MCP) e todo o resto para a interface (`127.0.0.1:3001`). Repasse `Host`, `X-Forwarded-For` e `X-Forwarded-Proto`. Exemplo com nginx + certbot:
+
+```nginx
+server {
+    listen 80;
+    server_name meucaixa.exemplo.com.br;
+
+    proxy_http_version 1.1;
+    proxy_set_header Host              $host;
+    proxy_set_header X-Forwarded-For   $proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-Proto $scheme;
+    proxy_set_header Connection        "";
+
+    location ~ ^/(mcp|health|\.well-known/oauth-protected-resource) {
+        proxy_pass http://127.0.0.1:3000;
+        proxy_buffering off;
+        proxy_read_timeout 1h;
+    }
+    location / {
+        proxy_pass http://127.0.0.1:3001;
+    }
+}
+```
+
+```bash
+sudo certbot --nginx -d meucaixa.exemplo.com.br --redirect
+```
+
+**Atualizar:**
+
+```bash
+cd ~/meu-caixa
+docker compose -f docker-compose.app.yml pull
+docker compose -f docker-compose.app.yml up -d
+docker image prune -f
+```
+
+Para voltar a uma versão anterior, defina `MEU_CAIXA_TAG=sha-<commit>` no `.env` e rode os mesmos comandos.
 
 ## Trocar senhas e domínio
 
