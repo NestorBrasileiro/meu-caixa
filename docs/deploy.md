@@ -412,12 +412,12 @@ DATABASE_URL=postgres://meu_caixa:SENHA@10.0.0.2:5432/meu_caixa
 SESSION_SECRET=...                            # openssl rand -hex 32
 KEYCLOAK_CLIENT_SECRET=...                    # secret do client "web"
 FINANCE_PROVIDER=pluggy
-PLUGGY_CLIENT_ID=...
-PLUGGY_CLIENT_SECRET=...
-PLUGGY_ITEM_IDS=...
+SETTINGS_ENCRYPTION_KEY=...                   # openssl rand -hex 32; cifra as credenciais no banco
 ```
 
-Opcionais: `KEYCLOAK_URL` (se o Keycloak não estiver em `https://AUTH_DOMAIN`), `MEU_CAIXA_TAG` (fixa uma versão, ex.: `sha-73c946a`), `APP_BIND`, `API_PORT` e `WEB_PORT` (padrão `127.0.0.1`, `3000` e `3001`), e as variáveis do Claude.
+As credenciais da Pluggy, a chave da Anthropic e o token do MCP você cadastra depois, na tela **Configurações**.
+
+Opcionais: `KEYCLOAK_URL` (se o Keycloak não estiver em `https://AUTH_DOMAIN`), `MEU_CAIXA_TAG` (fixa uma versão, ex.: `sha-73c946a`), `APP_BIND`, `API_PORT` e `WEB_PORT` (padrão `127.0.0.1`, `3000` e `3001`) e `MCP_ALLOWED_CLIENTS`.
 
 ```bash
 docker compose -f docker-compose.app.yml pull
