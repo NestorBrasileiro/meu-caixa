@@ -14,7 +14,7 @@ function OptionIcon({ icon: Icon }: { icon: typeof Sparkles }) {
 
 /**
  * Ainda não há análise: explica os dois jeitos de pedir a primeira — pelo app (API da Anthropic,
- * precisa de ANTHROPIC_API_KEY) ou pelo Claude do próprio usuário, conectado ao servidor MCP.
+ * precisa da chave da Anthropic em Configurações) ou pelo Claude do próprio usuário, conectado ao servidor MCP.
  */
 export function NoReport({ availability }: { availability: AppAvailability }) {
   const hint = unavailableHint(availability)

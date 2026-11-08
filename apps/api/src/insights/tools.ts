@@ -34,12 +34,15 @@ export interface InsightToolsDeps {
   analysis: AnalysisService;
   /** Quem está salvando as análises (`MCP` ou `APP`). */
   source: AnalysisSource;
+  /** Dono dos dados: as ferramentas só leem e gravam os deste usuário. */
+  userId: string;
 }
 
 export function createInsightTools({
   insights,
   analysis,
   source,
+  userId,
 }: InsightToolsDeps): InsightTool[] {
   return [
     defineTool({
@@ -52,7 +55,7 @@ export function createInsightTools({
         '("como estou?", "sobrou dinheiro este mês?").',
       inputSchema: z.object({}),
       readOnly: true,
-      run: () => insights.summary(),
+      run: () => insights.summary(userId),
     }),
     defineTool({
       name: 'listar_contas',
@@ -63,7 +66,7 @@ export function createInsightTools({
         '(filtro conta_id de buscar_transacoes) ou quando perguntarem sobre uma conta ou cartão específico.',
       inputSchema: z.object({}),
       readOnly: true,
-      run: () => insights.listAccounts(),
+      run: () => insights.listAccounts(userId),
     }),
     defineTool({
       name: 'buscar_transacoes',
@@ -113,7 +116,7 @@ export function createInsightTools({
           .describe('Máximo de transações (1–200)'),
       }),
       readOnly: true,
-      run: (input) => insights.searchTransactions(input),
+      run: (input) => insights.searchTransactions(userId, input),
     }),
     defineTool({
       name: 'gastos_por_categoria',
@@ -125,7 +128,7 @@ export function createInsightTools({
         'próprias (cada compra conta uma vez, na data da compra). Período padrão: os últimos 3 meses fechados.',
       inputSchema: z.object(periodFields),
       readOnly: true,
-      run: (input) => insights.spendingByCategory(input),
+      run: (input) => insights.spendingByCategory(userId, input),
     }),
     defineTool({
       name: 'fluxo_de_caixa',
@@ -142,7 +145,7 @@ export function createInsightTools({
           .describe('Inclui o mês corrente (incompleto) como o último da lista'),
       }),
       readOnly: true,
-      run: (input) => insights.cashFlow(input),
+      run: (input) => insights.cashFlow(userId, input),
     }),
     defineTool({
       name: 'recorrencias',
@@ -170,7 +173,7 @@ export function createInsightTools({
           .describe('Mínimo de meses distintos com cobrança para considerar recorrente'),
       }),
       readOnly: true,
-      run: (input) => insights.recurrences(input),
+      run: (input) => insights.recurrences(userId, input),
     }),
     defineTool({
       name: 'planejamento',
@@ -182,7 +185,7 @@ export function createInsightTools({
         'próximos 6 meses. Use para separar gasto fixo de discricionário e para sugestões de planejamento.',
       inputSchema: z.object({}),
       readOnly: true,
-      run: () => insights.planningOverview(),
+      run: () => insights.planningOverview(userId),
     }),
     defineTool({
       name: 'salvar_analise',
@@ -194,7 +197,7 @@ export function createInsightTools({
       inputSchema: analysisReportInputSchema,
       readOnly: false,
       run: async (input) => {
-        const saved = await analysis.save(input, source);
+        const saved = await analysis.save(userId, input, source);
         return {
           salvo: true,
           id: saved.id,
@@ -211,7 +214,7 @@ export function createInsightTools({
         'comparar com uma análise nova ("o que mudou desde a última vez?") ou acompanhar sugestões anteriores.',
       inputSchema: z.object({}),
       readOnly: true,
-      run: async () => ({ analise: await analysis.latest() }),
+      run: async () => ({ analise: await analysis.latest(userId) }),
     }),
   ];
 }

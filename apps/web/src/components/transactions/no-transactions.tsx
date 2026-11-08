@@ -8,7 +8,7 @@ const COPY: Record<NoDataReason, { title: string; description: string }> = {
   "no-accounts": {
     title: "Nenhum banco conectado ainda",
     description:
-      "Conecte um banco em Contas. Depois da primeira sincronização, os lançamentos dos últimos 12 meses aparecem aqui.",
+      "Cadastre a sua Pluggy em Configurações e sincronize em Contas. Depois da primeira sincronização, os lançamentos dos últimos 12 meses aparecem aqui.",
   },
   "not-synced": {
     title: "Nada sincronizado ainda",

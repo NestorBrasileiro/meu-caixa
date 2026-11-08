@@ -15,13 +15,25 @@ export function useMutation() {
   const [pending, startTransition] = useTransition()
   const [error, setError] = useState<string | null>(null)
 
-  function run(request: () => Promise<unknown>, options: { action: "salvar" | "excluir"; onSuccess: () => void }) {
+  function run(
+    request: () => Promise<unknown>,
+    options: {
+      action: "salvar" | "excluir"
+      onSuccess: () => void
+      /** Sem diálogo aberto para mostrar o erro (ex.: item de menu): avisa por aqui também. */
+      onError?: (message: string) => void
+      /** Onde a ação acontece, para a mensagem de falta de permissão. */
+      where?: string
+    },
+  ) {
     setError(null)
     startTransition(async () => {
       try {
         await request()
       } catch (cause) {
-        setError(mutationErrorMessage(cause, options.action))
+        const message = mutationErrorMessage(cause, options.action, options.where)
+        setError(message)
+        options.onError?.(message)
         return
       }
       startTransition(() => {

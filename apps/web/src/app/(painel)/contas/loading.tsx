@@ -3,8 +3,8 @@ import { Skeleton } from "@/components/ui/skeleton"
 import { cn } from "@/lib/utils"
 
 /**
- * Esqueleto da tela de contas, na mesma grade da página: resumo, bancos e, embaixo, faturas e
- * histórico. Sem números nem nomes, para não sugerir dados que ainda não chegaram.
+ * Esqueleto da tela de contas, na mesma grade da página: resumo, bancos, empréstimos e, embaixo,
+ * faturas e histórico. Sem números nem nomes, para não sugerir dados que ainda não chegaram.
  */
 
 function TileSkeleton({ className }: { className?: string }) {
@@ -84,6 +84,28 @@ export default function Loading() {
         <ConnectionSkeleton rows={2} />
         <ConnectionSkeleton rows={1} />
       </div>
+
+      <Card>
+        <CardHeader className="gap-2">
+          <Skeleton className="h-4 w-56 max-w-full" />
+          <Skeleton className="h-3 w-72 max-w-full" />
+        </CardHeader>
+        <CardContent className="grid grid-cols-1 gap-x-8 gap-y-4 @2xl/page:grid-cols-2">
+          {[0, 1].map((index) => (
+            <div key={index} className="space-y-3 border-t pt-4">
+              <div className="flex justify-between gap-3">
+                <div className="space-y-1.5">
+                  <Skeleton className="h-4 w-32" />
+                  <Skeleton className="h-3 w-24" />
+                </div>
+                <Skeleton className="h-6 w-28" />
+              </div>
+              <Skeleton className="h-1.5 w-full max-w-sm" />
+              <Skeleton className="h-3 w-48 max-w-full" />
+            </div>
+          ))}
+        </CardContent>
+      </Card>
 
       <div className="grid grid-cols-1 items-start gap-4 @min-[60rem]/page:grid-cols-2">
         {["h-64", "h-24"].map((height) => (

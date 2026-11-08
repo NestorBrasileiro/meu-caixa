@@ -36,13 +36,13 @@ export type ClaudeFailureCode =
   | 'UNKNOWN';
 
 export const FAILURE_MESSAGES: Record<ClaudeFailureCode, string> = {
-  AUTH: 'A API da Anthropic recusou a chave configurada (ANTHROPIC_API_KEY inválida, revogada ou sem permissão). Confira a chave na configuração da API.',
+  AUTH: 'A API da Anthropic recusou a chave salva (inválida, revogada ou sem permissão). Cadastre uma chave válida em Configurações.',
   BILLING:
     'A conta da Anthropic está sem créditos ou com problema de pagamento. Confira o faturamento no console da Anthropic.',
   RATE_LIMIT: 'Limite de uso da API da Anthropic atingido. Espere alguns minutos e tente de novo.',
   OVERLOADED: 'A API da Anthropic está sobrecarregada no momento. Tente de novo em alguns minutos.',
   MODEL_NOT_FOUND:
-    'O modelo configurado (ANTHROPIC_MODEL) não existe ou não está disponível para esta conta da Anthropic.',
+    'O modelo escolhido em Configurações não existe ou não está disponível para esta conta da Anthropic.',
   BAD_REQUEST:
     'A API da Anthropic recusou a requisição como inválida. Detalhes no log da API do Meu Caixa.',
   SERVER_ERROR: 'A API da Anthropic teve um erro interno. Tente de novo mais tarde.',

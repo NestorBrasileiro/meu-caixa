@@ -9,11 +9,13 @@ import {
   pluggyBillSchema,
   pluggyIdentitySchema,
   pluggyItemSchema,
+  pluggyLoanSchema,
   pluggyTransactionSchema,
   type PluggyAccount,
   type PluggyBill,
   type PluggyIdentity,
   type PluggyItem,
+  type PluggyLoan,
   type PluggyTransaction,
 } from './pluggy.schemas.js';
 
@@ -71,6 +73,11 @@ export class PluggyClient {
     this.now = options.now ?? Date.now;
   }
 
+  /** Só autentica: confirma Client ID e Client Secret. */
+  async verifyCredentials(): Promise<void> {
+    await this.getApiKey();
+  }
+
   async getItem(itemId: string): Promise<PluggyItem> {
     return this.get(`/items/${encodeURIComponent(itemId)}`, {}, pluggyItemSchema);
   }
@@ -91,6 +98,22 @@ export class PluggyClient {
 
   async listBills(accountId: string): Promise<PluggyBill[]> {
     return this.getAllPages('/bills', { accountId }, pluggyBillSchema);
+  }
+
+  /**
+   * Empréstimos e financiamentos do item. `null` quando a Pluggy recusa (403)
+   * ou não encontra (404) o produto: o banco não compartilha empréstimos ou
+   * o produto não está habilitado. Resposta vazia vale como nenhum.
+   */
+  async listLoans(itemId: string): Promise<PluggyLoan[] | null> {
+    try {
+      return await this.getAllPages('/loans', { itemId }, pluggyLoanSchema, { allowEmpty: true });
+    } catch (error) {
+      if (error instanceof PluggyApiError && (error.status === 403 || error.status === 404)) {
+        return null;
+      }
+      throw error;
+    }
   }
 
   /** Transações via `/v2/transactions` (paginação por cursor). */
@@ -124,12 +147,18 @@ export class PluggyClient {
     path: string,
     query: Query,
     itemSchema: T,
+    options: { allowEmpty?: boolean } = {},
   ): Promise<z.infer<T>[]> {
     const schema = pageResponseSchema(itemSchema);
     const results: z.infer<T>[] = [];
 
     for (let page = 1; page <= MAX_PAGES; page++) {
-      const response = await this.get(path, { ...query, page, pageSize: PAGE_SIZE }, schema);
+      const response = await this.get(
+        path,
+        { ...query, page, pageSize: PAGE_SIZE },
+        schema,
+        options.allowEmpty ? { results: [], page, totalPages: page } : undefined,
+      );
       results.push(...(response.results as z.infer<T>[]));
       if (page >= response.totalPages) return results;
     }
@@ -142,8 +171,13 @@ export class PluggyClient {
     path: string,
     query: Query,
     schema: T,
+    /** Valor devolvido quando a resposta vem sem corpo (em vez de falhar). */
+    emptyValue?: z.infer<T>,
   ): Promise<z.infer<T>> {
     const body = await this.requestWithApiKey(this.buildUrl(path, query));
+    if (emptyValue !== undefined && (body === undefined || body === null || body === '')) {
+      return emptyValue;
+    }
     const parsed = schema.safeParse(body);
     if (!parsed.success) {
       throw new PluggyApiError(

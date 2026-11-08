@@ -3,6 +3,7 @@ import type {
   Connection,
   DateRange,
   Invoice,
+  Loan,
   Profile,
   Transaction,
 } from '../../domain/finance.js';
@@ -52,6 +53,10 @@ export class CachedFinanceProvider implements FinanceProvider {
 
   getInvoices(accountId: string): Promise<Invoice[]> {
     return this.cached(`invoices:${accountId}`, () => this.inner.getInvoices(accountId));
+  }
+
+  getLoans(connectionId: string): Promise<Loan[] | null> {
+    return this.cached(`loans:${connectionId}`, () => this.inner.getLoans(connectionId));
   }
 
   private cached<T>(key: string, load: () => Promise<T>): Promise<T> {

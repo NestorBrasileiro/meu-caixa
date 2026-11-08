@@ -82,7 +82,7 @@ export interface AnalysisRun {
 
 /** GET /api/analysis/status */
 export interface AnalysisStatus {
-  /** `enabled`: a API tem `ANTHROPIC_API_KEY` e pode gerar análises e responder perguntas. */
+  /** `enabled`: há chave da Anthropic salva em Configurações e a API pode gerar análises e responder perguntas. */
   app: { enabled: boolean; model: string | null }
   latestRun: AnalysisRun | null
 }

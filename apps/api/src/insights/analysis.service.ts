@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { Inject, Injectable, NotFoundException } from '@nestjs/common';
-import { desc } from 'drizzle-orm';
+import { desc, eq } from 'drizzle-orm';
 import { DATABASE, type Database } from '../database/database.module.js';
 import {
   analysisReports,
@@ -27,7 +27,7 @@ export class AnalysisService {
   constructor(@Inject(DATABASE) private readonly db: Database) {}
 
   /** Valida o relatório, completa ids e data e guarda. */
-  async save(input: unknown, source: AnalysisSource): Promise<StoredAnalysis> {
+  async save(userId: string, input: unknown, source: AnalysisSource): Promise<StoredAnalysis> {
     const { model, ...fields } = analysisReportInputSchema.parse(input) as AnalysisReportInput;
     const generatedAt = new Date();
     const report = analysisReportSchema.parse({
@@ -38,6 +38,7 @@ export class AnalysisService {
     const [row] = await this.db
       .insert(analysisReports)
       .values({
+        userId,
         generatedAt,
         source,
         model: model ?? null,
@@ -49,21 +50,22 @@ export class AnalysisService {
     return toStoredAnalysis(row!);
   }
 
-  async latest(): Promise<StoredAnalysis | null> {
-    const [row] = await this.list(1);
+  async latest(userId: string): Promise<StoredAnalysis | null> {
+    const [row] = await this.list(userId, 1);
     return row ?? null;
   }
 
-  async latestOrFail(): Promise<StoredAnalysis> {
-    const latest = await this.latest();
+  async latestOrFail(userId: string): Promise<StoredAnalysis> {
+    const latest = await this.latest(userId);
     if (!latest) throw new NotFoundException('Nenhuma análise salva ainda');
     return latest;
   }
 
-  async list(limit: number): Promise<StoredAnalysis[]> {
+  async list(userId: string, limit: number): Promise<StoredAnalysis[]> {
     const rows = await this.db
       .select()
       .from(analysisReports)
+      .where(eq(analysisReports.userId, userId))
       .orderBy(desc(analysisReports.generatedAt), desc(analysisReports.id))
       .limit(limit);
     return rows.map(toStoredAnalysis);

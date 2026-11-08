@@ -8,11 +8,12 @@ import type { ListInvoicesQuery, ListTransactionsQuery } from './transactions.dt
 export class TransactionsService {
   constructor(@Inject(DATABASE) private readonly db: Database) {}
 
-  async listTransactions(query: ListTransactionsQuery) {
+  async listTransactions(userId: string, query: ListTransactionsQuery) {
     if (query.from && query.to && query.from > query.to) {
       throw new BadRequestException('from deve ser anterior ou igual a to');
     }
     const conditions: (SQL | undefined)[] = [
+      eq(transactions.userId, userId),
       query.accountId ? eq(transactions.accountId, query.accountId) : undefined,
       query.from ? gte(transactions.date, query.from) : undefined,
       query.to ? lte(transactions.date, query.to) : undefined,
@@ -45,7 +46,7 @@ export class TransactionsService {
     };
   }
 
-  listInvoices(query: ListInvoicesQuery) {
+  listInvoices(userId: string, query: ListInvoicesQuery) {
     return this.db
       .select({
         id: invoices.id,
@@ -57,7 +58,12 @@ export class TransactionsService {
         currency: invoices.currency,
       })
       .from(invoices)
-      .where(query.accountId ? eq(invoices.accountId, query.accountId) : undefined)
+      .where(
+        and(
+          eq(invoices.userId, userId),
+          query.accountId ? eq(invoices.accountId, query.accountId) : undefined,
+        ),
+      )
       .orderBy(desc(invoices.dueDate));
   }
 
@@ -65,14 +71,15 @@ export class TransactionsService {
    * Recategoriza uma transação. A escolha fica em `user_category`, que o sync
    * nunca sobrescreve; `null` (ou a categoria original) volta para a do banco.
    */
-  async recategorize(id: string, category: string | null) {
-    const [current] = await this.db.select().from(transactions).where(eq(transactions.id, id));
+  async recategorize(userId: string, id: string, category: string | null) {
+    const own = and(eq(transactions.id, id), eq(transactions.userId, userId));
+    const [current] = await this.db.select().from(transactions).where(own);
     if (!current) throw new NotFoundException('Transação não encontrada');
     const userCategory = category === null || category === current.category ? null : category;
     const [row] = await this.db
       .update(transactions)
       .set({ userCategory, updatedAt: new Date() })
-      .where(eq(transactions.id, id))
+      .where(own)
       .returning();
     return toTransactionDto(row!);
   }

@@ -1,7 +1,7 @@
 import { Injectable, Logger, ServiceUnavailableException } from '@nestjs/common';
 import type { Session, SessionData } from 'express-session';
 import * as oidc from 'openid-client';
-import type { AuthUser } from './auth.types.js';
+import type { KeycloakUser } from './auth.types.js';
 import { KeycloakClient } from './keycloak.client.js';
 
 /** Renova o access token um pouco antes de expirar. */
@@ -18,7 +18,7 @@ export class AuthService {
    * access token quando necessário. Devolve `null` e limpa os tokens quando a
    * sessão não vale mais; lança 503 se o Keycloak estiver fora do ar.
    */
-  async authenticate(session: Session & Partial<SessionData>): Promise<AuthUser | null> {
+  async authenticate(session: Session & Partial<SessionData>): Promise<KeycloakUser | null> {
     let tokens = session.tokens;
     if (!tokens) return null;
 

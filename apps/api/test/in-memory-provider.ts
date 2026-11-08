@@ -3,6 +3,7 @@ import type {
   Connection,
   DateRange,
   Invoice,
+  Loan,
   Profile,
   Transaction,
 } from '../src/domain/finance.js';
@@ -15,6 +16,9 @@ export class InMemoryProvider implements FinanceProvider {
   accounts: Account[] = [];
   transactions: Transaction[] = [];
   invoices: Invoice[] = [];
+  loans: Loan[] = [];
+  /** Conexões cujo banco não compartilha empréstimos (`getLoans` devolve `null`). */
+  readonly loansUnavailable = new Set<string>();
   readonly transactionCalls: { accountId: string; range: DateRange }[] = [];
   readonly failingAccounts = new Set<string>();
   /** Enquanto definido, `getConnections` espera a promise resolver. */
@@ -43,5 +47,10 @@ export class InMemoryProvider implements FinanceProvider {
 
   async getInvoices(accountId: string): Promise<Invoice[]> {
     return this.invoices.filter((invoice) => invoice.accountExternalId === accountId);
+  }
+
+  async getLoans(connectionId: string): Promise<Loan[] | null> {
+    if (this.loansUnavailable.has(connectionId)) return null;
+    return this.loans.filter((loan) => loan.connectionExternalId === connectionId);
   }
 }

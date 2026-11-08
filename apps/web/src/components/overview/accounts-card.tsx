@@ -46,7 +46,13 @@ export function AccountsCard({ accounts, today }: { accounts: Account[]; today: 
                 <Landmark aria-hidden />
               </EmptyMedia>
               <EmptyTitle className="text-base">Nenhuma conta conectada</EmptyTitle>
-              <EmptyDescription>Conecte um banco para ver saldos, faturas e limites aqui.</EmptyDescription>
+              <EmptyDescription>
+                Cadastre a sua Pluggy em{" "}
+                <Link href="/configuracoes" className="text-foreground underline underline-offset-4">
+                  Configurações
+                </Link>{" "}
+                e sincronize para ver saldos, faturas e limites aqui.
+              </EmptyDescription>
             </EmptyHeader>
           </Empty>
         ) : (

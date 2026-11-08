@@ -3,6 +3,7 @@ import type {
   Connection,
   DateRange,
   Invoice,
+  Loan,
   Profile,
   Transaction,
 } from '../domain/finance.js';
@@ -22,9 +23,43 @@ export interface FinanceProvider {
   getAccounts(): Promise<Account[]>;
   getTransactions(accountId: string, range: DateRange): Promise<Transaction[]>;
   getInvoices(accountId: string): Promise<Invoice[]>;
+  /**
+   * Empréstimos e financiamentos de uma conexão. `null` quando a instituição
+   * não compartilha esse produto (fora do consentimento do Open Finance ou
+   * indisponível no agregador): o sync segue sem empréstimos para a conexão e
+   * mantém o que já tinha gravado. `[]` significa que não há nenhum.
+   */
+  getLoans(connectionId: string): Promise<Loan[] | null>;
 }
 
-export const FINANCE_PROVIDER = Symbol('FINANCE_PROVIDER');
+/**
+ * Entrega o provedor atual. Com a Pluggy, as credenciais vêm do banco e podem
+ * mudar com o app no ar: quem sincroniza pede o provedor a cada execução.
+ */
+/** Provedor de cada usuário (cada um cadastra a própria Pluggy). */
+export interface FinanceProviderSource {
+  /** Falha com `ProviderNotConfiguredError` enquanto o usuário não configurar. */
+  get(userId: string): Promise<FinanceProvider>;
+  /**
+   * Usuários que o agendador deve sincronizar; `null` = todos (o provedor
+   * fake e os testes não dependem de configuração).
+   */
+  configuredUserIds(): Promise<string[] | null>;
+}
+
+export const FINANCE_PROVIDER_SOURCE = Symbol('FINANCE_PROVIDER_SOURCE');
+
+/** Fonte que entrega o mesmo provedor para todos os usuários (fake e testes). */
+export function staticProviderSource(provider: FinanceProvider): FinanceProviderSource {
+  return { get: async () => provider, configuredUserIds: async () => null };
+}
+
+export class ProviderNotConfiguredError extends Error {
+  constructor(message = 'Configure as credenciais da Pluggy em Configurações') {
+    super(message);
+    this.name = 'ProviderNotConfiguredError';
+  }
+}
 
 /** Falha ao falar com o provedor, já traduzida para um erro nosso. */
 export class FinanceProviderError extends Error {

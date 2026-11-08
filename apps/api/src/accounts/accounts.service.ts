@@ -7,7 +7,7 @@ import { accounts, connections } from '../database/schema.js';
 export class AccountsService {
   constructor(@Inject(DATABASE) private readonly db: Database) {}
 
-  listConnections() {
+  listConnections(userId: string) {
     return this.db
       .select({
         id: connections.id,
@@ -18,10 +18,11 @@ export class AccountsService {
         updatedAt: connections.updatedAt,
       })
       .from(connections)
+      .where(eq(connections.userId, userId))
       .orderBy(asc(connections.institutionName));
   }
 
-  listAccounts() {
+  listAccounts(userId: string) {
     return this.db
       .select({
         id: accounts.id,
@@ -40,6 +41,7 @@ export class AccountsService {
       })
       .from(accounts)
       .innerJoin(connections, eq(accounts.connectionId, connections.id))
+      .where(eq(accounts.userId, userId))
       .orderBy(asc(connections.institutionName), asc(accounts.type), asc(accounts.name));
   }
 }

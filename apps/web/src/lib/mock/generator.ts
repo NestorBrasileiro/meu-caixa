@@ -257,7 +257,9 @@ const RULES: Rule[] = [
     counterpartyName: "Música Exemplo",
     category: "Music streaming",
     paymentMethod: "CARD",
-    amountOn: (d) => (d.dayOfMonth === 3 ? -21_90 : null),
+    // Reajuste em outubro: a aba Assinaturas mostra o aumento. O compromisso do
+    // planejamento continua em 21,90 de propósito (planejado antes do reajuste).
+    amountOn: (d) => (d.dayOfMonth === 3 ? (d.date >= "2026-10-01" ? -23_90 : -21_90) : null),
   },
   {
     accountId: IDS.creditCard,

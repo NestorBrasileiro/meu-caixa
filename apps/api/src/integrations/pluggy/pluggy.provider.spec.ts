@@ -75,4 +75,26 @@ describe('PluggyProvider', () => {
       email: null,
     });
   });
+
+  it('traduz os empréstimos do item e repassa a indisponibilidade', async () => {
+    const listLoans = vi
+      .fn()
+      .mockResolvedValueOnce([{ id: 'loan-1', itemId: 'item-1', type: 'CHEQUE_ESPECIAL' }])
+      .mockResolvedValueOnce(null);
+    const provider = new PluggyProvider({ listLoans } as unknown as PluggyClient, {
+      itemIds: ['item-1', 'item-2'],
+      timeZone: 'UTC',
+    });
+
+    const loans = await provider.getLoans('item-1');
+    expect(loans).toEqual([
+      expect.objectContaining({
+        externalId: 'loan-1',
+        connectionExternalId: 'item-1',
+        productName: 'Cheque especial',
+      }),
+    ]);
+    await expect(provider.getLoans('item-2')).resolves.toBeNull();
+    expect(listLoans.mock.calls).toEqual([['item-1'], ['item-2']]);
+  });
 });

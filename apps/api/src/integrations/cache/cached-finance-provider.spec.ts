@@ -9,6 +9,7 @@ function innerProvider() {
     getAccounts: vi.fn(async () => []),
     getTransactions: vi.fn(async () => []),
     getInvoices: vi.fn(async () => []),
+    getLoans: vi.fn(async (): Promise<null | []> => []),
   } satisfies FinanceProvider;
 }
 
@@ -46,6 +47,18 @@ describe('CachedFinanceProvider', () => {
     await cached.getTransactions('a', { ...range, to: '2026-02-28' });
 
     expect(inner.getTransactions).toHaveBeenCalledTimes(3);
+  });
+
+  it('guarda empréstimos por conexão, inclusive a indisponibilidade', async () => {
+    const inner = innerProvider();
+    inner.getLoans.mockResolvedValueOnce(null);
+    const cached = new CachedFinanceProvider(inner, 1_000);
+
+    await expect(cached.getLoans('a')).resolves.toBeNull();
+    await expect(cached.getLoans('a')).resolves.toBeNull();
+    await expect(cached.getLoans('b')).resolves.toEqual([]);
+
+    expect(inner.getLoans).toHaveBeenCalledTimes(2);
   });
 
   it('não guarda falhas', async () => {

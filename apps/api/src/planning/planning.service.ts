@@ -1,9 +1,10 @@
 import { BadRequestException, Inject, Injectable, NotFoundException } from '@nestjs/common';
-import { and, asc, desc, eq, gte, lte } from 'drizzle-orm';
+import { and, asc, desc, eq, gt, gte, inArray, isNotNull, lt, lte } from 'drizzle-orm';
 import { ENV } from '../config/config.module.js';
 import type { Env } from '../config/env.js';
 import { DATABASE, type Database } from '../database/database.module.js';
 import {
+  accounts,
   budgetCategories,
   commitments,
   goals,
@@ -12,6 +13,7 @@ import {
   type CommitmentRow,
   type GoalRow,
 } from '../database/schema.js';
+import { openInstallments, type OpenInstallment } from '../domain/card-installments.js';
 import { isIncome, isSpending } from '../domain/classify.js';
 import { today } from '../domain/dates.js';
 import { monthOf, monthRange, shiftMonth, type IsoMonth } from '../domain/months.js';
@@ -30,6 +32,7 @@ const AVERAGE_MONTHS = 3;
 const PROJECTION_MONTHS = 6;
 /** Violação de chave estrangeira no Postgres. */
 const FOREIGN_KEY_VIOLATION = '23503';
+const MISSING_REFERENCE = 'Categoria ou conta informada não existe';
 
 export interface MonthProjection {
   month: IsoMonth;
@@ -38,6 +41,11 @@ export interface MonthProjection {
   goalContributions: number;
   expectedVariableSpending: number;
   projectedBalance: number;
+}
+
+/** Parcela de compra no cartão ainda não totalmente paga (derivada das transações, não cadastrada). */
+export interface CardInstallment extends OpenInstallment {
+  cardName: string;
 }
 
 /**
@@ -51,33 +59,94 @@ export class PlanningService {
     @Inject(ENV) private readonly env: Env,
   ) {}
 
-  async overview() {
+  async overview(userId: string) {
     const todayDate = today(this.env.TIMEZONE);
-    const [categoryRows, commitmentRows, goalRows] = await Promise.all([
+    const [categoryRows, commitmentRows, goalRows, cardInstallments] = await Promise.all([
       this.db
         .select()
         .from(budgetCategories)
+        .where(eq(budgetCategories.userId, userId))
         .orderBy(asc(budgetCategories.position), asc(budgetCategories.name)),
-      this.db.select().from(commitments).orderBy(desc(commitments.amount), asc(commitments.name)),
-      this.db.select().from(goals).orderBy(asc(goals.targetDate), asc(goals.name)),
+      this.db
+        .select()
+        .from(commitments)
+        .where(eq(commitments.userId, userId))
+        .orderBy(desc(commitments.amount), asc(commitments.name)),
+      this.db
+        .select()
+        .from(goals)
+        .where(eq(goals.userId, userId))
+        .orderBy(asc(goals.targetDate), asc(goals.name)),
+      this.openCardInstallments(userId, todayDate),
     ]);
 
     return {
       categories: categoryRows.map(toCategory),
       commitments: commitmentRows.map((row) => toCommitment(row, todayDate)),
       goals: goalRows.map(toGoal),
-      projections: await this.projections(todayDate, commitmentRows, goalRows),
+      cardInstallments,
+      projections: await this.projections(userId, todayDate, commitmentRows, goalRows),
     };
+  }
+
+  // ------------------------------------------------ parcelas de cartão
+
+  /** Compras parceladas no cartão ainda em aberto (heurística em `domain/card-installments.ts`). */
+  private async openCardInstallments(
+    userId: string,
+    todayDate: string,
+  ): Promise<CardInstallment[]> {
+    const cardAccounts = await this.db
+      .select({ id: accounts.id, name: accounts.name })
+      .from(accounts)
+      .where(and(eq(accounts.userId, userId), eq(accounts.type, 'CREDIT_CARD')));
+    if (cardAccounts.length === 0) return [];
+    const cardName = new Map(cardAccounts.map((account) => [account.id, account.name]));
+
+    const rows = await this.db
+      .select({
+        accountId: transactions.accountId,
+        date: transactions.date,
+        description: transactions.description,
+        amount: transactions.amount,
+        installmentNumber: transactions.installmentNumber,
+        installmentTotal: transactions.installmentTotal,
+      })
+      .from(transactions)
+      .where(
+        and(
+          eq(transactions.userId, userId),
+          inArray(
+            transactions.accountId,
+            cardAccounts.map((account) => account.id),
+          ),
+          isNotNull(transactions.installmentNumber),
+          gt(transactions.installmentTotal, 1),
+          lt(transactions.amount, 0),
+        ),
+      );
+
+    const installmentRows = rows.map((row) => ({
+      ...row,
+      installmentNumber: row.installmentNumber!,
+      installmentTotal: row.installmentTotal!,
+    }));
+    return openInstallments(installmentRows, todayDate).map((open) => ({
+      ...open,
+      cardName: cardName.get(open.accountId) ?? '',
+    }));
   }
 
   // ------------------------------------------------------------- compromissos
 
-  async createCommitment(dto: CreateCommitmentDto) {
+  async createCommitment(userId: string, dto: CreateCommitmentDto) {
     assertDateOrder(dto.startsOn, dto.endsOn);
+    await this.assertReferences(userId, { categoryId: dto.categoryId });
     const [row] = await this.write(() =>
       this.db
         .insert(commitments)
         .values({
+          userId,
           name: dto.name.trim(),
           amount: dto.amount,
           dayOfMonth: dto.dayOfMonth,
@@ -87,18 +156,30 @@ export class PlanningService {
           endsOn: dto.endsOn ?? null,
           installmentsTotal: dto.installmentsTotal ?? null,
           notes: dto.notes?.trim() || null,
+          subscriptionKey: dto.subscriptionKey ?? null,
         })
         .returning(),
     );
     return toCommitment(row!, today(this.env.TIMEZONE));
   }
 
-  async updateCommitment(id: string, dto: UpdateCommitmentDto) {
-    const current = await this.findOne(commitments, id, 'Compromisso');
+  /** Só as categorias de orçamento (o formulário de compromisso precisa delas). */
+  async categories(userId: string) {
+    const rows = await this.db
+      .select()
+      .from(budgetCategories)
+      .where(eq(budgetCategories.userId, userId))
+      .orderBy(asc(budgetCategories.position), asc(budgetCategories.name));
+    return rows.map(toCategory);
+  }
+
+  async updateCommitment(userId: string, id: string, dto: UpdateCommitmentDto) {
+    const current = await this.findOne(userId, commitments, id, 'Compromisso');
     assertDateOrder(
       dto.startsOn ?? current.startsOn,
       dto.endsOn === undefined ? current.endsOn : dto.endsOn,
     );
+    await this.assertReferences(userId, { categoryId: dto.categoryId });
     const [row] = await this.write(() =>
       this.db
         .update(commitments)
@@ -116,24 +197,28 @@ export class PlanningService {
           }),
           updatedAt: new Date(),
         })
-        .where(eq(commitments.id, id))
+        .where(and(eq(commitments.id, id), eq(commitments.userId, userId)))
         .returning(),
     );
     return toCommitment(row!, today(this.env.TIMEZONE));
   }
 
-  async deleteCommitment(id: string): Promise<void> {
-    await this.findOne(commitments, id, 'Compromisso');
-    await this.db.delete(commitments).where(eq(commitments.id, id));
+  async deleteCommitment(userId: string, id: string): Promise<void> {
+    await this.findOne(userId, commitments, id, 'Compromisso');
+    await this.db
+      .delete(commitments)
+      .where(and(eq(commitments.id, id), eq(commitments.userId, userId)));
   }
 
   // -------------------------------------------------------------------- metas
 
-  async createGoal(dto: CreateGoalDto) {
+  async createGoal(userId: string, dto: CreateGoalDto) {
+    await this.assertReferences(userId, { accountId: dto.accountId });
     const [row] = await this.write(() =>
       this.db
         .insert(goals)
         .values({
+          userId,
           name: dto.name.trim(),
           target: dto.target,
           saved: dto.saved ?? 0,
@@ -146,8 +231,9 @@ export class PlanningService {
     return toGoal(row!);
   }
 
-  async updateGoal(id: string, dto: UpdateGoalDto) {
-    await this.findOne(goals, id, 'Meta');
+  async updateGoal(userId: string, id: string, dto: UpdateGoalDto) {
+    await this.findOne(userId, goals, id, 'Meta');
+    await this.assertReferences(userId, { accountId: dto.accountId });
     const [row] = await this.write(() =>
       this.db
         .update(goals)
@@ -162,23 +248,24 @@ export class PlanningService {
           }),
           updatedAt: new Date(),
         })
-        .where(eq(goals.id, id))
+        .where(and(eq(goals.id, id), eq(goals.userId, userId)))
         .returning(),
     );
     return toGoal(row!);
   }
 
-  async deleteGoal(id: string): Promise<void> {
-    await this.findOne(goals, id, 'Meta');
-    await this.db.delete(goals).where(eq(goals.id, id));
+  async deleteGoal(userId: string, id: string): Promise<void> {
+    await this.findOne(userId, goals, id, 'Meta');
+    await this.db.delete(goals).where(and(eq(goals.id, id), eq(goals.userId, userId)));
   }
 
   // --------------------------------------------------------------- categorias
 
-  async createCategory(dto: CreateBudgetCategoryDto) {
+  async createCategory(userId: string, dto: CreateBudgetCategoryDto) {
     const [row] = await this.db
       .insert(budgetCategories)
       .values({
+        userId,
         name: dto.name.trim(),
         kind: dto.kind,
         sourceCategories: uniqueTrimmed(dto.sourceCategories ?? []),
@@ -189,8 +276,8 @@ export class PlanningService {
     return toCategory(row!);
   }
 
-  async updateCategory(id: string, dto: UpdateBudgetCategoryDto) {
-    await this.findOne(budgetCategories, id, 'Categoria');
+  async updateCategory(userId: string, id: string, dto: UpdateBudgetCategoryDto) {
+    await this.findOne(userId, budgetCategories, id, 'Categoria');
     const [row] = await this.db
       .update(budgetCategories)
       .set({
@@ -203,15 +290,17 @@ export class PlanningService {
         }),
         updatedAt: new Date(),
       })
-      .where(eq(budgetCategories.id, id))
+      .where(and(eq(budgetCategories.id, id), eq(budgetCategories.userId, userId)))
       .returning();
     return toCategory(row!);
   }
 
   /** Compromissos da categoria ficam sem categoria (on delete set null). */
-  async deleteCategory(id: string): Promise<void> {
-    await this.findOne(budgetCategories, id, 'Categoria');
-    await this.db.delete(budgetCategories).where(eq(budgetCategories.id, id));
+  async deleteCategory(userId: string, id: string): Promise<void> {
+    await this.findOne(userId, budgetCategories, id, 'Categoria');
+    await this.db
+      .delete(budgetCategories)
+      .where(and(eq(budgetCategories.id, id), eq(budgetCategories.userId, userId)));
   }
 
   // --------------------------------------------------------------- projeção
@@ -222,6 +311,7 @@ export class PlanningService {
    * médio dos meses fechados menos os compromissos que estavam ativos neles.
    */
   private async projections(
+    userId: string,
     todayDate: string,
     commitmentRows: CommitmentRow[],
     goalRows: GoalRow[],
@@ -240,7 +330,13 @@ export class PlanningService {
         userCategory: transactions.userCategory,
       })
       .from(transactions)
-      .where(and(gte(transactions.date, from), lte(transactions.date, to)));
+      .where(
+        and(
+          eq(transactions.userId, userId),
+          gte(transactions.date, from),
+          lte(transactions.date, to),
+        ),
+      );
 
     let income = 0;
     let spending = 0;
@@ -272,7 +368,9 @@ export class PlanningService {
 
   // ---------------------------------------------------------------- suporte
 
+  /** Registro do usuário; o de outro usuário é tratado como inexistente (404). */
   private async findOne<T extends typeof commitments | typeof goals | typeof budgetCategories>(
+    userId: string,
     table: T,
     id: string,
     label: string,
@@ -280,9 +378,38 @@ export class PlanningService {
     const [row] = await this.db
       .select()
       .from(table as typeof commitments)
-      .where(eq(table.id, id));
+      .where(and(eq(table.id, id), eq(table.userId, userId)));
     if (!row) throw new NotFoundException(`${label} não encontrado(a)`);
     return row as T['$inferSelect'];
+  }
+
+  /**
+   * Categoria e conta citadas no corpo precisam ser do usuário: a chave
+   * estrangeira só garante que existem, não de quem são.
+   */
+  private async assertReferences(
+    userId: string,
+    refs: { categoryId?: string | null; accountId?: string | null },
+  ): Promise<void> {
+    const checks = [
+      refs.categoryId
+        ? this.db
+            .select({ id: budgetCategories.id })
+            .from(budgetCategories)
+            .where(
+              and(eq(budgetCategories.id, refs.categoryId), eq(budgetCategories.userId, userId)),
+            )
+        : null,
+      refs.accountId
+        ? this.db
+            .select({ id: accounts.id })
+            .from(accounts)
+            .where(and(eq(accounts.id, refs.accountId), eq(accounts.userId, userId)))
+        : null,
+    ];
+    for (const rows of await Promise.all(checks)) {
+      if (rows && rows.length === 0) throw new BadRequestException(MISSING_REFERENCE);
+    }
   }
 
   /** Traduz chave estrangeira inválida (categoria/conta inexistente) em 400. */
@@ -294,7 +421,7 @@ export class PlanningService {
         (error as { code?: string; cause?: { code?: string } }).cause?.code ??
         (error as { code?: string }).code;
       if (code === FOREIGN_KEY_VIOLATION) {
-        throw new BadRequestException('Categoria ou conta informada não existe');
+        throw new BadRequestException(MISSING_REFERENCE);
       }
       throw error;
     }

@@ -56,10 +56,22 @@ export interface MonthProjection {
   projectedBalance: Cents
 }
 
+/** Parcela de compra no cartão ainda em aberto (derivada das transações, não cadastrada). */
+export interface CardInstallment {
+  accountId: string
+  cardName: string
+  description: string
+  amount: Cents
+  installments: { paid: number; total: number }
+  nextDueDate: IsoDate
+  endsOn: IsoDate
+}
+
 export interface PlanningOverview {
   categories: BudgetCategory[]
   commitments: Commitment[]
   goals: Goal[]
+  cardInstallments: CardInstallment[]
   projections: MonthProjection[]
 }
 

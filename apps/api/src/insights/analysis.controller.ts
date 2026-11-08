@@ -1,6 +1,7 @@
 import { Controller, Get, Query } from '@nestjs/common';
 import { Type } from 'class-transformer';
 import { IsInt, IsOptional, Max, Min } from 'class-validator';
+import { CurrentUser } from '../auth/current-user.decorator.js';
 import { AnalysisService } from './analysis.service.js';
 
 export class ListAnalysesQuery {
@@ -19,12 +20,12 @@ export class AnalysisController {
 
   /** A análise mais recente; 404 se ainda não houver nenhuma. */
   @Get('latest')
-  latest() {
-    return this.analysis.latestOrFail();
+  latest(@CurrentUser() userId: string) {
+    return this.analysis.latestOrFail(userId);
   }
 
   @Get()
-  list(@Query() query: ListAnalysesQuery) {
-    return this.analysis.list(query.limit);
+  list(@CurrentUser() userId: string, @Query() query: ListAnalysesQuery) {
+    return this.analysis.list(userId, query.limit);
   }
 }

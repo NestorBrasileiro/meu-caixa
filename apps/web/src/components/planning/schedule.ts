@@ -11,7 +11,7 @@ import type { IsoDate } from "@/lib/api/types"
  */
 
 /** `YYYY-MM` deslocado `offset` meses. */
-function shift(month: string, offset: number): string {
+export function shift(month: string, offset: number): string {
   const [year, m] = month.split("-").map(Number)
   const index = year * 12 + (m - 1) + offset
   return `${Math.floor(index / 12)}-${String((index % 12) + 1).padStart(2, "0")}`

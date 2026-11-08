@@ -37,7 +37,7 @@ describe("analysis/generation — disponibilidade", () => {
     expect(appAvailability(status(true), false)).toEqual({ kind: "readOnly" })
   })
 
-  it("sem ANTHROPIC_API_KEY, com chave, e status que não respondeu", () => {
+  it("sem chave, com chave, e status que não respondeu", () => {
     expect(appAvailability(status(false), true)).toEqual({ kind: "notConfigured" })
     expect(appAvailability(status(true), true)).toEqual({ kind: "ready", model: "claude-sonnet-4-5" })
     expect(appAvailability(null, true)).toEqual({ kind: "unknown" })
@@ -57,7 +57,7 @@ describe("analysis/generation — botão", () => {
   it("indisponível explica o porquê no tooltip; sem chave, aponta o MCP", () => {
     expect(generateButton({ kind: "readOnly" }, IDLE, true).hint).toBe(READ_ONLY_HINT)
     expect(generateButton({ kind: "notConfigured" }, IDLE, true).hint).toBe(NOT_CONFIGURED_HINT)
-    expect(NOT_CONFIGURED_HINT).toMatch(/ANTHROPIC_API_KEY/)
+    expect(NOT_CONFIGURED_HINT).toMatch(/Configurações/)
     expect(NOT_CONFIGURED_HINT).toMatch(/MCP/)
     expect(generateButton({ kind: "unknown" }, IDLE, true).hint).toBe(STATUS_UNKNOWN_HINT)
   })
@@ -98,10 +98,10 @@ describe("analysis/generation — acompanhamento", () => {
   })
 
   it("503/erro ao iniciar: volta ao início com a mensagem da API", () => {
-    const state = reduce(IDLE, { type: "start" }, { type: "startFailed", message: "ANTHROPIC_API_KEY não configurada." })
+    const state = reduce(IDLE, { type: "start" }, { type: "startFailed", message: "Chave da Anthropic não cadastrada." })
     expect(state).toEqual({
       phase: "idle",
-      notice: { tone: "error", title: "Não foi possível gerar a análise", message: "ANTHROPIC_API_KEY não configurada." },
+      notice: { tone: "error", title: "Não foi possível gerar a análise", message: "Chave da Anthropic não cadastrada." },
     })
   })
 

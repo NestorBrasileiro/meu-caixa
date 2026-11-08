@@ -58,7 +58,7 @@ export function showCounter(length: number, max: number = ASK_LIMITS.question): 
 
 /**
  * Mensagem para quando a pergunta falha. A API responde em pt-BR nos erros de negócio (429: outra
- * pergunta ainda está sendo respondida; 503: sem ANTHROPIC_API_KEY); para o resto, uma frase nossa.
+ * pergunta ainda está sendo respondida; 503: sem chave da Anthropic); para o resto, uma frase nossa.
  */
 export function askErrorMessage(error: unknown): string {
   const status = error && typeof error === "object" && "status" in error ? error.status : undefined
@@ -68,7 +68,7 @@ export function askErrorMessage(error: unknown): string {
   if (status === 429) {
     return message || "O Claude ainda está respondendo outra pergunta. Espere um pouco e tente de novo."
   }
-  if (status === 503) return message || "As perguntas estão indisponíveis: falta configurar a ANTHROPIC_API_KEY na API."
+  if (status === 503) return message || "As perguntas estão indisponíveis: falta cadastrar a chave da Anthropic em Configurações."
   // 502/504: a API explica em pt-BR o que deu errado com a Anthropic; 500 é erro genérico do servidor.
   if (status >= 500) return (status !== 500 && message) || "O Claude não conseguiu responder agora. Tente de novo em instantes."
   return message || `A API recusou a pergunta (erro ${status}).`

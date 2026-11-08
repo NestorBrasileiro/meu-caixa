@@ -1,4 +1,3 @@
-import { createHash, timingSafeEqual } from 'node:crypto';
 import { Logger } from '@nestjs/common';
 import {
   InsufficientScopeError,
@@ -10,11 +9,19 @@ import { getOAuthProtectedResourceMetadataUrl } from '@modelcontextprotocol/sdk/
 import type { AuthInfo } from '@modelcontextprotocol/sdk/server/auth/types.js';
 import type { KeycloakClient } from '../auth/keycloak.client.js';
 import type { Env } from '../config/env.js';
+import type { UsersService } from '../users/users.service.js';
+import { MCP_TOKEN_PREFIX, type McpTokenStore } from './mcp-token.store.js';
 
-/** Client "virtual" de quem entra com o `MCP_ACCESS_TOKEN`. */
-export const ACCESS_TOKEN_CLIENT_ID = 'mcp-access-token';
-/** Validade informada para o `MCP_ACCESS_TOKEN` (ele não expira; só renova a cada requisição). */
-const ACCESS_TOKEN_TTL_SECONDS = 300;
+/** Client "virtual" de quem entra com o token pessoal (tela Configurações). */
+export const PERSONAL_TOKEN_CLIENT_ID = 'mcp-personal-token';
+/** Validade informada para o token pessoal (ele não expira; só renova a cada requisição). */
+const PERSONAL_TOKEN_TTL_SECONDS = 300;
+
+/** O que o `McpController` lê de `req.auth.extra`. */
+export interface McpAuthExtra extends Record<string, unknown> {
+  /** Dono dos dados (`users.id`). */
+  userId: string;
+}
 
 /** Identificador do servidor MCP como recurso OAuth: `${APP_URL}/mcp`. */
 export function mcpResourceUrl(env: Env): URL {
@@ -27,9 +34,10 @@ export function protectedResourceMetadataUrl(env: Env): string {
 }
 
 /**
- * Valida o Bearer token do /mcp. Aceita:
+ * Valida o Bearer token do /mcp e descobre de qual usuário são os dados.
+ * Aceita:
  *
- * 1. o `MCP_ACCESS_TOKEN`, se configurado (comparação em tempo constante);
+ * 1. o token pessoal do usuário (`mcx_...`, gerado em Configurações);
  * 2. um access token do Keycloak, por introspecção: ativo, com a role
  *    `KEYCLOAK_REQUIRED_ROLE` e emitido para o servidor MCP — a audiência
  *    (`aud`) inclui `${APP_URL}/mcp`, ou o client que pediu o token (`azp`)
@@ -42,26 +50,18 @@ export function protectedResourceMetadataUrl(env: Env): string {
 export class McpTokenVerifier implements OAuthTokenVerifier {
   private readonly logger = new Logger(McpTokenVerifier.name);
   private readonly resource: URL;
-  private readonly accessTokenDigest: Buffer | null;
 
   constructor(
     private readonly keycloak: Pick<KeycloakClient, 'introspectToken'>,
     private readonly env: Env,
+    private readonly users: Pick<UsersService, 'resolve'>,
+    private readonly tokens: Pick<McpTokenStore, 'findUser'>,
   ) {
     this.resource = mcpResourceUrl(env);
-    this.accessTokenDigest = env.MCP_ACCESS_TOKEN ? digest(env.MCP_ACCESS_TOKEN) : null;
   }
 
   async verifyAccessToken(token: string): Promise<AuthInfo> {
-    if (this.accessTokenDigest && timingSafeEqual(digest(token), this.accessTokenDigest)) {
-      return {
-        token,
-        clientId: ACCESS_TOKEN_CLIENT_ID,
-        scopes: [],
-        expiresAt: Math.floor(Date.now() / 1000) + ACCESS_TOKEN_TTL_SECONDS,
-        resource: this.resource,
-      };
-    }
+    if (token.startsWith(MCP_TOKEN_PREFIX)) return this.verifyPersonalToken(token);
 
     let introspected: Awaited<ReturnType<KeycloakClient['introspectToken']>>;
     try {
@@ -83,20 +83,43 @@ export class McpTokenVerifier implements OAuthTokenVerifier {
       throw new InsufficientScopeError(`Requer a role ${this.env.KEYCLOAK_REQUIRED_ROLE}`);
     }
 
+    let userId: string;
+    try {
+      userId = await this.users.resolve(introspected.user);
+    } catch (error) {
+      this.logger.error('Falha ao identificar o usuário do token do MCP', error);
+      throw new ServerError('Não foi possível identificar o usuário');
+    }
+    const extra: McpAuthExtra = { userId };
     return {
       token,
       clientId: introspected.clientId ?? 'desconhecido',
       scopes: introspected.scopes,
       expiresAt: introspected.expiresAt ?? undefined,
       resource: this.resource,
-      extra: { userId: introspected.user.id, username: introspected.user.username },
+      extra,
     };
   }
-}
 
-/** Hash antes de comparar: `timingSafeEqual` exige o mesmo tamanho e não vaza o do segredo. */
-function digest(value: string): Buffer {
-  return createHash('sha256').update(value).digest();
+  private async verifyPersonalToken(token: string): Promise<AuthInfo> {
+    let userId: string | null;
+    try {
+      userId = await this.tokens.findUser(token);
+    } catch (error) {
+      this.logger.error('Falha ao consultar o token pessoal do MCP', error);
+      throw new ServerError('Não foi possível validar o token');
+    }
+    if (!userId) throw new InvalidTokenError('Token inválido ou revogado');
+    const extra: McpAuthExtra = { userId };
+    return {
+      token,
+      clientId: PERSONAL_TOKEN_CLIENT_ID,
+      scopes: [],
+      expiresAt: Math.floor(Date.now() / 1000) + PERSONAL_TOKEN_TTL_SECONDS,
+      resource: this.resource,
+      extra,
+    };
+  }
 }
 
 /** Mesma URL, ignorando fragmento e uma barra final. */

@@ -37,7 +37,7 @@ export function ReadOnlyHint({ children }: { children: ReactElement }) {
   )
 }
 
-function MenuReadOnlyNote() {
+export function MenuReadOnlyNote() {
   return (
     <>
       <DropdownMenuSeparator />

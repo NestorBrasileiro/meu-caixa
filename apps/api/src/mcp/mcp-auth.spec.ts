@@ -7,13 +7,13 @@ import {
 import type { IntrospectedToken } from '../auth/keycloak.client.js';
 import { validateEnv } from '../config/env.js';
 import {
-  ACCESS_TOKEN_CLIENT_ID,
   McpTokenVerifier,
+  PERSONAL_TOKEN_CLIENT_ID,
   mcpResourceUrl,
   protectedResourceMetadataUrl,
 } from './mcp-auth.js';
 
-const ACCESS_TOKEN = 'a'.repeat(64);
+const PERSONAL_TOKEN = 'mcx_' + 'a'.repeat(43);
 
 const env = (extra: Record<string, string> = {}) =>
   validateEnv({
@@ -25,7 +25,7 @@ const env = (extra: Record<string, string> = {}) =>
   });
 
 const token = (overrides: Partial<IntrospectedToken> = {}): IntrospectedToken => ({
-  user: { id: 'u1', username: 'dev', name: null, email: null, roles: ['owner'] },
+  user: { sub: 'kc-1', username: 'dev', name: null, email: null, roles: ['owner'] },
   audience: ['https://caixa.example.com/mcp', 'web'],
   clientId: 'claude',
   scopes: ['profile'],
@@ -38,7 +38,16 @@ function verifierWith(result: IntrospectedToken | null | Error, extraEnv = {}) {
     if (result instanceof Error) throw result;
     return result;
   });
-  return { verifier: new McpTokenVerifier({ introspectToken }, env(extraEnv)), introspectToken };
+  // Usuário do banco: o id interno, não o `sub` do Keycloak.
+  const resolve = vi.fn(async () => 'u1');
+  const findUser = vi.fn(async (value: string) => (value === PERSONAL_TOKEN ? 'u2' : null));
+  const verifier = new McpTokenVerifier(
+    { introspectToken },
+    env(extraEnv),
+    { resolve },
+    { findUser },
+  );
+  return { verifier, introspectToken, resolve, findUser };
 }
 
 describe('McpTokenVerifier', () => {
@@ -49,14 +58,15 @@ describe('McpTokenVerifier', () => {
     );
   });
 
-  it('aceita token do Keycloak com a audiência do MCP e a role', async () => {
-    const { verifier } = verifierWith(token());
+  it('aceita token do Keycloak com a audiência do MCP e a role, com o usuário do banco', async () => {
+    const { verifier, resolve } = verifierWith(token());
     await expect(verifier.verifyAccessToken('t')).resolves.toMatchObject({
       clientId: 'claude',
       scopes: ['profile'],
       expiresAt: 2_000_000_000,
       extra: { userId: 'u1' },
     });
+    expect(resolve).toHaveBeenCalledWith(expect.objectContaining({ sub: 'kc-1' }));
   });
 
   it('ignora barra final na audiência', async () => {
@@ -93,20 +103,20 @@ describe('McpTokenVerifier', () => {
     await expect(verifier.verifyAccessToken('t')).rejects.toBeInstanceOf(ServerError);
   });
 
-  it('aceita o MCP_ACCESS_TOKEN sem consultar o Keycloak', async () => {
-    const { verifier, introspectToken } = verifierWith(null, { MCP_ACCESS_TOKEN: ACCESS_TOKEN });
-    const info = await verifier.verifyAccessToken(ACCESS_TOKEN);
-    expect(info.clientId).toBe(ACCESS_TOKEN_CLIENT_ID);
+  it('aceita o token pessoal com o dono dele, sem consultar o Keycloak', async () => {
+    const { verifier, introspectToken } = verifierWith(null);
+    const info = await verifier.verifyAccessToken(PERSONAL_TOKEN);
+    expect(info.clientId).toBe(PERSONAL_TOKEN_CLIENT_ID);
+    expect(info.extra).toEqual({ userId: 'u2' });
     expect(info.expiresAt).toBeGreaterThan(Date.now() / 1000);
     expect(introspectToken).not.toHaveBeenCalled();
-
-    await expect(verifier.verifyAccessToken(ACCESS_TOKEN.slice(1))).rejects.toBeInstanceOf(
-      InvalidTokenError,
-    );
-    expect(introspectToken).toHaveBeenCalledOnce();
   });
 
-  it('exige MCP_ACCESS_TOKEN longo', () => {
-    expect(() => env({ MCP_ACCESS_TOKEN: 'curto' })).toThrow(/MCP_ACCESS_TOKEN/);
+  it('token pessoal desconhecido ou revogado é inválido (sem cair na introspecção)', async () => {
+    const { verifier, introspectToken } = verifierWith(token());
+    await expect(verifier.verifyAccessToken(PERSONAL_TOKEN + 'x')).rejects.toBeInstanceOf(
+      InvalidTokenError,
+    );
+    expect(introspectToken).not.toHaveBeenCalled();
   });
 });

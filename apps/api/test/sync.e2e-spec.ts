@@ -5,7 +5,7 @@ import type { Transaction } from '../src/domain/finance.js';
 import { DATABASE, type Database } from '../src/database/database.module.js';
 import { syncRuns } from '../src/database/schema.js';
 import { INTERRUPTED_RUN_ERROR, SyncService } from '../src/sync/sync.service.js';
-import { createTestApp, resetDatabase } from './app.js';
+import { createTestApp, resetDatabase, userIdOf } from './app.js';
 import { InMemoryProvider } from './in-memory-provider.js';
 
 const day = (offset: number) => addDays(today('America/Sao_Paulo'), offset);
@@ -113,7 +113,7 @@ describe('Sincronização (e2e)', () => {
   const http = () => request(app.getHttpServer());
 
   it('grava os dados do provedor e expõe pela API', async () => {
-    const run = await sync.run('MANUAL');
+    const run = await sync.run(await userIdOf(app), 'MANUAL');
 
     expect(run).toMatchObject({
       status: 'SUCCEEDED',
@@ -170,7 +170,7 @@ describe('Sincronização (e2e)', () => {
   });
 
   it('é idempotente e reflete mudanças, removendo pendentes que sumiram', async () => {
-    await sync.run('MANUAL');
+    await sync.run(await userIdOf(app), 'MANUAL');
 
     provider.accounts[0]!.balance = 250_00;
     // A compra pendente foi efetivada com outro id.
@@ -178,7 +178,7 @@ describe('Sincronização (e2e)', () => {
       .filter((t) => t.externalId !== 'pendente')
       .concat(tx('efetivada', 'card', day(-1), -45_90));
 
-    const second = await sync.run('MANUAL');
+    const second = await sync.run(await userIdOf(app), 'MANUAL');
 
     expect(second.stats).toMatchObject({ removedPendingTransactions: 1 });
     const accounts = await http().get('/api/accounts').expect(200);
@@ -194,8 +194,8 @@ describe('Sincronização (e2e)', () => {
   });
 
   it('busca o histórico na primeira vez e depois só a janela incremental', async () => {
-    await sync.run('MANUAL');
-    await sync.run('MANUAL');
+    await sync.run(await userIdOf(app), 'MANUAL');
+    await sync.run(await userIdOf(app), 'MANUAL');
 
     const checkingCalls = provider.transactionCalls.filter((c) => c.accountId === 'checking');
     expect(checkingCalls.map((c) => c.range)).toEqual([
@@ -205,10 +205,10 @@ describe('Sincronização (e2e)', () => {
   });
 
   it('mantém transações efetivadas que saíram da janela consultada', async () => {
-    await sync.run('MANUAL');
+    await sync.run(await userIdOf(app), 'MANUAL');
     provider.transactions = provider.transactions.filter((t) => t.externalId !== 'salario');
 
-    await sync.run('MANUAL');
+    await sync.run(await userIdOf(app), 'MANUAL');
 
     const transactions = await http()
       .get('/api/transactions')
@@ -220,7 +220,7 @@ describe('Sincronização (e2e)', () => {
   it('isola a falha de uma conta e marca a execução como parcial', async () => {
     provider.failingAccounts.add('card');
 
-    const run = await sync.run('MANUAL');
+    const run = await sync.run(await userIdOf(app), 'MANUAL');
 
     expect(run.status).toBe('PARTIAL');
     expect(run.errors).toEqual(['Transações de "Cartão": banco fora do ar']);
@@ -233,7 +233,7 @@ describe('Sincronização (e2e)', () => {
   it('marca a execução como falha quando o provedor está fora', async () => {
     vi.spyOn(provider, 'getConnections').mockRejectedValueOnce(new Error('Pluggy fora do ar'));
 
-    const run = await sync.run('MANUAL');
+    const run = await sync.run(await userIdOf(app), 'MANUAL');
 
     expect(run).toMatchObject({ status: 'FAILED', errors: ['Pluggy fora do ar'] });
     const runs = await http().get('/api/sync/runs').expect(200);
@@ -262,6 +262,7 @@ describe('Sincronização (e2e)', () => {
       .get<Database>(DATABASE)
       .insert(syncRuns)
       .values({
+        userId: await userIdOf(app),
         provider: 'test',
         trigger: 'SCHEDULED',
         status: 'RUNNING',
@@ -269,7 +270,7 @@ describe('Sincronização (e2e)', () => {
       })
       .returning();
 
-    const run = await sync.run('MANUAL');
+    const run = await sync.run(await userIdOf(app), 'MANUAL');
 
     expect(run.status).toBe('SUCCEEDED');
     const runs = await http().get('/api/sync/runs').expect(200);
@@ -307,7 +308,7 @@ describe('Sincronização (e2e)', () => {
     provider.transactions.push(
       tx('outro', 'checking', day(-3), -10_00, { description: '500 reais' }),
     );
-    await sync.run('MANUAL');
+    await sync.run(await userIdOf(app), 'MANUAL');
 
     const result = await http().get('/api/transactions').query({ search: '50%' }).expect(200);
     expect(result.body.items.map((t: { description: string }) => t.description)).toEqual([

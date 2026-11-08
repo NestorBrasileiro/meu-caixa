@@ -17,7 +17,7 @@ export class ClientApiError extends Error {
 
 export async function apiRequest<T = unknown>(
   path: string,
-  init: { method: "POST" | "PATCH" | "DELETE" | "GET"; body?: unknown } = { method: "GET" },
+  init: { method: "POST" | "PUT" | "PATCH" | "DELETE" | "GET"; body?: unknown } = { method: "GET" },
 ): Promise<T> {
   const response = await fetch(path, {
     method: init.method,

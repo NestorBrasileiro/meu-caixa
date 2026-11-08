@@ -18,7 +18,7 @@ export { SyncIndicatorSkeleton } from "./sync-indicator"
  */
 
 /** Sessão sem os dados do usuário (API fora do ar): o menu continua lá, com "Sair". */
-const UNKNOWN_USER: AuthUser = { id: "", username: null, name: null, email: null, roles: [] }
+const UNKNOWN_USER: AuthUser = { id: "", keycloakId: "", username: null, name: null, email: null, roles: [] }
 
 export async function SessionUserMenu() {
   const user = await loadOrNull("o usuário da sessão", getCurrentUser)
