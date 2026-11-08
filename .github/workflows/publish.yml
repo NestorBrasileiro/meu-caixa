@@ -1,0 +1,79 @@
+name: Publicar imagens
+
+# Publica as imagens de produção da API e da interface no GitHub Container
+# Registry, para o servidor rodar sem clonar o repositório
+# (deploy/docker-compose.app.yml, ver docs/deploy.md).
+#
+#   ghcr.io/nestorbrasileiro/meu-caixa-api:<tag>
+#   ghcr.io/nestorbrasileiro/meu-caixa-web:<tag>
+#
+# Tags: latest (master), sha-<commit> (todo build) e vX.Y.Z (tags de versão).
+# Na master, só publica depois que o CI do mesmo commit passou.
+
+on:
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
+    branches: [master]
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+
+concurrency:
+  group: publish-${{ github.event.workflow_run.head_sha || github.sha }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  publish:
+    if: github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - app: api
+            dockerfile: apps/api/Dockerfile
+          - app: web
+            dockerfile: apps/web/Dockerfile
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          # No workflow_run, o commit é o que passou no CI, não o último da branch.
+          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
+
+      - name: Nome da imagem
+        run: echo "IMAGE=ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/meu-caixa-${{ matrix.app }}" >> "$GITHUB_ENV"
+
+      - uses: docker/setup-buildx-action@v3
+
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.IMAGE }}
+          tags: |
+            type=raw,value=latest,enable=${{ github.event_name == 'workflow_run' || github.ref == 'refs/heads/master' }}
+            type=sha,prefix=sha-,format=short
+            type=semver,pattern=v{{version}}
+          labels: |
+            org.opencontainers.image.title=meu-caixa-${{ matrix.app }}
+
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ${{ matrix.dockerfile }}
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha,scope=${{ matrix.app }}
+          cache-to: type=gha,scope=${{ matrix.app }},mode=max

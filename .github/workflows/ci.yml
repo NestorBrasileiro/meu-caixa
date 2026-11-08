@@ -2,7 +2,7 @@ name: CI
 
 on:
   push:
-    branches: [main]
+    branches: [master]
   pull_request:
   workflow_dispatch:
 
@@ -112,3 +112,4 @@ jobs:
           cp deploy/.env.example deploy/.env
           docker compose -f deploy/docker-compose.yml config -q
           docker compose -f deploy/docker-compose.yml -f deploy/docker-compose.local.yml config -q
+          DATABASE_URL=postgres://u:p@db:5432/x docker compose -f deploy/docker-compose.app.yml config -q
