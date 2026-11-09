@@ -6,7 +6,7 @@
 #   docker build -f apps/api/Dockerfile -t meu-caixa-api .
 #
 # NODE_IMAGE permite fixar um digest (ex.: node:24-alpine@sha256:...).
-ARG NODE_IMAGE=node:24-alpine
+ARG NODE_IMAGE=node:24.22.1-alpine
 
 # ---------------------------------------------------------------------------
 FROM ${NODE_IMAGE} AS base
