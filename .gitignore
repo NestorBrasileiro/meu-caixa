@@ -5,6 +5,7 @@ coverage/
 .env
 .env.*
 !.env.example
+!.env.db.example
 .DS_Store
 
 # Deploy: teste local (deploy/smoke-local.sh)

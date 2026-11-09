@@ -22,8 +22,9 @@ AUTH="https://$AUTH_HOST:$PORT"
 WORK=$(mktemp -d)
 trap 'rm -rf "$WORK"' EXIT
 
+FILES=docker-compose.yml:docker-compose.keycloak.yml:docker-compose.local.yml
 compose() {
-  docker compose -p "$PROJECT" -f docker-compose.yml -f docker-compose.local.yml --env-file "$ENV_FILE" "$@"
+  COMPOSE_FILE=$FILES docker compose -p "$PROJECT" --env-file "$ENV_FILE" "$@"
 }
 
 step() { printf '\n== %s\n' "$*"; }
@@ -41,6 +42,8 @@ if [[ ! -f "$ENV_FILE" ]]; then
 DOMAIN=$HOST:$PORT
 AUTH_DOMAIN=$AUTH_HOST:$PORT
 AUTH_HOST=$AUTH_HOST
+KEYCLOAK_URL=https://$AUTH_HOST:$PORT
+APP_VERSION=local
 ACME_EMAIL=teste@$HOST
 POSTGRES_PASSWORD=$(secret)
 APP_DB_PASSWORD=$(secret)
@@ -57,6 +60,9 @@ BACKUP_DIR=$PWD/.backups-local
 BACKUP_RETENTION_DAYS=1
 EOF
 fi
+
+# .env.local de antes do Keycloak externo virar o padrão: completa o que falta.
+grep -q '^KEYCLOAK_URL=' "$ENV_FILE" || echo "KEYCLOAK_URL=https://$AUTH_HOST:$PORT" >> "$ENV_FILE"
 
 step "Validando o compose"
 compose config -q && ok "docker compose config"
@@ -143,8 +149,7 @@ logout=$("${CURL[@]}" -b "$JAR" -c "$JAR" -o /dev/null -w '%{http_code} %{redire
 ok "GET /auth/logout -> encerra a sessão no Keycloak"
 
 step "Backup (deploy/backup.sh)"
-COMPOSE_PROJECT_NAME=$PROJECT COMPOSE_FILE=docker-compose.yml:docker-compose.local.yml \
-  ENV_FILE=$ENV_FILE ./backup.sh
+COMPOSE_PROJECT_NAME=$PROJECT COMPOSE_FILE=$FILES ENV_FILE=$ENV_FILE ./backup.sh
 latest=$(find .backups-local -name 'meu-caixa-meu_caixa-*.sql.gz' | sort | tail -n 1)
 gzip -t "$latest" || fail "dump corrompido: $latest"
 gzip -dc "$latest" > "$WORK/dump.sql"
@@ -157,7 +162,7 @@ docker stats --no-stream --format 'table {{.Name}}\t{{.MemUsage}}' "${containers
 
 if [[ -n "${KEEP:-}" ]]; then
   step "Pilha no ar: $APP (teste / teste-local-123). Para derrubar:"
-  echo "   cd deploy && docker compose -p $PROJECT -f docker-compose.yml -f docker-compose.local.yml --env-file $ENV_FILE down -v"
+  echo "   cd deploy && COMPOSE_FILE=$FILES docker compose -p $PROJECT --env-file $ENV_FILE down -v"
 else
   step "Derrubando (down -v)"
   compose down -v --remove-orphans

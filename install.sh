@@ -245,7 +245,7 @@ project_env() {
       "KEYCLOAK_CLIENT_SECRET=$(gen_secret)" \
       "SESSION_SECRET=$(gen_secret)" \
       "SETTINGS_ENCRYPTION_KEY=$(gen_secret)" \
-      && warn "deploy/.env: preencha DOMAIN, AUTH_DOMAIN e ACME_EMAIL (Pluggy e Anthropic vão na tela Configurações)" || true
+      && warn "deploy/.env: preencha DOMAIN, ACME_EMAIL e KEYCLOAK_URL (Pluggy e Anthropic vão na tela Configurações)" || true
   fi
 }
 
