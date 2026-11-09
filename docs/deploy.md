@@ -203,7 +203,13 @@ docker compose up -d --wait
 
 > **Ainda sem nenhuma release publicada?** Gere as imagens no próprio Droplet (precisa de 2 GB de RAM): `docker compose up -d --build --wait`. Deixe `APP_VERSION=latest` no `.env` nesse caso.
 >
-> **As imagens são privadas?** Depois da primeira release, os pacotes aparecem no seu perfil do GitHub, em **Packages**. Para o `docker compose pull` à mão funcionar sem login, deixe os três (`meu-caixa-api`, `meu-caixa-web`, `meu-caixa-keycloak`) **públicos** (*Package settings → Change visibility*): as imagens só têm o código, que já é público, e nenhum segredo (tudo vem do `.env`). O deploy automático entra no ghcr.io sozinho, públicos ou não.
+> **As imagens são privadas?** Depois da primeira release, os pacotes aparecem no seu perfil do GitHub, em **Packages**. Para o `docker compose pull` à mão funcionar sem login, deixe os três (`meu-caixa-api`, `meu-caixa-web`, `meu-caixa-keycloak`) **públicos** (*Package settings → Change visibility*): as imagens só têm o código, que já é público, e nenhum segredo (tudo vem do `.env`). Ou deixe-os privados e faça login uma vez no Droplet, como `deploy`, com um token (classic) que tenha **só** `read:packages`:
+>
+> ```bash
+> read -rsp "Token: " T && echo "$T" | docker login ghcr.io -u <seu-usuário> --password-stdin; unset T
+> ```
+>
+> O deploy automático usa esse login quando ele existe (e não mexe nele); sem ele, entra no ghcr.io sozinho só durante o deploy. Token vencido = o `pull` falha e o `update.sh` volta para a versão anterior: renove e rode o login de novo.
 
 O que acontece na primeira subida:
 

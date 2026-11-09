@@ -89,9 +89,15 @@ jobs:
               "$DEPLOY_USER@$DEPLOY_HOST" "$@"
           }
 
-          # Login no ghcr.io só durante o deploy: o token do job expira quando ele acaba.
-          printf '%s' "$GHCR_TOKEN" | droplet "docker login ghcr.io -u '$GHCR_USER' --password-stdin" > /dev/null
-          trap 'droplet "docker logout ghcr.io" > /dev/null || true' EXIT
+          # Droplet com login fixo no ghcr.io (token só de leitura, docs/deploy.md):
+          # usa o dele e não mexe. Sem ele, entra só durante o deploy, porque o
+          # token do job expira quando ele acaba.
+          if droplet 'grep -qs "\"ghcr.io\"" "${DOCKER_CONFIG:-$HOME/.docker}/config.json"'; then
+            echo "Droplet já tem login no ghcr.io; usando o dele."
+          else
+            printf '%s' "$GHCR_TOKEN" | droplet "docker login ghcr.io -u '$GHCR_USER' --password-stdin" > /dev/null
+            trap 'droplet "docker logout ghcr.io" > /dev/null || true' EXIT
+          fi
 
           # Roda o update.sh da versão de destino (o clone pode estar numa versão
           # anterior a ele).
