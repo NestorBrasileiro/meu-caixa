@@ -47,7 +47,21 @@
       "attributes": {
         "pkce.code.challenge.method": "S256",
         "post.logout.redirect.uris": "https://${DOMAIN}##https://${DOMAIN}/*"
-      }
+      },
+      "protocolMappers": [
+        {
+          "name": "audience-web",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-audience-mapper",
+          "consentRequired": false,
+          "config": {
+            "included.client.audience": "web",
+            "access.token.claim": "true",
+            "id.token.claim": "false",
+            "introspection.token.claim": "true"
+          }
+        }
+      ]
     },
     {
       "clientId": "claude",
@@ -78,6 +92,18 @@
           "consentRequired": false,
           "config": {
             "included.custom.audience": "https://${DOMAIN}/mcp",
+            "access.token.claim": "true",
+            "id.token.claim": "false",
+            "introspection.token.claim": "true"
+          }
+        },
+        {
+          "name": "audience-web",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-audience-mapper",
+          "consentRequired": false,
+          "config": {
+            "included.client.audience": "web",
             "access.token.claim": "true",
             "id.token.claim": "false",
             "introspection.token.claim": "true"

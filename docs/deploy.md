@@ -182,6 +182,8 @@ Tem acesso ao `kcadm.sh` desse Keycloak? `kcadm.sh create realms -f meu-caixa-re
 
 O realm foi exportado de um Keycloak 26. Se o seu for bem mais antigo e a importação reclamar de algum campo, crie os clients à mão com os mesmos valores (os do `realm.json` servem de roteiro).
 
+> **Realm importado antes da v1.1.1?** O Keycloak 26.x mais recente só confirma um token na introspecção se o client que pergunta (o `web`, que é quem a API usa) estiver na audiência (`aud`) dele; sem isso, o login entra em loop e o log do Keycloak mostra `INTROSPECT_TOKEN_ERROR … reason="Client 'web' is not in the token audience"`. O `realm.json` atual já traz o mapper; num realm importado antes, crie-o à mão nos **dois** clients (`web` e `claude`): **Clients → (client) → Client scopes → `<client>-dedicated` → Configure a new mapper → Audience**, com *Name* `audience-web`, *Included Client Audience* `web`, *Add to access token* e *Add to token introspection* ligados. Vale para os próximos logins (saia e entre de novo).
+
 **Para o conector do Claude (recomendado):** clientes MCP procuram os metadados do login primeiro em `https://<KEYCLOAK>/.well-known/oauth-authorization-server/realms/meu-caixa` (RFC 8414), e o Keycloak só responde em `/realms/meu-caixa/.well-known/...`. Se o proxy na frente do seu Keycloak for um Caddy, acrescente no site dele:
 
 ```caddy
@@ -417,6 +419,9 @@ DEBUG [AuthGuard] 401 em GET /auth/me: cookie QgdcZ-…, sessão QgdcZ-…, http
 
 **Volta para a tela "erro no login"**
 : Veja `docker compose logs api | grep Callback`. `invalid_client` = o `KEYCLOAK_CLIENT_SECRET` do `.env` não é o do client `web` (copie o segredo do console, aba *Credentials* do client, para o `.env` e rode `docker compose up -d`).
+
+**O login fica em loop** (volta para o Keycloak sem parar)
+: Veja `docker compose logs api | grep AuthService`. Com `Keycloak respondeu que o token da sessão não está ativo`, o motivo está no log do Keycloak: `docker logs <container-do-keycloak> 2>&1 | grep INTROSPECT_TOKEN_ERROR | tail -3`. `reason="Client 'web' is not in the token audience"` = falta o mapper de audiência (aviso do passo 8). Para ver o passo a passo do login na API, use `LOG_LEVEL=debug` (seção 15).
 
 **Entro, mas vejo "sem acesso"**
 : Falta a role `owner` (client `web`) no seu usuário; passo 10.
