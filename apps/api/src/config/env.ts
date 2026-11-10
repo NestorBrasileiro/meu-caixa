@@ -1,5 +1,6 @@
 import { randomBytes } from 'node:crypto';
 import { z } from 'zod';
+import { LOG_LEVELS } from './log-levels.js';
 
 const booleanFlag = z.enum(['true', 'false']).transform((value) => value === 'true');
 
@@ -14,6 +15,8 @@ export const envSchema = z
   .object({
     NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
     PORT: z.coerce.number().int().positive().default(3000),
+    /** Detalhe do log: error, warn, log (padrão), debug (diagnóstico do login) ou verbose. */
+    LOG_LEVEL: z.enum(LOG_LEVELS).default('log'),
 
     DATABASE_URL: z.string().min(1),
     DATABASE_MIGRATE_ON_START: booleanFlag.default(false),

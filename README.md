@@ -73,6 +73,7 @@ Com `FINANCE_PROVIDER=fake` (padrão do `.env.example`) a API sobe com dados fic
 | `DATA_SOURCE` | `api` (padrão): dados reais da API. `mock`: dataset fictício (`src/lib/mock`), sem API, banco nem Keycloak — bom para mexer só no visual; as ações de escrita ficam desabilitadas |
 | `API_URL` | Onde a API responde, visto do servidor do Next (padrão `http://localhost:3000`); também é o destino do proxy de `/api` e `/auth` |
 | `TIMEZONE` | Fuso do "hoje" das telas (padrão `America/Sao_Paulo`) |
+| `LOG_LEVEL` | Detalhe do log da API: `error`, `warn`, `log` (padrão), `debug` (passo a passo do login) ou `verbose` |
 
 Na API, `APP_URL` e `FRONTEND_URL` apontam para a interface (`http://localhost:3001`): o callback do login passa pelo proxy do Next.
 

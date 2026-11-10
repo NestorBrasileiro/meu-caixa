@@ -35,6 +35,8 @@ services:
       KEYCLOAK_CLIENT_ID: ${KEYCLOAK_CLIENT_ID:-web}
       KEYCLOAK_CLIENT_SECRET: ${KEYCLOAK_CLIENT_SECRET:?defina KEYCLOAK_CLIENT_SECRET no .env}
       KEYCLOAK_REQUIRED_ROLE: ${KEYCLOAK_REQUIRED_ROLE:-owner}
+      # error | warn | log (padrão) | debug (diagnóstico do login) | verbose
+      LOG_LEVEL: ${LOG_LEVEL:-log}
       TIMEZONE: ${TIMEZONE:-America/Sao_Paulo}
       FINANCE_PROVIDER: ${FINANCE_PROVIDER:-pluggy}
       # Pluggy e Anthropic ficam no banco (tela Configurações), cifradas com esta chave.

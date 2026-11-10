@@ -394,6 +394,14 @@ docker stats                             # memória e CPU por container
 
 Os logs são rotacionados pelo Docker (3 arquivos de 10 MB por container). As atualizações automáticas ficam registradas em **Actions → Deploy**, no GitHub.
 
+**Mais detalhe:** `LOG_LEVEL=debug` no `.env` (e `docker compose up -d` para recriar a API) mostra o passo a passo do login: início, callback, sessão criada e o motivo de cada 401. Cada linha traz só o começo do id da sessão (o mesmo da coluna `sid` da tabela `sessions`), se o cookie veio (e se veio duplicado) e se a conexão chegou como HTTPS; nunca o valor do cookie nem tokens. Volte para `log` depois de investigar.
+
+```text
+DEBUG [AuthController] Login iniciado: sem cookie, sessão hCevfM…, https=true
+DEBUG [AuthController] Login concluído: nova sessão QgdcZ-…
+DEBUG [AuthGuard] 401 em GET /auth/me: cookie QgdcZ-…, sessão QgdcZ-…, https=false, tinha login (recusado pelo Keycloak)
+```
+
 ## 16. Problemas comuns
 
 **O certificado HTTPS não sai** (`docker compose logs caddy` mostra erros de ACME)
@@ -489,6 +497,8 @@ server {
     }
     location / {
         proxy_pass http://127.0.0.1:3001;
+        # "Pergunte ao Claude" espera até 150 s; o padrão do nginx (60 s) cortaria antes
+        proxy_read_timeout 180s;
     }
 }
 ```
