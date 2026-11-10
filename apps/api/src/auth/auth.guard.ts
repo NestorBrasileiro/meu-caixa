@@ -4,6 +4,7 @@ import {
   ForbiddenException,
   Inject,
   Injectable,
+  Logger,
   UnauthorizedException,
 } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
@@ -13,6 +14,7 @@ import { ENV } from '../config/config.module.js';
 import type { Env } from '../config/env.js';
 import { UsersService } from '../users/users.service.js';
 import { AuthService } from './auth.service.js';
+import { describeSession } from './session-diagnostics.js';
 
 /**
  * Guard global: toda rota exige sessão válida no Keycloak e a role
@@ -21,6 +23,8 @@ import { AuthService } from './auth.service.js';
  */
 @Injectable()
 export class AuthGuard implements CanActivate {
+  private readonly logger = new Logger(AuthGuard.name);
+
   constructor(
     private readonly reflector: Reflector,
     private readonly auth: AuthService,
@@ -36,8 +40,15 @@ export class AuthGuard implements CanActivate {
     if (isPublic) return true;
 
     const request = context.switchToHttp().getRequest<Request>();
+    const hadTokens = Boolean(request.session.tokens);
     const identity = await this.auth.authenticate(request.session);
-    if (!identity) throw new UnauthorizedException();
+    if (!identity) {
+      this.logger.debug(
+        `401 em ${request.method} ${request.originalUrl}: ${describeSession(request)}, ` +
+          (hadTokens ? 'tinha login (recusado pelo Keycloak)' : 'sem login na sessão'),
+      );
+      throw new UnauthorizedException();
+    }
     if (!identity.roles.includes(this.env.KEYCLOAK_REQUIRED_ROLE)) {
       throw new ForbiddenException(`Requer a role ${this.env.KEYCLOAK_REQUIRED_ROLE}`);
     }

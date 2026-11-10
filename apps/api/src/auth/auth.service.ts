@@ -24,11 +24,18 @@ export class AuthService {
 
     try {
       if (tokens.expiresAt - Date.now() < REFRESH_MARGIN_MS) {
+        this.logger.debug('Renovando o token da sessão no Keycloak');
         tokens = await this.keycloak.refresh(tokens);
         session.tokens = tokens;
       }
       const user = await this.keycloak.introspect(tokens.accessToken);
-      if (!user) delete session.tokens;
+      if (!user) {
+        // Sem este log, um Keycloak que recusa todo token vira um loop de login mudo.
+        this.logger.warn(
+          'Keycloak respondeu que o token da sessão não está ativo; sessão encerrada',
+        );
+        delete session.tokens;
+      }
       return user;
     } catch (error) {
       if (isSessionRejected(error)) {

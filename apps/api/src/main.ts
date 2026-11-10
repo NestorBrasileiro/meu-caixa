@@ -5,10 +5,13 @@ import { configureApp } from './app.setup.js';
 import { ENV } from './config/config.module.js';
 import type { Env } from './config/env.js';
 import { loadEnvFile } from './config/load-env-file.js';
+import { logLevelsFor } from './config/log-levels.js';
 
 async function bootstrap() {
   loadEnvFile();
-  const app = await NestFactory.create<NestExpressApplication>(AppModule);
+  const app = await NestFactory.create<NestExpressApplication>(AppModule, {
+    logger: logLevelsFor(process.env.LOG_LEVEL),
+  });
   configureApp(app);
   app.enableShutdownHooks();
   const env = app.get<Env>(ENV);

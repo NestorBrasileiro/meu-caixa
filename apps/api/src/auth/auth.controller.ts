@@ -14,6 +14,7 @@ import { ENV } from '../config/config.module.js';
 import type { Env } from '../config/env.js';
 import type { AuthUser } from './auth.types.js';
 import { KeycloakClient } from './keycloak.client.js';
+import { describeSession } from './session-diagnostics.js';
 import { SESSION_COOKIE } from './session.constants.js';
 
 /**
@@ -38,6 +39,7 @@ export class AuthController {
       throw new ServiceUnavailableException('Serviço de autenticação indisponível');
     });
     req.session.login = login;
+    this.logger.debug(`Login iniciado: ${describeSession(req)}`);
     res.redirect(url.href);
   }
 
@@ -47,6 +49,7 @@ export class AuthController {
   async callback(@Req() req: Request, @Res() res: Response): Promise<void> {
     const login = req.session.login;
     if (!login) {
+      this.logger.debug(`Callback sem login pendente: ${describeSession(req)}`);
       res.redirect('/auth/login');
       return;
     }
@@ -55,6 +58,7 @@ export class AuthController {
       // Novo id de sessão após o login (evita session fixation).
       await regenerate(req.session);
       req.session.tokens = tokens;
+      this.logger.debug(`Login concluído: nova sessão ${req.sessionID.slice(0, 6)}…`);
       res.redirect(this.env.FRONTEND_URL);
     } catch (error) {
       // Sem redirecionar para /auth/login: com SSO ativo, um erro persistente

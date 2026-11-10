@@ -1,0 +1,96 @@
+name: Release
+
+# Uma tag vX.Y.Z publica as imagens da versão no ghcr.io e atualiza o Droplet
+# (workflow Deploy, se os segredos estiverem configurados):
+#
+#   git tag -a v1.1.0 -m "Meu Caixa 1.1.0" && git push origin v1.1.0
+#
+# Criar uma release no GitHub com uma tag nova também dispara. Pré-release
+# (v1.1.0-rc.1) publica as imagens mas não move a "latest".
+
+on:
+  push:
+    tags: ['v*.*.*']
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  images:
+    name: Imagens
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v5
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Nomes das imagens
+        id: meta
+        run: |
+          # O ghcr.io só aceita nomes em minúsculas.
+          prefix="ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/meu-caixa"
+          for app in api web keycloak; do
+            tags="$prefix-$app:$GITHUB_REF_NAME"
+            if [[ $GITHUB_REF_NAME != *-* ]]; then tags="$tags,$prefix-$app:latest"; fi
+            echo "$app=$tags" >> "$GITHUB_OUTPUT"
+          done
+
+      - name: Imagem da API
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: apps/api/Dockerfile
+          push: true
+          tags: ${{ steps.meta.outputs.api }}
+          labels: |
+            org.opencontainers.image.source=https://github.com/${{ github.repository }}
+            org.opencontainers.image.version=${{ github.ref_name }}
+          cache-from: type=gha,scope=api
+          cache-to: type=gha,scope=api,mode=max
+
+      - name: Imagem da interface
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: apps/web/Dockerfile
+          push: true
+          tags: ${{ steps.meta.outputs.web }}
+          labels: |
+            org.opencontainers.image.source=https://github.com/${{ github.repository }}
+            org.opencontainers.image.version=${{ github.ref_name }}
+          cache-from: type=gha,scope=web
+          cache-to: type=gha,scope=web,mode=max
+
+      # Só para quem roda o Keycloak no próprio Droplet (docker-compose.keycloak.yml).
+      - name: Imagem do Keycloak
+        uses: docker/build-push-action@v6
+        with:
+          context: deploy/keycloak
+          push: true
+          tags: ${{ steps.meta.outputs.keycloak }}
+          labels: |
+            org.opencontainers.image.source=https://github.com/${{ github.repository }}
+            org.opencontainers.image.version=${{ github.ref_name }}
+
+  deploy:
+    name: Deploy
+    needs: images
+    permissions:
+      contents: read
+      packages: read
+    uses: ./.github/workflows/deploy.yml
+    with:
+      version: ${{ github.ref_name }}
+    secrets: inherit

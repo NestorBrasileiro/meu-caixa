@@ -7,7 +7,7 @@
   "license": "UNLICENSED",
   "type": "module",
   "engines": {
-    "node": ">=22.12"
+    "node": ">=22.23.4"
   },
   "scripts": {
     "build": "nest build",
@@ -39,13 +39,13 @@
     "drizzle-orm": "^0.45.3",
     "exceljs": "4.4.0",
     "express-session": "^1.19.0",
-    "fflate": "0.8.2",
+    "fflate": "0.8.3",
     "openid-client": "^6.8.8",
     "pdfmake": "0.3.11",
     "pg": "^8.23.1",
     "reflect-metadata": "^0.2.2",
     "rxjs": "^7.8.1",
-    "zod": "^4.6.5"
+    "zod": "^4.6.6"
   },
   "devDependencies": {
     "@nestjs/cli": "^12.0.0",
@@ -57,7 +57,7 @@
     "@types/pdfmake": "0.3.3",
     "@types/pg": "^8.23.1",
     "@types/supertest": "^7.0.0",
-    "@vitest/coverage-v8": "^4.1.2",
+    "@vitest/coverage-v8": "^4.1.12",
     "drizzle-kit": "^0.31.11",
     "oxlint": "^1.58.0",
     "prettier": "^3.4.2",
@@ -65,6 +65,6 @@
     "supertest": "^7.0.0",
     "typescript": "^6.0.2",
     "unpdf": "1.8.1",
-    "vitest": "^4.1.2"
+    "vitest": "^4.1.12"
   }
 }

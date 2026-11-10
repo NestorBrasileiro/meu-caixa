@@ -7,16 +7,14 @@ name: Publicar imagens
 #   ghcr.io/nestorbrasileiro/meu-caixa-api:<tag>
 #   ghcr.io/nestorbrasileiro/meu-caixa-web:<tag>
 #
-# Tags: latest (master), sha-<commit> (todo build) e vX.Y.Z (tags de versão).
-# Na master, só publica depois que o CI do mesmo commit passou.
+# Tags: latest e sha-<commit>, só depois que o CI do mesmo commit na master
+# passou. As versões (vX.Y.Z) são publicadas pelo workflow Release.
 
 on:
   workflow_run:
     workflows: [CI]
     types: [completed]
     branches: [master]
-  push:
-    tags: ['v*']
   workflow_dispatch:
 
 concurrency:
@@ -64,7 +62,6 @@ jobs:
           tags: |
             type=raw,value=latest,enable=${{ github.event_name == 'workflow_run' || github.ref == 'refs/heads/master' }}
             type=sha,prefix=sha-,format=short
-            type=semver,pattern=v{{version}}
           labels: |
             org.opencontainers.image.title=meu-caixa-${{ matrix.app }}
 

@@ -7,4 +7,5 @@
 	http_port 8088
 }
 
-import sites.caddy
+import app.caddy
+import auth.caddy
