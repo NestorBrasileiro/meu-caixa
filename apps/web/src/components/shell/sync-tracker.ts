@@ -57,13 +57,17 @@ function subscribe(listener: () => void) {
 /** Acompanhamento em curso: a execução (null até descobrir qual, depois de um 409) e se avisa no fim. */
 let job: { runId: string | null; announce: boolean } | null = null
 
-/** "Sincronizar agora". Um 409 (já há uma rodando) não é erro: passa a acompanhar a que está rodando. */
-export async function startSync(): Promise<void> {
+/**
+ * "Sincronizar agora". Um 409 (já há uma rodando) não é erro: passa a acompanhar a que está rodando.
+ * `full`: "Ressincronizar tudo" (histórico inteiro, espelhando o que o banco devolve).
+ */
+export async function startSync(options: { full?: boolean } = {}): Promise<void> {
   if (state.phase !== "idle") return
   update({ phase: "starting" })
   let runId: string | null = null
   try {
-    runId = (await apiRequest<SyncRun>("/api/sync", { method: "POST" })).id
+    const path = options.full ? "/api/sync?full=true" : "/api/sync"
+    runId = (await apiRequest<SyncRun>(path, { method: "POST" })).id
   } catch (error) {
     if (!(error instanceof ClientApiError && error.status === 409)) {
       update({ phase: "idle" })

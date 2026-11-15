@@ -5,7 +5,7 @@ import { ENV } from '../config/config.module.js';
 import type { Env } from '../config/env.js';
 import { DATABASE, type Database } from '../database/database.module.js';
 import { accounts, connections, transactions } from '../database/schema.js';
-import { today } from '../domain/dates.js';
+import { addDays, today } from '../domain/dates.js';
 import type { Cents, IsoDate } from '../domain/finance.js';
 import { monthOf, monthRange, monthsBetween, shiftMonth, type IsoMonth } from '../domain/months.js';
 import { isActiveIn } from '../domain/planning.js';
@@ -45,6 +45,8 @@ const RECURRENCE_MIN_MONTHS = 3;
 /** Sem atualização há mais que isso, a conexão ganha um aviso. */
 const STALE_CONNECTION_DAYS = 3;
 const STALE_SYNC_HOURS = 48;
+/** Pendente mais velha que isso provavelmente já virou efetivada (ou foi cancelada) no banco. */
+const STALE_PENDING_DAYS = 15;
 
 type LoadedTransaction = AnalyzedTransaction & TransactionInfo;
 
@@ -189,14 +191,17 @@ export class ExportDataService {
             status: connection.status,
             lastRefreshedAt: connection.lastRefreshedAt?.toISOString() ?? null,
           })),
-          warnings: freshnessWarnings({
-            connections: connectionRows,
-            accounts: accountRows,
-            lastSync,
-            periodTo: period.to,
-            now,
-            timezone,
-          }),
+          warnings: [
+            ...freshnessWarnings({
+              connections: connectionRows,
+              accounts: accountRows,
+              lastSync,
+              periodTo: period.to,
+              now,
+              timezone,
+            }),
+            ...stalePendingWarnings(txs, todayDate),
+          ],
         };
       },
 
@@ -599,6 +604,30 @@ function buildCards(accountRows: AccountRow[], invoiceRows: InvoiceRow[], todayD
           : null,
       };
     });
+}
+
+/**
+ * Pendentes antigas por conta: costumam ser compras que o banco já efetivou com
+ * outro id (e que contariam duas vezes) ou que foram canceladas.
+ */
+export function stalePendingWarnings(
+  txs: Pick<LoadedTransaction, 'status' | 'date' | 'institutionName' | 'accountName'>[],
+  todayDate: IsoDate,
+): string[] {
+  const limit = addDays(todayDate, -STALE_PENDING_DAYS);
+  const byAccount = new Map<string, { count: number; oldest: IsoDate }>();
+  for (const tx of txs) {
+    if (tx.status !== 'PENDING' || tx.date >= limit) continue;
+    const key = `${tx.institutionName} — ${tx.accountName}`;
+    const entry = byAccount.get(key) ?? { count: 0, oldest: tx.date };
+    entry.count += 1;
+    if (tx.date < entry.oldest) entry.oldest = tx.date;
+    byAccount.set(key, entry);
+  }
+  return [...byAccount].map(
+    ([account, { count, oldest }]) =>
+      `${account}: ${count} ${count === 1 ? 'lançamento pendente' : 'lançamentos pendentes'} há mais de ${STALE_PENDING_DAYS} dias (o mais antigo de ${formatDate(oldest)}). Se já foram efetivados, use "Ressincronizar tudo" na tela Contas para limpar.`,
+  );
 }
 
 /** Avisos para quem lê o arquivo saber se os números podem estar velhos. */

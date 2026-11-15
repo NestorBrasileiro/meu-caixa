@@ -141,7 +141,7 @@ export function AccountsView({
         {histories.map((history) => (
           <InvoicesCard key={history.accountId} history={history} />
         ))}
-        <SyncHistoryCard runs={runs} now={now} />
+        <SyncHistoryCard runs={runs} now={now} readOnly={readOnly} />
       </div>
     </div>
   )

@@ -106,6 +106,10 @@ export interface SyncRun {
     accounts: number
     transactions: number
     removedPendingTransactions: number
+    /** Efetivadas que o banco reemitiu com outro id (ausente nas execuções antigas). */
+    removedPostedTransactions?: number
+    /** "Ressincronizar tudo". */
+    full?: boolean
     invoices: number
   } | null
   errors: string[]
