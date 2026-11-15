@@ -1,11 +1,12 @@
 import { CheckCircle2, CircleSlash, CircleX, History, RefreshCw, TriangleAlert, type LucideIcon } from "lucide-react"
 import type { IsoDateTime, SyncRun, SyncTrigger } from "@/lib/api/types"
 import { isInterruptedRun } from "@/components/shell/sync-status"
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
+import { Card, CardAction, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { formatDateTime } from "@/lib/format/date"
 import { cn } from "@/lib/utils"
 import { durationSeconds, formatDuration } from "./format"
+import { FullResyncButton } from "./full-resync-button"
 
 /** Situação exibida: a da API, mais "interrompida" para a que ficou "em andamento" para trás. */
 type RunDisplayStatus = SyncRun["status"] | "INTERRUPTED"
@@ -26,6 +27,10 @@ const RUN_TRIGGER: Record<SyncTrigger, string> = {
   SCHEDULED: "Agendada",
   MANUAL: "Manual",
   STARTUP: "Na inicialização",
+}
+
+function triggerLabel(run: SyncRun): string {
+  return run.stats?.full ? "Ressincronização completa" : RUN_TRIGGER[run.trigger]
 }
 
 const COUNT = new Intl.NumberFormat("pt-BR")
@@ -68,7 +73,16 @@ function count(value: number | undefined): string {
 }
 
 /** Execuções recentes da sincronização: quando, por quê, como terminou e o que trouxe. */
-export function SyncHistoryCard({ runs: allRuns, now }: { runs: SyncRun[]; now: IsoDateTime }) {
+export function SyncHistoryCard({
+  runs: allRuns,
+  now,
+  readOnly = false,
+}: {
+  runs: SyncRun[]
+  now: IsoDateTime
+  /** Dados de exemplo: não há API para ressincronizar. */
+  readOnly?: boolean
+}) {
   const runs = allRuns.slice(0, MAX_RUNS)
   return (
     <Card>
@@ -81,6 +95,11 @@ export function SyncHistoryCard({ runs: allRuns, now }: { runs: SyncRun[]; now: 
             ? `As ${MAX_RUNS} execuções mais recentes e o que cada uma trouxe.`
             : "Execuções mais recentes e o que cada uma trouxe."}
         </CardDescription>
+        {!readOnly && (
+          <CardAction>
+            <FullResyncButton />
+          </CardAction>
+        )}
       </CardHeader>
       {/* Tabela ou lista pela largura do próprio card (container), não da janela: lado a lado com as faturas,
           o card fica estreito mesmo em telas largas. A tabela precisa de ~34rem; abaixo de 36rem, lista. */}
@@ -118,7 +137,7 @@ export function SyncHistoryCard({ runs: allRuns, now }: { runs: SyncRun[]; now: 
                     const rows = [
                       <TableRow key={run.id} className={cn("hover:bg-transparent", hasErrors && "border-b-0")}>
                         <TableCell>{formatDateTime(run.startedAt)}</TableCell>
-                        <TableCell>{RUN_TRIGGER[run.trigger]}</TableCell>
+                        <TableCell>{triggerLabel(run)}</TableCell>
                         <TableCell>
                           <RunStatus status={displayStatus(run, now)} />
                         </TableCell>
@@ -154,7 +173,7 @@ export function SyncHistoryCard({ runs: allRuns, now }: { runs: SyncRun[]; now: 
                   </div>
                   <p className="text-muted-foreground text-xs">
                     {[
-                      RUN_TRIGGER[run.trigger],
+                      triggerLabel(run),
                       run.finishedAt && duration(run),
                       run.stats && `${count(run.stats.transactions)} transações`,
                       run.stats && `${count(run.stats.invoices)} faturas`,

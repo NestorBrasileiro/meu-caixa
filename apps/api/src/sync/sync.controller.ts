@@ -8,8 +8,8 @@ import {
   PreconditionFailedException,
   Query,
 } from '@nestjs/common';
-import { Type } from 'class-transformer';
-import { IsInt, IsOptional, Max, Min } from 'class-validator';
+import { Transform, Type } from 'class-transformer';
+import { IsBoolean, IsInt, IsOptional, Max, Min } from 'class-validator';
 import { CurrentUser } from '../auth/current-user.decorator.js';
 import type { SyncRunRow } from '../database/schema.js';
 import { ProviderNotConfiguredError } from '../integrations/finance-provider.js';
@@ -24,6 +24,14 @@ export class ListSyncRunsQuery {
   limit = 20;
 }
 
+export class StartSyncQuery {
+  /** "Ressincronizar tudo": histórico inteiro, espelhando o que o banco devolve. */
+  @IsOptional()
+  @Transform(({ value }) => (value === 'true' ? true : value === 'false' ? false : value))
+  @IsBoolean()
+  full?: boolean;
+}
+
 @Controller('sync')
 export class SyncController {
   constructor(private readonly sync: SyncService) {}
@@ -31,9 +39,9 @@ export class SyncController {
   /** Dispara uma sincronização sob demanda; acompanhe em `GET /sync/runs`. */
   @Post()
   @HttpCode(HttpStatus.ACCEPTED)
-  async start(@CurrentUser() userId: string): Promise<SyncRunRow> {
+  async start(@CurrentUser() userId: string, @Query() query: StartSyncQuery): Promise<SyncRunRow> {
     try {
-      const { run } = await this.sync.start(userId, 'MANUAL');
+      const { run } = await this.sync.start(userId, 'MANUAL', { full: query.full === true });
       return run;
     } catch (error) {
       if (error instanceof SyncInProgressError) throw new ConflictException(error.message);

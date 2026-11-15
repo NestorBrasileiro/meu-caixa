@@ -217,6 +217,100 @@ describe('Sincronização (e2e)', () => {
     expect(transactions.body.total).toBe(1);
   });
 
+  it('apaga a pendente substituída por efetivada com outro id e outra data, fora da sobreposição', async () => {
+    provider.transactions.push(
+      tx('pendente-velha', 'card', day(-20), -89_00, { status: 'PENDING' }),
+    );
+    await sync.run(await userIdOf(app), 'MANUAL');
+
+    // 20 dias depois da compra, o banco troca a pendente por uma efetivada com data anterior.
+    provider.transactions = provider.transactions
+      .filter((t) => t.externalId !== 'pendente-velha')
+      .concat(tx('efetivada-nova', 'card', day(-24), -89_00));
+    const second = await sync.run(await userIdOf(app), 'MANUAL');
+
+    expect(second.stats).toMatchObject({ removedPendingTransactions: 1 });
+    const descriptions = (await http().get('/api/transactions').expect(200)).body.items.map(
+      (t: { description: string }) => t.description,
+    );
+    expect(descriptions).toContain('efetivada-nova');
+    expect(descriptions).not.toContain('pendente-velha');
+  });
+
+  it('leva a categoria editada para a transação reemitida com outro id', async () => {
+    provider.transactions.push(
+      tx('uber-pendente', 'card', day(-3), -45_90, {
+        status: 'PENDING',
+        description: 'UBER *TRIP',
+      }),
+    );
+    await sync.run(await userIdOf(app), 'MANUAL');
+    const before = (await http().get('/api/transactions').query({ search: 'UBER' }).expect(200))
+      .body;
+    await http()
+      .patch(`/api/transactions/${before.items[0].id}`)
+      .send({ category: 'Taxi and ride-hailing' })
+      .expect(200);
+
+    provider.transactions = provider.transactions
+      .filter((t) => t.externalId !== 'uber-pendente')
+      .concat(tx('uber-efetivada', 'card', day(-4), -45_90, { description: 'UBER *TRIP' }));
+    await sync.run(await userIdOf(app), 'MANUAL');
+
+    const after = (await http().get('/api/transactions').query({ search: 'UBER' }).expect(200))
+      .body;
+    expect(after.items).toEqual([
+      expect.objectContaining({ status: 'POSTED', category: 'Taxi and ride-hailing' }),
+    ]);
+  });
+
+  it('"Ressincronizar tudo" remove efetivadas duplicadas sem perder a categoria editada', async () => {
+    // O banco mandou a mesma compra duas vezes, com ids diferentes.
+    provider.transactions.push(
+      tx('corrida-a', 'card', day(-60), -30_00, { description: 'APP CORRIDA' }),
+      tx('corrida-b', 'card', day(-60), -30_00, { description: 'APP CORRIDA' }),
+    );
+    await sync.run(await userIdOf(app), 'MANUAL');
+    const duplicated = (
+      await http().get('/api/transactions').query({ search: 'CORRIDA' }).expect(200)
+    ).body;
+    expect(duplicated.total).toBe(2);
+    const edited = duplicated.items.find((t: { id: string }) => t.id)!;
+    await http()
+      .patch(`/api/transactions/${edited.id}`)
+      .send({ category: 'Taxi and ride-hailing' })
+      .expect(200);
+
+    // Hoje o banco só devolve uma; a incremental não alcança 60 dias atrás.
+    provider.transactions = provider.transactions.filter((t) => t.externalId !== 'corrida-b');
+    await sync.run(await userIdOf(app), 'MANUAL');
+    expect(
+      (await http().get('/api/transactions').query({ search: 'CORRIDA' }).expect(200)).body.total,
+    ).toBe(2);
+
+    const full = await sync.run(await userIdOf(app), 'MANUAL', { full: true });
+
+    expect(full.stats).toMatchObject({ full: true, removedPostedTransactions: 1 });
+    const after = (await http().get('/api/transactions').query({ search: 'CORRIDA' }).expect(200))
+      .body;
+    expect(after.items).toEqual([
+      expect.objectContaining({ description: 'APP CORRIDA', category: 'Taxi and ride-hailing' }),
+    ]);
+  });
+
+  it('POST /api/sync?full=true dispara a ressincronização completa', async () => {
+    await sync.run(await userIdOf(app), 'MANUAL');
+    provider.transactionCalls.length = 0;
+
+    const { body } = await http().post('/api/sync').query({ full: 'true' }).expect(202);
+    await sync.waitForIdle();
+
+    expect(body).toMatchObject({ status: 'RUNNING' });
+    const checking = provider.transactionCalls.filter((c) => c.accountId === 'checking');
+    expect(checking.map((c) => c.range)).toEqual([{ from: day(-365), to: day(0) }]);
+    await http().post('/api/sync').query({ full: 'talvez' }).expect(400);
+  });
+
   it('isola a falha de uma conta e marca a execução como parcial', async () => {
     provider.failingAccounts.add('card');
 

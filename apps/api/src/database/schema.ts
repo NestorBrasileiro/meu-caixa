@@ -244,6 +244,13 @@ export interface SyncStats {
   accounts: number;
   transactions: number;
   removedPendingTransactions: number;
+  /**
+   * Efetivadas apagadas porque o banco parou de devolvê-las dentro da janela
+   * buscada (reemitidas com outro id). Ausente nas execuções antigas.
+   */
+  removedPostedTransactions?: number;
+  /** Execução "Ressincronizar tudo": buscou o histórico inteiro. */
+  full?: boolean;
   invoices: number;
   /** Ausente nas execuções gravadas antes dos empréstimos existirem. */
   loans?: number;

@@ -1,5 +1,5 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
-import { and, desc, eq, gte, inArray, lte, notInArray } from 'drizzle-orm';
+import { and, desc, eq, gte, inArray, lt, lte, min, notInArray, or } from 'drizzle-orm';
 import type { Pool, PoolClient } from 'pg';
 import { ENV } from '../config/config.module.js';
 import type { Env } from '../config/env.js';
@@ -25,6 +25,7 @@ import {
   type FinanceProvider,
   type FinanceProviderSource,
 } from '../integrations/finance-provider.js';
+import { carryUserCategories } from './reissued.js';
 
 /**
  * Advisory lock de duas chaves: esta (o "espaço" das sincronizações) e o hash
@@ -66,9 +67,14 @@ export class SyncService {
   /**
    * Inicia uma sincronização do usuário em background. Sem provedor
    * configurado, falha com `ProviderNotConfiguredError` antes de registrar a
-   * execução.
+   * execução. `full`: "Ressincronizar tudo" — busca o histórico inteiro e
+   * espelha o que o banco devolve (limpa duplicatas e pendentes antigas).
    */
-  async start(userId: string, trigger: SyncTrigger): Promise<StartedSync> {
+  async start(
+    userId: string,
+    trigger: SyncTrigger,
+    options: { full?: boolean } = {},
+  ): Promise<StartedSync> {
     const provider = await this.providers.get(userId);
     const lockClient = await this.pool.connect();
     let locked = false;
@@ -85,7 +91,7 @@ export class SyncService {
         .insert(syncRuns)
         .values({ userId, provider: provider.name, trigger, status: 'RUNNING' })
         .returning();
-      const completion = this.execute(run!, provider).finally(() =>
+      const completion = this.execute(run!, provider, options.full === true).finally(() =>
         releaseLock(lockClient, userId),
       );
       // Marca a rejeição como tratada; quem aguarda `completion` ainda a recebe.
@@ -103,8 +109,12 @@ export class SyncService {
   }
 
   /** Executa uma sincronização do usuário e aguarda o fim. */
-  async run(userId: string, trigger: SyncTrigger): Promise<SyncRunRow> {
-    const { completion } = await this.start(userId, trigger);
+  async run(
+    userId: string,
+    trigger: SyncTrigger,
+    options: { full?: boolean } = {},
+  ): Promise<SyncRunRow> {
+    const { completion } = await this.start(userId, trigger, options);
     return completion;
   }
 
@@ -157,14 +167,20 @@ export class SyncService {
     }
   }
 
-  private async execute(run: SyncRunRow, provider: FinanceProvider): Promise<SyncRunRow> {
+  private async execute(
+    run: SyncRunRow,
+    provider: FinanceProvider,
+    full: boolean,
+  ): Promise<SyncRunRow> {
     const stats: SyncStats = {
       connections: 0,
       accounts: 0,
       transactions: 0,
       removedPendingTransactions: 0,
+      removedPostedTransactions: 0,
       invoices: 0,
       loans: 0,
+      ...(full ? { full: true } : {}),
     };
     const errors: string[] = [];
     let status: SyncStatus;
@@ -182,7 +198,7 @@ export class SyncService {
       );
       for (const account of accountRows) {
         await this.collect(errors, `Transações de "${account.name}"`, () =>
-          this.syncTransactions(provider, account, stats),
+          this.syncTransactions(provider, account, stats, full),
         );
         if (account.type === 'CREDIT_CARD') {
           await this.collect(errors, `Faturas de "${account.name}"`, () =>
@@ -287,13 +303,28 @@ export class SyncService {
     provider: FinanceProvider,
     account: AccountRow,
     stats: SyncStats,
+    full: boolean,
   ): Promise<void> {
     const to = today(this.env.TIMEZONE);
+    const lookbackFrom = addDays(to, -this.env.SYNC_LOOKBACK_DAYS);
     // Incremental: volta alguns dias para pegar pendentes que viraram efetivadas.
-    const incrementalFrom = account.transactionsSyncedThrough
-      ? addDays(account.transactionsSyncedThrough, -this.env.SYNC_OVERLAP_DAYS)
-      : addDays(to, -this.env.SYNC_LOOKBACK_DAYS);
-    const from = incrementalFrom < to ? incrementalFrom : to;
+    let from =
+      full || !account.transactionsSyncedThrough
+        ? lookbackFrom
+        : addDays(account.transactionsSyncedThrough, -this.env.SYNC_OVERLAP_DAYS);
+    // Pendente de cartão pode levar mais que a sobreposição para virar efetivada, que às
+    // vezes chega com outro id e com data anterior: a janela vai até a pendente mais antiga
+    // gravada, com a mesma folga da sobreposição antes dela.
+    const [oldest] = await this.db
+      .select({ date: min(transactions.date) })
+      .from(transactions)
+      .where(and(eq(transactions.accountId, account.id), eq(transactions.status, 'PENDING')));
+    if (oldest?.date) {
+      const reach = addDays(oldest.date, -this.env.SYNC_OVERLAP_DAYS);
+      if (reach < from) from = reach;
+    }
+    if (from < lookbackFrom) from = lookbackFrom;
+    if (from > to) from = to;
 
     const fetched = await provider.getTransactions(account.externalId, { from, to });
     const values = fetched.map(({ accountExternalId: _account, installment, ...transaction }) => ({
@@ -306,6 +337,28 @@ export class SyncService {
     }));
 
     await this.db.transaction(async (tx) => {
+      const stored = await tx
+        .select({
+          id: transactions.id,
+          externalId: transactions.externalId,
+          status: transactions.status,
+          date: transactions.date,
+          amount: transactions.amount,
+          description: transactions.description,
+          userCategory: transactions.userCategory,
+        })
+        .from(transactions)
+        .where(
+          and(
+            eq(transactions.accountId, account.id),
+            or(
+              and(gte(transactions.date, from), lte(transactions.date, to)),
+              // Pendente de antes da janela de busca inteira nunca vai voltar.
+              and(eq(transactions.status, 'PENDING'), lt(transactions.date, from)),
+            ),
+          ),
+        );
+
       for (const batch of chunk(values, UPSERT_BATCH_SIZE)) {
         await tx
           .insert(transactions)
@@ -328,20 +381,38 @@ export class SyncService {
           });
       }
 
-      // Pendentes que sumiram da janela foram canceladas ou substituídas.
-      const seen = values.map((value) => value.externalId);
-      const removed = await tx
-        .delete(transactions)
-        .where(
-          and(
-            eq(transactions.accountId, account.id),
-            eq(transactions.status, 'PENDING'),
-            gte(transactions.date, from),
-            lte(transactions.date, to),
-            seen.length > 0 ? notInArray(transactions.externalId, seen) : undefined,
+      // Espelho da janela buscada: o que está gravado nela e o banco não devolveu foi
+      // cancelado (pendente) ou reemitido com outro id (pendente que virou efetivada,
+      // efetivada duplicada). Só depois de a busca inteira dar certo.
+      const seen = new Set(values.map((value) => value.externalId));
+      const gone = stored.filter((row) => !seen.has(row.externalId));
+      const known = new Set(stored.map((row) => row.externalId));
+      // Quem pode herdar a categoria editada: as que chegaram agora e, para a cópia
+      // duplicada que some, a gêmea que fica (se ainda não tiver categoria própria).
+      const heirs = [
+        ...values.filter((value) => !known.has(value.externalId)),
+        ...stored.filter((row) => seen.has(row.externalId) && row.userCategory === null),
+      ];
+      for (const { from: old, to: replacement } of carryUserCategories(gone, heirs)) {
+        await tx
+          .update(transactions)
+          .set({ userCategory: old.userCategory, updatedAt: new Date() })
+          .where(
+            and(
+              eq(transactions.userId, account.userId),
+              eq(transactions.provider, provider.name),
+              eq(transactions.externalId, replacement.externalId),
+            ),
+          );
+      }
+      if (gone.length > 0) {
+        await tx.delete(transactions).where(
+          inArray(
+            transactions.id,
+            gone.map((row) => row.id),
           ),
-        )
-        .returning({ id: transactions.id });
+        );
+      }
 
       await tx
         .update(accounts)
@@ -349,7 +420,10 @@ export class SyncService {
         .where(eq(accounts.id, account.id));
 
       stats.transactions += values.length;
-      stats.removedPendingTransactions += removed.length;
+      stats.removedPendingTransactions += gone.filter((row) => row.status === 'PENDING').length;
+      stats.removedPostedTransactions =
+        (stats.removedPostedTransactions ?? 0) +
+        gone.filter((row) => row.status === 'POSTED').length;
     });
   }
 
