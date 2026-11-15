@@ -93,10 +93,23 @@ export function isInternal(tx: Transaction): boolean {
 
 export type InternalKind = "card-payment" | "own-transfer"
 
-/** Tipo de movimentação interna que a categoria representa (as regras olham só a categoria). */
+/**
+ * Categorias que a API sempre trata como movimentação interna, para o menu de
+ * categorias avisar antes de escolher. O tipo de cada lançamento continua
+ * vindo da API (`kind`), que também reconhece fatura pela descrição.
+ */
+const INTERNAL_CATEGORIES: Readonly<Record<string, InternalKind>> = {
+  "Credit card payment": "card-payment",
+  "Transfer - Savings": "own-transfer",
+  "Same person transfer": "own-transfer",
+  "Same person transfer - PIX": "own-transfer",
+  "Same person transfer - TED": "own-transfer",
+  "Same person transfer - CASH": "own-transfer",
+}
+
+/** Tipo de movimentação interna que a categoria representa. */
 export function internalKindOf(category: string | null): InternalKind | null {
-  const probe = { category } as Transaction
-  return isCardPayment(probe) ? "card-payment" : isOwnTransfer(probe) ? "own-transfer" : null
+  return category === null ? null : (INTERNAL_CATEGORIES[category] ?? null)
 }
 
 /** Por que um lançamento editado nesta tela só continua na lista por estar fixado. */

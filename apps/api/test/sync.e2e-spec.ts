@@ -169,6 +169,36 @@ describe('Sincronização (e2e)', () => {
     ]);
   });
 
+  it('devolve o tipo de cada transação, corrigindo categorias erradas do agregador', async () => {
+    provider.transactions.push(
+      tx('fatura-debito', 'checking', day(-3), -500_00, {
+        description: 'PAGAMENTO DE FATURA CARTAO CREDITO VIA DEBITO',
+        category: 'Loans and financing',
+      }),
+      tx('fatura-credito', 'card', day(-3), 500_00, {
+        description: 'TRA-123-20261004-UT9876',
+        category: 'Transfers',
+      }),
+      tx('emprestimo', 'checking', day(-8), 3_000_00, {
+        description: 'Depósito do Empréstimo Pessoal',
+        category: 'Loans and financing',
+      }),
+    );
+    await sync.run(await userIdOf(app), 'MANUAL');
+
+    const { body } = await http().get('/api/transactions').expect(200);
+    const kinds = Object.fromEntries(
+      body.items.map((t: { description: string; kind: string }) => [t.description, t.kind]),
+    );
+    expect(kinds).toMatchObject({
+      Salário: 'RECEITA',
+      'Parcela terreno': 'GASTO',
+      'PAGAMENTO DE FATURA CARTAO CREDITO VIA DEBITO': 'PAGAMENTO_FATURA',
+      'TRA-123-20261004-UT9876': 'PAGAMENTO_FATURA',
+      'Depósito do Empréstimo Pessoal': 'CREDITO_RECEBIDO',
+    });
+  });
+
   it('é idempotente e reflete mudanças, removendo pendentes que sumiram', async () => {
     await sync.run(await userIdOf(app), 'MANUAL');
 

@@ -5,8 +5,15 @@ import { ENV } from '../config/config.module.js';
 import type { Env } from '../config/env.js';
 import { DATABASE, type Database } from '../database/database.module.js';
 import { accounts, connections, transactions } from '../database/schema.js';
+import {
+  isInternalKind,
+  isLoanCredit,
+  isLoanPayment,
+  isOverdraftCharge,
+} from '../domain/classify.js';
 import { today } from '../domain/dates.js';
 import type { Cents, IsoDate } from '../domain/finance.js';
+import { detectLoans, type LoanMovement } from '../domain/loans.js';
 import { monthOf, monthRange, monthsBetween, shiftMonth, type IsoMonth } from '../domain/months.js';
 import { isActiveIn } from '../domain/planning.js';
 import {
@@ -23,7 +30,7 @@ import { PlanningService } from '../planning/planning.service.js';
 import { SyncService } from '../sync/sync.service.js';
 import { TransactionsService } from '../transactions/transactions.service.js';
 import type { SectionId } from './export.catalog.js';
-import { formatDate, formatDateTime, syncStatusLabel } from './export-format.js';
+import { formatDate, formatDateTime, formatMoney, syncStatusLabel } from './export-format.js';
 import type {
   AccountInfo,
   CardInfo,
@@ -189,14 +196,17 @@ export class ExportDataService {
             status: connection.status,
             lastRefreshedAt: connection.lastRefreshedAt?.toISOString() ?? null,
           })),
-          warnings: freshnessWarnings({
-            connections: connectionRows,
-            accounts: accountRows,
-            lastSync,
-            periodTo: period.to,
-            now,
-            timezone,
-          }),
+          warnings: [
+            ...freshnessWarnings({
+              connections: connectionRows,
+              accounts: accountRows,
+              lastSync,
+              periodTo: period.to,
+              now,
+              timezone,
+            }),
+            ...debtWarnings({ accounts: cash, transactions: txs, loans }),
+          ],
         };
       },
 
@@ -243,7 +253,10 @@ export class ExportDataService {
 
       parcelamentos: installmentsInfo,
 
-      emprestimos: () => loadLoans(),
+      emprestimos: async () => {
+        const [contracts, txs] = await Promise.all([loadLoans(), loadPeriod()]);
+        return { contracts, detected: detectLoans(txs.map(loanMovement)) };
+      },
 
       compromissos: async () => {
         const planning = await loadPlanning();
@@ -496,7 +509,12 @@ export class ExportDataService {
 
       for (const row of page) {
         const category = row.userCategory ?? row.category;
-        const kind = kindOf({ amount: row.amount, category });
+        const kind = kindOf({
+          amount: row.amount,
+          category,
+          description: row.description,
+          accountType: row.accountType,
+        });
         result.push({
           id: row.id,
           accountId: row.accountId,
@@ -517,7 +535,7 @@ export class ExportDataService {
           status: row.status,
           amount: row.amount,
           kind,
-          internal: kind === 'PAGAMENTO_FATURA' || kind === 'TRANSFERENCIA_PROPRIA',
+          internal: isInternalKind(kind),
         });
       }
       if (page.length < TRANSACTION_PAGE_SIZE) return result;
@@ -555,6 +573,7 @@ function cashFlow(
     savingsRate: row.income === 0 ? null : row.net / row.income,
     cardPayments: row.cardPayments,
     ownTransfersOut: row.ownTransfersOut,
+    loanCredits: row.loanCredits,
   }));
 }
 
@@ -568,6 +587,7 @@ function sumFlow(rows: CashFlowMonth[]): CashFlowTotals {
     savingsRate: income === 0 ? null : (income - spending) / income,
     cardPayments: sum(rows.map((row) => row.cardPayments)),
     ownTransfersOut: sum(rows.map((row) => row.ownTransfersOut)),
+    loanCredits: sum(rows.map((row) => row.loanCredits)),
   };
 }
 
@@ -599,6 +619,48 @@ function buildCards(accountRows: AccountRow[], invoiceRows: InvoiceRow[], todayD
           : null,
       };
     });
+}
+
+function loanMovement(tx: LoadedTransaction): LoanMovement {
+  return {
+    date: tx.date,
+    amount: tx.amount,
+    institutionName: tx.institutionName,
+    accountName: tx.accountName,
+    loanCredit: isLoanCredit(tx),
+    loanPayment: isLoanPayment(tx),
+  };
+}
+
+/**
+ * Avisos sobre dívidas que os números do resumo não mostram sozinhos: conta no
+ * negativo, juros de cheque especial e empréstimos que só aparecem nas transações.
+ */
+export function debtWarnings(input: {
+  accounts: Pick<AccountRow, 'name' | 'institutionName' | 'balance'>[];
+  transactions: LoadedTransaction[];
+  loans: unknown[];
+}): string[] {
+  const warnings: string[] = [];
+  for (const account of input.accounts) {
+    if (account.balance < 0) {
+      warnings.push(
+        `${account.institutionName} — ${account.name}: conta no negativo (saldo ${formatMoney(account.balance)}), provavelmente usando o cheque especial.`,
+      );
+    }
+  }
+  const overdraft = input.transactions.filter(isOverdraftCharge);
+  if (overdraft.length > 0) {
+    warnings.push(
+      `Juros e IOF de cheque especial no período: ${formatMoney(-sum(overdraft.map((tx) => tx.amount)))} em ${overdraft.length} lançamentos.`,
+    );
+  }
+  if (input.loans.length === 0 && input.transactions.some(isLoanCredit)) {
+    warnings.push(
+      'Há liberações de empréstimo nas transações, mas o banco não informou os contratos: veja "Empréstimos encontrados nas transações" na seção Empréstimos.',
+    );
+  }
+  return warnings;
 }
 
 /** Avisos para quem lê o arquivo saber se os números podem estar velhos. */

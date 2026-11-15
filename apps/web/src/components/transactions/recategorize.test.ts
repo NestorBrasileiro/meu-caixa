@@ -11,6 +11,7 @@ import {
   saveFailureDescription,
   without,
 } from "./recategorize"
+import { mockKind } from "@/lib/mock/generator"
 
 const tx = (id: string, category: string | null, originalCategory: string | null = category): Transaction => ({
   id,
@@ -25,6 +26,7 @@ const tx = (id: string, category: string | null, originalCategory: string | null
   counterpartyName: null,
   installment: null,
   invoiceExternalId: null,
+  kind: mockKind(category, -10_00),
 })
 
 describe("transactions/recategorize", () => {

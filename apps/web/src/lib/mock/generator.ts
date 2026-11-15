@@ -7,6 +7,7 @@ import type {
   PaymentMethod,
   SyncRun,
   Transaction,
+  TransactionKind,
 } from "@/lib/api/types"
 
 /**
@@ -335,6 +336,19 @@ function invoiceId(month: string): string {
 
 // ------------------------------------------------------------------ geração
 
+/**
+ * Tipo dos lançamentos de exemplo. No modo real quem calcula é a API; aqui as
+ * categorias são limpas, então basta olhar a categoria.
+ */
+export function mockKind(category: string | null, amount: number): TransactionKind {
+  if (category === "Credit card payment") return "PAGAMENTO_FATURA"
+  if (category === "Transfer - Savings" || category?.startsWith("Same person transfer")) {
+    return "TRANSFERENCIA_PROPRIA"
+  }
+  if (category === "Loans and financing" && amount > 0) return "CREDITO_RECEBIDO"
+  return amount < 0 ? "GASTO" : amount > 0 ? "RECEITA" : "NEUTRA"
+}
+
 function generateTransactions(): Transaction[] {
   const transactions: Transaction[] = []
   const start = addDays(MOCK_TODAY, -HISTORY_DAYS)
@@ -370,6 +384,7 @@ function generateTransactions(): Transaction[] {
           ? { number: (monthIndex % rule.installmentsOf) + 1, total: rule.installmentsOf }
           : null,
         invoiceExternalId: isCard ? invoiceId(invoiceMonthFor(date)) : null,
+        kind: mockKind(rule.category, amount),
       })
     }
   }
@@ -390,6 +405,7 @@ function generateTransactions(): Transaction[] {
       counterpartyName: "Cartão Exemplo",
       installment: null,
       invoiceExternalId: null,
+      kind: "PAGAMENTO_FATURA",
     })
   }
 

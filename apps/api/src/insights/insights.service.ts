@@ -36,6 +36,7 @@ export const TRANSACTION_TYPES = [
   'receitas',
   'pagamentos_fatura',
   'transferencias_proprias',
+  'creditos_de_emprestimo',
 ] as const;
 export type TransactionTypeFilter = (typeof TRANSACTION_TYPES)[number];
 
@@ -44,6 +45,7 @@ const KIND_BY_FILTER: Record<Exclude<TransactionTypeFilter, 'todas'>, Transactio
   receitas: 'RECEITA',
   pagamentos_fatura: 'PAGAMENTO_FATURA',
   transferencias_proprias: 'TRANSFERENCIA_PROPRIA',
+  creditos_de_emprestimo: 'CREDITO_RECEBIDO',
 };
 
 export interface SearchTransactionsInput {
@@ -304,6 +306,7 @@ export class InsightsService {
         fora_da_conta: {
           pagamentos_de_fatura: money(row.cardPayments),
           transferencias_para_contas_proprias: money(row.ownTransfersOut),
+          creditos_de_emprestimo: money(row.loanCredits),
         },
       })),
       media_meses_fechados: {

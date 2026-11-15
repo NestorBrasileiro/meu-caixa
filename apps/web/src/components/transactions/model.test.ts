@@ -11,6 +11,7 @@ import {
   NO_CATEGORY,
   noDataReason,
 } from "./model"
+import { mockKind } from "@/lib/mock/generator"
 
 const tx = (
   id: string,
@@ -30,6 +31,7 @@ const tx = (
   counterpartyName: null,
   installment: null,
   invoiceExternalId: null,
+  kind: mockKind(category, amount),
   ...overrides,
 })
 

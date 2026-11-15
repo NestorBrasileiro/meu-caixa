@@ -10,6 +10,7 @@ import type {
 import type { IsoMonth } from '../domain/months.js';
 import type { RecurrencePattern, TransactionKind } from '../insights/aggregate.js';
 import type { StoredAnalysis } from '../insights/analysis.service.js';
+import type { DetectedLoan } from '../domain/loans.js';
 import type { LoanDto } from '../loans/loan.dto.js';
 import type { SectionId } from './export.catalog.js';
 
@@ -48,7 +49,12 @@ export interface ExportSectionData {
   cartoes: CardInfo[];
   faturas: InvoiceInfo[];
   parcelamentos: CardInstallmentInfo[];
-  emprestimos: LoanDto[];
+  emprestimos: {
+    /** Contratos informados pelos bancos (Open Finance). */
+    contracts: LoanDto[];
+    /** Liberações e parcelas encontradas nas transações do período. */
+    detected: DetectedLoan[];
+  };
   compromissos: CommitmentInfo[];
   metas: GoalInfo[];
   orcamento: BudgetData;
@@ -217,6 +223,8 @@ export interface CashFlowTotals {
   savingsRate: number | null;
   cardPayments: Cents;
   ownTransfersOut: Cents;
+  /** Dinheiro emprestado que entrou (não conta como renda). */
+  loanCredits: Cents;
 }
 
 export interface CashFlowMonth extends CashFlowTotals {

@@ -1,4 +1,4 @@
-import { isCardPayment, isIncome, isOwnTransfer, isSpending } from '../domain/classify.js';
+import { kindOf } from '../domain/classify.js';
 import { addDays } from '../domain/dates.js';
 import type { AccountType, Cents, Installment, IsoDate, PaymentMethod } from '../domain/finance.js';
 import { lastDayOf, monthOf, monthsBetween, shiftMonth, type IsoMonth } from '../domain/months.js';
@@ -25,16 +25,7 @@ export interface AnalyzedTransaction {
   paymentMethod?: PaymentMethod | null;
 }
 
-export type TransactionKind =
-  'GASTO' | 'RECEITA' | 'PAGAMENTO_FATURA' | 'TRANSFERENCIA_PROPRIA' | 'NEUTRA';
-
-export function kindOf(tx: Pick<AnalyzedTransaction, 'amount' | 'category'>): TransactionKind {
-  if (isCardPayment(tx)) return 'PAGAMENTO_FATURA';
-  if (isOwnTransfer(tx)) return 'TRANSFERENCIA_PROPRIA';
-  if (isSpending(tx)) return 'GASTO';
-  if (isIncome(tx)) return 'RECEITA';
-  return 'NEUTRA';
-}
+export { kindOf, type TransactionKind } from '../domain/classify.js';
 
 /** Meses (`YYYY-MM`) de `from` a `to`, inclusive, do mais antigo ao mais novo. */
 export function monthsInRange(from: IsoDate, to: IsoDate): IsoMonth[] {
@@ -53,6 +44,8 @@ export interface MonthTotals {
   cardPayments: Cents;
   /** Fora da conta de gasto e renda: saídas para contas próprias (valor positivo). */
   ownTransfersOut: Cents;
+  /** Fora da renda: dinheiro emprestado que entrou (liberação de empréstimo). */
+  loanCredits: Cents;
 }
 
 /** Renda, gasto e resultado por mês (cada real gasto conta uma vez). */
@@ -60,7 +53,15 @@ export function monthlyTotals(txs: AnalyzedTransaction[], months: IsoMonth[]): M
   const byMonth = new Map(
     months.map((month) => [
       month,
-      { month, income: 0, spending: 0, net: 0, cardPayments: 0, ownTransfersOut: 0 },
+      {
+        month,
+        income: 0,
+        spending: 0,
+        net: 0,
+        cardPayments: 0,
+        ownTransfersOut: 0,
+        loanCredits: 0,
+      },
     ]),
   );
   for (const tx of txs) {
@@ -78,6 +79,9 @@ export function monthlyTotals(txs: AnalyzedTransaction[], months: IsoMonth[]): M
         break;
       case 'TRANSFERENCIA_PROPRIA':
         if (tx.amount < 0) row.ownTransfersOut -= tx.amount;
+        break;
+      case 'CREDITO_RECEBIDO':
+        row.loanCredits += tx.amount;
         break;
     }
   }

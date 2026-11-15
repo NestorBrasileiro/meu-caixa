@@ -117,7 +117,7 @@ describe('renderCsvZip', () => {
     expect(resumo).toContain('precisa de ação');
 
     const report = sampleReport({ sections: ['emprestimos'] });
-    report.data.emprestimos = [];
+    report.data.emprestimos = { contracts: [], detected: [] };
     const loans = parseCsv(text(unzip(renderCsvZip(report))['06-emprestimos.csv']!));
     expect(loans[0]).toEqual(['Observação']);
     expect(loans[1]![0]).toMatch(/Open Finance/);

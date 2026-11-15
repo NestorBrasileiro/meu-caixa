@@ -106,6 +106,7 @@ export function reportHeader(report: ExportReport) {
 export const CONVENTIONS = [
   'Valores em reais (R$). Negativos são saídas de dinheiro; positivos, entradas.',
   'Pagamento de fatura e transferência entre contas próprias não são gasto nem renda (as compras do cartão já contam como gasto na data da compra): nas transações, aparecem com "Interna = Sim".',
+  'Dinheiro emprestado que entra (liberação de empréstimo) não conta como entrada: aparece com o tipo "Crédito recebido (empréstimo)", e as parcelas pagas contam como gasto.',
   'Nos cartões, "dívida" é o valor em aberto (quanto se deve), não um saldo negativo.',
   'Datas em dd/mm/aaaa, no fuso de Brasília. Meses marcados como parciais não estão completos no período.',
   'Categoria: a escolhida no Meu Caixa quando você editou; a original do banco aparece em "Categoria original".',
@@ -114,7 +115,8 @@ export const CONVENTIONS = [
 /** Pedido sugerido para colar com o arquivo num chat de IA. */
 export const AI_PROMPT = [
   'Este arquivo é o meu relatório financeiro exportado do Meu Caixa (valores em R$; negativos são saídas; ' +
-    'pagamentos de fatura e transferências entre minhas próprias contas não são gasto novo). ' +
+    'pagamentos de fatura e transferências entre minhas próprias contas não são gasto novo; ' +
+    'dinheiro de empréstimo que entrou não é renda). ' +
     'Analise meus gastos e responda em português:',
   '1. Para onde vai o meu dinheiro: categorias e estabelecimentos que mais pesam e o que mudou de um mês para o outro.',
   '2. Vazamentos: assinaturas esquecidas ou duplicadas, tarifas bancárias, juros, multas e cobranças estranhas.',
@@ -210,6 +212,11 @@ const BUILDERS: { [K in SectionId]: ViewBuilder<K> } = {
           {
             label: 'Transferências para contas próprias (não contam)',
             value: neg(data.periodResult.ownTransfersOut),
+            type: 'money',
+          },
+          {
+            label: 'Crédito recebido de empréstimos (não conta como entrada)',
+            value: data.periodResult.loanCredits,
             type: 'money',
           },
         ],
@@ -390,59 +397,96 @@ const BUILDERS: { [K in SectionId]: ViewBuilder<K> } = {
     },
   ],
 
-  emprestimos: (rows) =>
-    rows.length === 0
-      ? [{ kind: 'list', tone: 'info', items: [LOANS_EMPTY_NOTE] }]
-      : [
-          table(
-            [
-              { header: 'Banco', type: 'text' },
-              { header: 'Produto', type: 'text' },
-              { header: 'Contrato', type: 'text', hideInPdf: true },
-              { header: 'Contratado', type: 'money', sum: true },
-              { header: 'Saldo devedor', type: 'money', sum: true },
-              { header: 'Parcelas pagas', type: 'int' },
-              { header: 'Total de parcelas', type: 'int' },
-              { header: 'Restantes', type: 'int' },
-              { header: 'Atrasadas', type: 'int' },
-              { header: 'Valor da parcela', type: 'money', sum: true },
-              { header: 'Próxima parcela', type: 'date' },
-              { header: 'Valor da próxima', type: 'money' },
-              { header: 'Taxa a.a.', type: 'pct' },
-              { header: 'CET a.a.', type: 'pct' },
-              { header: 'Contratado em', type: 'date', hideInPdf: true },
-              { header: 'Vencimento final', type: 'date' },
-              { header: 'Periodicidade', type: 'text', hideInPdf: true },
-            ],
-            rows.map((l) => [
-              l.institutionName,
-              l.productName,
-              l.contractNumber,
-              l.contractedAmount,
-              l.outstandingBalance,
-              l.installments.paid,
-              l.installments.total,
-              l.installments.remaining,
-              l.installments.overdue,
-              l.installmentAmount,
-              l.nextInstallment?.dueDate ?? null,
-              l.nextInstallment?.amount ?? null,
-              fraction(l.interestRateAnnual),
-              fraction(l.cetAnnual),
-              l.contractDate,
-              l.finalDueDate,
-              l.periodicity,
-            ]),
-            LOANS_EMPTY_NOTE,
-          ),
-          {
-            kind: 'list',
-            tone: 'info',
-            items: [
-              'Dados informados pelos bancos via Open Finance. Financiamentos que o banco não compartilha (ex.: com loteadora) ficam em "Compromissos fixos" quando cadastrados.',
-            ],
-          },
-        ],
+  emprestimos: ({ contracts, detected }) => {
+    const contractBlocks: ViewBlock[] =
+      contracts.length === 0
+        ? [{ kind: 'list', tone: 'info', items: [LOANS_EMPTY_NOTE] }]
+        : [
+            table(
+              [
+                { header: 'Banco', type: 'text' },
+                { header: 'Produto', type: 'text' },
+                { header: 'Contrato', type: 'text', hideInPdf: true },
+                { header: 'Contratado', type: 'money', sum: true },
+                { header: 'Saldo devedor', type: 'money', sum: true },
+                { header: 'Parcelas pagas', type: 'int' },
+                { header: 'Total de parcelas', type: 'int' },
+                { header: 'Restantes', type: 'int' },
+                { header: 'Atrasadas', type: 'int' },
+                { header: 'Valor da parcela', type: 'money', sum: true },
+                { header: 'Próxima parcela', type: 'date' },
+                { header: 'Valor da próxima', type: 'money' },
+                { header: 'Taxa a.a.', type: 'pct' },
+                { header: 'CET a.a.', type: 'pct' },
+                { header: 'Contratado em', type: 'date', hideInPdf: true },
+                { header: 'Vencimento final', type: 'date' },
+                { header: 'Periodicidade', type: 'text', hideInPdf: true },
+              ],
+              contracts.map((l) => [
+                l.institutionName,
+                l.productName,
+                l.contractNumber,
+                l.contractedAmount,
+                l.outstandingBalance,
+                l.installments.paid,
+                l.installments.total,
+                l.installments.remaining,
+                l.installments.overdue,
+                l.installmentAmount,
+                l.nextInstallment?.dueDate ?? null,
+                l.nextInstallment?.amount ?? null,
+                fraction(l.interestRateAnnual),
+                fraction(l.cetAnnual),
+                l.contractDate,
+                l.finalDueDate,
+                l.periodicity,
+              ]),
+              LOANS_EMPTY_NOTE,
+            ),
+            {
+              kind: 'list',
+              tone: 'info',
+              items: [
+                'Dados informados pelos bancos via Open Finance. Financiamentos que o banco não compartilha (ex.: com loteadora) ficam em "Compromissos fixos" quando cadastrados.',
+              ],
+            },
+          ];
+    const detectedBlocks: ViewBlock[] =
+      detected.length === 0
+        ? []
+        : [
+            {
+              kind: 'list',
+              tone: 'warning',
+              title: 'Empréstimos encontrados nas transações',
+              items: [
+                'Liberações de crédito e parcelas de empréstimo que aparecem nas transações do período, mesmo sem contrato informado pelo banco. O saldo devedor não está aqui: confira no app do banco.',
+              ],
+            },
+            table(
+              [
+                { header: 'Banco', type: 'text' },
+                { header: 'Conta', type: 'text' },
+                { header: 'Crédito recebido', type: 'money', sum: true },
+                { header: 'Liberações', type: 'int' },
+                { header: 'Parcelas pagas', type: 'money', sum: true },
+                { header: 'Pagamentos', type: 'int' },
+                { header: 'Último pagamento', type: 'date' },
+              ],
+              detected.map((d) => [
+                d.institutionName,
+                d.accountName,
+                d.released,
+                d.releases,
+                neg(d.paid),
+                d.payments,
+                d.lastPaymentDate,
+              ]),
+              'Nenhum empréstimo nas transações.',
+            ),
+          ];
+    return [...contractBlocks, ...detectedBlocks];
+  },
 
   compromissos: (rows) => [
     table(
@@ -585,6 +629,7 @@ const BUILDERS: { [K in SectionId]: ViewBuilder<K> } = {
         { header: 'Taxa de poupança', type: 'pct' },
         { header: 'Pagamentos de fatura', type: 'money', sum: true },
         { header: 'Transferências p/ contas próprias', type: 'money', sum: true },
+        { header: 'Crédito de empréstimos', type: 'money', sum: true },
       ],
       rows.map((m) => [
         m.month,
@@ -595,6 +640,7 @@ const BUILDERS: { [K in SectionId]: ViewBuilder<K> } = {
         m.savingsRate,
         neg(m.cardPayments),
         neg(m.ownTransfersOut),
+        m.loanCredits,
       ]),
       'Nenhum mês no período.',
     ),

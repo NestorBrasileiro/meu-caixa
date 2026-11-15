@@ -41,6 +41,18 @@ export interface Account {
 }
 
 export type TransactionStatus = "POSTED" | "PENDING"
+
+/**
+ * Tipo calculado pela API (`apps/api/src/domain/classify.ts`), com a descrição
+ * e o tipo da conta corrigindo categorias erradas do agregador.
+ */
+export type TransactionKind =
+  | "GASTO"
+  | "RECEITA"
+  | "PAGAMENTO_FATURA"
+  | "TRANSFERENCIA_PROPRIA"
+  | "CREDITO_RECEBIDO"
+  | "NEUTRA"
 export type PaymentMethod = "PIX" | "TED" | "DOC" | "BOLETO" | "CARD" | "OTHER"
 
 /** Item de GET /transactions */
@@ -60,6 +72,7 @@ export interface Transaction {
   counterpartyName: string | null
   installment: { number: number; total: number } | null
   invoiceExternalId: string | null
+  kind: TransactionKind
 }
 
 export interface Page<T> {

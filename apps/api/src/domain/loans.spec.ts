@@ -1,4 +1,4 @@
-import { nextInstallment, type NextInstallmentInput } from './loans.js';
+import { detectLoans, nextInstallment, type NextInstallmentInput } from './loans.js';
 
 const base: NextInstallmentInput = {
   firstInstallmentDueDate: '2026-01-31',
@@ -76,5 +76,56 @@ describe('nextInstallment', () => {
       dueDate: '2026-10-31',
       amount: 837_81 + 500_00,
     });
+  });
+});
+
+describe('detectLoans', () => {
+  const move = (
+    date: string,
+    amount: number,
+    kind: 'credit' | 'payment' | 'other',
+    accountName = 'Conta',
+  ) => ({
+    date,
+    amount,
+    institutionName: 'Banco',
+    accountName,
+    loanCredit: kind === 'credit',
+    loanPayment: kind === 'payment',
+  });
+
+  it('soma liberações e parcelas por conta e guarda a última parcela', () => {
+    expect(
+      detectLoans([
+        move('2026-01-10', 5_000_00, 'credit'),
+        move('2026-02-10', -450_00, 'payment'),
+        move('2026-03-10', -450_00, 'payment'),
+        move('2026-03-11', -80_00, 'other'),
+        move('2026-03-12', -100_00, 'payment', 'Outra conta'),
+      ]),
+    ).toEqual([
+      {
+        institutionName: 'Banco',
+        accountName: 'Conta',
+        released: 5_000_00,
+        releases: 1,
+        paid: 900_00,
+        payments: 2,
+        lastPaymentDate: '2026-03-10',
+      },
+      {
+        institutionName: 'Banco',
+        accountName: 'Outra conta',
+        released: 0,
+        releases: 0,
+        paid: 100_00,
+        payments: 1,
+        lastPaymentDate: '2026-03-12',
+      },
+    ]);
+  });
+
+  it('sem liberação nem parcela, nada', () => {
+    expect(detectLoans([move('2026-01-10', -50_00, 'other')])).toEqual([]);
   });
 });
