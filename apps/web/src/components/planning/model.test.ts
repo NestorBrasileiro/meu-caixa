@@ -17,6 +17,7 @@ import {
   sortCommitments,
   sourceCategoryOptions,
 } from "./model"
+import { mockKind } from "@/lib/mock/generator"
 
 const money = (cents: number) => `R$ ${(cents / 100).toFixed(2)}`
 
@@ -33,6 +34,7 @@ const tx = (date: string, amount: number, category: string | null): Transaction 
   counterpartyName: null,
   installment: null,
   invoiceExternalId: null,
+  kind: mockKind(category, amount),
 })
 
 const closed = ["2026-07", "2026-08", "2026-09"]

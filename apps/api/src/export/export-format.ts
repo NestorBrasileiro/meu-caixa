@@ -149,6 +149,7 @@ const KINDS: Record<TransactionKind, string> = {
   RECEITA: 'Receita',
   PAGAMENTO_FATURA: 'Pagamento de fatura',
   TRANSFERENCIA_PROPRIA: 'Transferência própria',
+  CREDITO_RECEBIDO: 'Crédito recebido (empréstimo)',
   NEUTRA: 'Neutra',
 };
 export const kindLabel = (kind: TransactionKind) => KINDS[kind] ?? kind;

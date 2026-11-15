@@ -328,8 +328,11 @@ export class PlanningService {
         amount: transactions.amount,
         category: transactions.category,
         userCategory: transactions.userCategory,
+        description: transactions.description,
+        accountType: accounts.type,
       })
       .from(transactions)
+      .innerJoin(accounts, eq(transactions.accountId, accounts.id))
       .where(
         and(
           eq(transactions.userId, userId),
@@ -341,7 +344,7 @@ export class PlanningService {
     let income = 0;
     let spending = 0;
     for (const row of rows) {
-      const tx = { amount: row.amount, category: row.userCategory ?? row.category };
+      const tx = { ...row, category: row.userCategory ?? row.category };
       if (isIncome(tx)) income += tx.amount;
       else if (isSpending(tx)) spending -= tx.amount;
     }

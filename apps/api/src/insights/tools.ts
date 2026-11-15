@@ -101,7 +101,8 @@ export function createInsightTools({
           .default('todas')
           .describe(
             'gastos = saídas que contam como gasto; receitas = entradas de dinheiro novo; ' +
-              'pagamentos_fatura e transferencias_proprias não são gasto nem renda',
+              'pagamentos_fatura e transferencias_proprias não são gasto nem renda; ' +
+              'creditos_de_emprestimo = dinheiro emprestado que entrou (é dívida, não renda)',
           ),
         ordenar: z
           .enum(['recentes', 'maior_valor'])

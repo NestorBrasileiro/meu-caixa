@@ -1,7 +1,9 @@
 import { BadRequestException, Inject, Injectable, NotFoundException } from '@nestjs/common';
 import { and, asc, count, desc, eq, gte, ilike, lte, or, type SQL } from 'drizzle-orm';
 import { DATABASE, type Database } from '../database/database.module.js';
-import { invoices, transactions, type TransactionRow } from '../database/schema.js';
+import { accounts, invoices, transactions, type TransactionRow } from '../database/schema.js';
+import { kindOf } from '../domain/classify.js';
+import type { AccountType } from '../domain/finance.js';
 import type { ListInvoicesQuery, ListTransactionsQuery } from './transactions.dto.js';
 
 @Injectable()
@@ -29,8 +31,9 @@ export class TransactionsService {
 
     const [rows, [totals]] = await Promise.all([
       this.db
-        .select()
+        .select({ transaction: transactions, accountType: accounts.type })
         .from(transactions)
+        .innerJoin(accounts, eq(transactions.accountId, accounts.id))
         .where(where)
         .orderBy(desc(transactions.date), asc(transactions.id))
         .limit(query.limit)
@@ -39,7 +42,7 @@ export class TransactionsService {
     ]);
 
     return {
-      items: rows.map(toTransactionDto),
+      items: rows.map((row) => toTransactionDto(row.transaction, row.accountType)),
       total: totals?.total ?? 0,
       limit: query.limit,
       offset: query.offset,
@@ -73,19 +76,25 @@ export class TransactionsService {
    */
   async recategorize(userId: string, id: string, category: string | null) {
     const own = and(eq(transactions.id, id), eq(transactions.userId, userId));
-    const [current] = await this.db.select().from(transactions).where(own);
-    if (!current) throw new NotFoundException('Transação não encontrada');
+    const [found] = await this.db
+      .select({ transaction: transactions, accountType: accounts.type })
+      .from(transactions)
+      .innerJoin(accounts, eq(transactions.accountId, accounts.id))
+      .where(own);
+    if (!found) throw new NotFoundException('Transação não encontrada');
+    const current = found.transaction;
     const userCategory = category === null || category === current.category ? null : category;
     const [row] = await this.db
       .update(transactions)
       .set({ userCategory, updatedAt: new Date() })
       .where(own)
       .returning();
-    return toTransactionDto(row!);
+    return toTransactionDto(row!, found.accountType);
   }
 }
 
-function toTransactionDto(row: TransactionRow) {
+function toTransactionDto(row: TransactionRow, accountType: AccountType) {
+  const category = row.userCategory ?? row.category;
   return {
     id: row.id,
     accountId: row.accountId,
@@ -94,7 +103,7 @@ function toTransactionDto(row: TransactionRow) {
     amount: row.amount,
     status: row.status,
     /** Categoria efetiva: a escolhida pelo usuário ou, sem escolha, a do banco. */
-    category: row.userCategory ?? row.category,
+    category,
     /** Categoria que veio do banco (para mostrar "editada" e permitir desfazer). */
     originalCategory: row.category,
     paymentMethod: row.paymentMethod,
@@ -104,5 +113,7 @@ function toTransactionDto(row: TransactionRow) {
         ? { number: row.installmentNumber, total: row.installmentTotal }
         : null,
     invoiceExternalId: row.invoiceExternalId,
+    /** Gasto, receita, pagamento de fatura etc. (`domain/classify.ts`): a interface usa este, sem regra própria. */
+    kind: kindOf({ amount: row.amount, category, description: row.description, accountType }),
   };
 }

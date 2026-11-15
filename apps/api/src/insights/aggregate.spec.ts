@@ -58,6 +58,7 @@ describe('insights/aggregate', () => {
       tx('2026-08-06', -1_500_00, 'Transfer - Savings'),
       tx('2026-08-06', 1_500_00, 'Transfer - Savings'),
       tx('2026-09-12', -200_00, 'Groceries'),
+      tx('2026-09-20', 3_000_00, 'Loans and financing'),
       tx('2026-10-01', -999_00, 'Groceries'),
     ];
     expect(monthlyTotals(rows, ['2026-08', '2026-09'])).toEqual([
@@ -68,6 +69,7 @@ describe('insights/aggregate', () => {
         net: 8_700_00,
         cardPayments: 500_00,
         ownTransfersOut: 1_500_00,
+        loanCredits: 0,
       },
       {
         month: '2026-09',
@@ -76,6 +78,7 @@ describe('insights/aggregate', () => {
         net: -200_00,
         cardPayments: 0,
         ownTransfersOut: 0,
+        loanCredits: 3_000_00,
       },
     ]);
   });

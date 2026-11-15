@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest"
 import type { Account, Transaction } from "@/lib/api/types"
 import { lastMonths, monthlyCashFlow, monthRange, periodTotals, spendingByCategory } from "./aggregate"
+import { mockKind } from "@/lib/mock/generator"
 
 const account = (id: string, type: Account["type"]): Account => ({
   id,
@@ -31,6 +32,7 @@ const tx = (accountId: string, date: string, amount: number, category: string | 
   counterpartyName: null,
   installment: null,
   invoiceExternalId: null,
+  kind: mockKind(category, amount),
 })
 
 const accounts = [account("checking", "CHECKING"), account("savings", "SAVINGS"), account("card", "CREDIT_CARD")]

@@ -106,3 +106,57 @@ function nextRegularDueDate(loan: NextInstallmentInput, today: IsoDate): IsoDate
 function daysBetween(from: IsoDate, to: IsoDate): number {
   return Math.round((Date.parse(`${to}T00:00:00Z`) - Date.parse(`${from}T00:00:00Z`)) / 86_400_000);
 }
+
+/**
+ * Empréstimo visto só pelas transações, para quando o banco não compartilha o
+ * contrato pelo Open Finance: o que entrou de crédito e o que saiu em parcelas.
+ */
+export interface DetectedLoan {
+  institutionName: string;
+  accountName: string;
+  /** Dinheiro emprestado que entrou no período. */
+  released: Cents;
+  releases: number;
+  /** Parcelas pagas no período (valor positivo). */
+  paid: Cents;
+  payments: number;
+  lastPaymentDate: IsoDate | null;
+}
+
+export interface LoanMovement {
+  date: IsoDate;
+  amount: Cents;
+  institutionName: string;
+  accountName: string;
+  /** `isLoanCredit` / `isLoanPayment` de `classify.ts`. */
+  loanCredit: boolean;
+  loanPayment: boolean;
+}
+
+/** Liberações e parcelas agrupadas por conta, da conta com mais movimento para a com menos. */
+export function detectLoans(movements: LoanMovement[]): DetectedLoan[] {
+  const byAccount = new Map<string, DetectedLoan>();
+  for (const tx of movements) {
+    if (!tx.loanCredit && !tx.loanPayment) continue;
+    const key = `${tx.institutionName}|${tx.accountName}`;
+    const loan = byAccount.get(key) ?? {
+      institutionName: tx.institutionName,
+      accountName: tx.accountName,
+      released: 0,
+      releases: 0,
+      paid: 0,
+      payments: 0,
+      lastPaymentDate: null,
+    };
+    if (tx.loanCredit) {
+      loan.released += tx.amount;
+      loan.releases += 1;
+    } else {
+      loan.paid -= tx.amount;
+      loan.payments += 1;
+      if (!loan.lastPaymentDate || tx.date > loan.lastPaymentDate) loan.lastPaymentDate = tx.date;
+    }
+    byAccount.set(key, loan);
+  }
+  return [...byAccount.values()].sort((a, b) => b.released + b.paid - (a.released + a.paid));
+}
