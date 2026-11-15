@@ -121,8 +121,15 @@ export interface CardInfo {
   available: Cents | null;
   /** Fração usada do limite (0,45 = 45%). */
   usage: number | null;
-  /** Próxima fatura a vencer (a partir de hoje). */
-  openInvoice: { total: Cents; closingDate: IsoDate | null; dueDate: IsoDate } | null;
+  /** Limite zerado pelo banco (sem dívida e sem disponível): fora dos totais de limite. */
+  blocked: boolean;
+  /** Próxima fatura a vencer (a partir de hoje); `estimated` quando o banco ainda não a informou. */
+  openInvoice: {
+    total: Cents;
+    closingDate: IsoDate | null;
+    dueDate: IsoDate;
+    estimated: boolean;
+  } | null;
 }
 
 export interface InvoiceInfo {
@@ -134,6 +141,8 @@ export interface InvoiceInfo {
   minimumPayment: Cents | null;
   /** Vence hoje ou depois. */
   upcoming: boolean;
+  /** Fatura em aberto estimada pelas compras desde o último fechamento. */
+  estimated: boolean;
 }
 
 export interface CardInstallmentInfo {

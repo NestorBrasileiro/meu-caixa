@@ -1,12 +1,19 @@
 import { BadRequestException, Inject, Injectable, NotFoundException } from '@nestjs/common';
-import { and, asc, count, desc, eq, gte, ilike, lte, or, type SQL } from 'drizzle-orm';
+import { and, asc, count, desc, eq, gt, gte, ilike, lt, lte, or, sum, type SQL } from 'drizzle-orm';
+import { ENV } from '../config/config.module.js';
+import type { Env } from '../config/env.js';
 import { DATABASE, type Database } from '../database/database.module.js';
 import { invoices, transactions, type TransactionRow } from '../database/schema.js';
+import { estimateOpenInvoiceDates } from '../domain/cards.js';
+import { today } from '../domain/dates.js';
 import type { ListInvoicesQuery, ListTransactionsQuery } from './transactions.dto.js';
 
 @Injectable()
 export class TransactionsService {
-  constructor(@Inject(DATABASE) private readonly db: Database) {}
+  constructor(
+    @Inject(DATABASE) private readonly db: Database,
+    @Inject(ENV) private readonly env: Env,
+  ) {}
 
   async listTransactions(userId: string, query: ListTransactionsQuery) {
     if (query.from && query.to && query.from > query.to) {
@@ -46,8 +53,14 @@ export class TransactionsService {
     };
   }
 
-  listInvoices(userId: string, query: ListInvoicesQuery) {
-    return this.db
+  /**
+   * Faturas dos cartões, da mais nova para a mais antiga. A Pluggy só devolve as
+   * fechadas; para o cartão sem nenhuma a vencer, entra uma fatura em aberto
+   * estimada (`estimated`): as compras desde o último fechamento, com fechamento
+   * e vencimento um mês depois dos anteriores.
+   */
+  async listInvoices(userId: string, query: ListInvoicesQuery) {
+    const rows = await this.db
       .select({
         id: invoices.id,
         accountId: invoices.accountId,
@@ -65,6 +78,38 @@ export class TransactionsService {
         ),
       )
       .orderBy(desc(invoices.dueDate));
+
+    const todayDate = today(this.env.TIMEZONE);
+    const result = rows.map((row) => ({ ...row, estimated: false }));
+    const byCard = new Map<string, typeof rows>();
+    for (const row of rows) byCard.set(row.accountId, [...(byCard.get(row.accountId) ?? []), row]);
+    for (const [accountId, cardInvoices] of byCard) {
+      const dates = estimateOpenInvoiceDates(cardInvoices, todayDate);
+      if (!dates) continue;
+      const [spent] = await this.db
+        .select({ total: sum(transactions.amount).mapWith(Number) })
+        .from(transactions)
+        .where(
+          and(
+            eq(transactions.userId, userId),
+            eq(transactions.accountId, accountId),
+            gt(transactions.date, dates.after),
+            lte(transactions.date, todayDate < dates.closingDate ? todayDate : dates.closingDate),
+            lt(transactions.amount, 0),
+          ),
+        );
+      result.unshift({
+        id: `estimada-${accountId}`,
+        accountId,
+        dueDate: dates.dueDate,
+        closingDate: dates.closingDate,
+        total: -(spent?.total ?? 0),
+        minimumPayment: null,
+        currency: cardInvoices[0]!.currency,
+        estimated: true,
+      });
+    }
+    return result.sort((a, b) => b.dueDate.localeCompare(a.dueDate));
   }
 
   /**

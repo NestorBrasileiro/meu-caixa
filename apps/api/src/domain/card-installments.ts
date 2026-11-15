@@ -33,17 +33,34 @@ export interface OpenInstallment {
  * - alguns bancos datam todas no dia da compra: números de parcela diferentes
  *   da mesma compra no mesmo dia denunciam isso, e o mês da data é o da 1ª.
  *
- * O valor fica fora da chave (a 1ª parcela costuma levar os centavos da
- * divisão) e créditos (estornos) ficam de fora.
+ * Duas compras na mesma loja no mesmo dia, com o mesmo número de parcelas, se
+ * separam pelo valor da parcela, com tolerância para os centavos da divisão
+ * que a 1ª parcela costuma levar. Créditos (estornos) ficam de fora.
  */
 export function openInstallments(rows: InstallmentRow[], today: IsoDate): OpenInstallment[] {
   const purchases = rows.filter((row) => row.amount < 0 && row.installmentTotal > 1);
   const product = (row: InstallmentRow) =>
     `${row.accountId}|${row.description}|${row.installmentTotal}`;
 
+  // Valor de referência de cada compra: parcelas a até `tolerance` centavos uma da outra
+  // são da mesma compra. Ordem fixa (do maior valor para o menor) para não depender da entrada.
+  const priceOf = new Map<InstallmentRow, Cents>();
+  const pricesByProduct = new Map<string, Cents[]>();
+  for (const row of [...purchases].sort((a, b) => a.amount - b.amount)) {
+    const prices = pricesByProduct.get(product(row)) ?? [];
+    let price = prices.find((candidate) => Math.abs(candidate - row.amount) <= tolerance(row));
+    if (price === undefined) {
+      price = row.amount;
+      prices.push(price);
+      pricesByProduct.set(product(row), prices);
+    }
+    priceOf.set(row, price);
+  }
+  const purchase = (row: InstallmentRow) => `${product(row)}|${priceOf.get(row)}`;
+
   const numbersByDay = new Map<string, Set<number>>();
   for (const row of purchases) {
-    const day = `${product(row)}|${row.date}`;
+    const day = `${purchase(row)}|${row.date}`;
     const numbers = numbersByDay.get(day) ?? new Set<number>();
     numbers.add(row.installmentNumber);
     numbersByDay.set(day, numbers);
@@ -51,12 +68,12 @@ export function openInstallments(rows: InstallmentRow[], today: IsoDate): OpenIn
 
   const groups = new Map<string, { anchor: InstallmentRow; firstMonth: IsoMonth }>();
   for (const row of purchases) {
-    const datedAtPurchase = numbersByDay.get(`${product(row)}|${row.date}`)!.size > 1;
+    const datedAtPurchase = numbersByDay.get(`${purchase(row)}|${row.date}`)!.size > 1;
     const firstMonth = shiftMonth(
       monthOf(row.date),
       datedAtPurchase ? 0 : -(row.installmentNumber - 1),
     );
-    const key = `${product(row)}|${firstMonth}`;
+    const key = `${purchase(row)}|${firstMonth}`;
     const current = groups.get(key)?.anchor;
     // Âncora = parcela mais adiantada (desempate pela data): independe da ordem das linhas.
     if (
@@ -89,4 +106,12 @@ export function openInstallments(rows: InstallmentRow[], today: IsoDate): OpenIn
     });
   }
   return result.sort((a, b) => b.amount - a.amount);
+}
+
+/**
+ * Diferença máxima entre parcelas da mesma compra: os centavos da divisão (a 1ª
+ * leva até `n − 1` centavos a mais) ou 1% do valor, o que for maior.
+ */
+function tolerance(row: InstallmentRow): Cents {
+  return Math.max(row.installmentTotal, Math.round(Math.abs(row.amount) / 100));
 }

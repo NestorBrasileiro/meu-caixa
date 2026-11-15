@@ -131,7 +131,13 @@ export function sampleReport(
           used: 3_124_80,
           available: 11_875_20,
           usage: 3_124_80 / 15_000_00,
-          openInvoice: { total: 3_124_80, closingDate: '2026-11-03', dueDate: '2026-11-10' },
+          blocked: false,
+          openInvoice: {
+            total: 3_124_80,
+            closingDate: '2026-11-03',
+            dueDate: '2026-11-10',
+            estimated: false,
+          },
         },
         {
           institutionName: 'Cartão Exemplo',
@@ -141,6 +147,7 @@ export function sampleReport(
           used: 1_187_68,
           available: 6_812_32,
           usage: 1_187_68 / 8_000_00,
+          blocked: false,
           openInvoice: null,
         },
       ],
@@ -153,6 +160,7 @@ export function sampleReport(
           total: 3_124_80,
           minimumPayment: 468_72,
           upcoming: true,
+          estimated: false,
         },
         {
           institutionName: 'Cartão Exemplo',
@@ -162,6 +170,7 @@ export function sampleReport(
           total: 2_987_15,
           minimumPayment: 448_07,
           upcoming: false,
+          estimated: false,
         },
         {
           institutionName: 'Cartão Exemplo',
@@ -171,6 +180,7 @@ export function sampleReport(
           total: 3_301_40,
           minimumPayment: null,
           upcoming: false,
+          estimated: false,
         },
         {
           institutionName: 'Cartão Exemplo',
@@ -180,6 +190,7 @@ export function sampleReport(
           total: 1_045_00,
           minimumPayment: null,
           upcoming: false,
+          estimated: false,
         },
       ],
       parcelamentos: [

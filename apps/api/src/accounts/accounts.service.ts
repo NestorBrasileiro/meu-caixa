@@ -2,6 +2,7 @@ import { Inject, Injectable } from '@nestjs/common';
 import { asc, eq } from 'drizzle-orm';
 import { DATABASE, type Database } from '../database/database.module.js';
 import { accounts, connections } from '../database/schema.js';
+import { isBlockedCard } from '../domain/cards.js';
 
 @Injectable()
 export class AccountsService {
@@ -22,8 +23,8 @@ export class AccountsService {
       .orderBy(asc(connections.institutionName));
   }
 
-  listAccounts(userId: string) {
-    return this.db
+  async listAccounts(userId: string) {
+    const rows = await this.db
       .select({
         id: accounts.id,
         connectionId: accounts.connectionId,
@@ -43,5 +44,7 @@ export class AccountsService {
       .innerJoin(connections, eq(accounts.connectionId, connections.id))
       .where(eq(accounts.userId, userId))
       .orderBy(asc(connections.institutionName), asc(accounts.type), asc(accounts.name));
+    // Cartão com o limite zerado pelo banco (`domain/cards.ts`): fica fora dos totais de limite.
+    return rows.map((row) => ({ ...row, blocked: isBlockedCard(row) }));
   }
 }

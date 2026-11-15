@@ -5,6 +5,7 @@ import { ENV } from '../config/config.module.js';
 import type { Env } from '../config/env.js';
 import { DATABASE, type Database } from '../database/database.module.js';
 import { accounts, connections, transactions } from '../database/schema.js';
+import { cardUsed } from '../domain/cards.js';
 import { today } from '../domain/dates.js';
 import type { Cents, IsoDate } from '../domain/finance.js';
 import { monthOf, monthRange, monthsBetween, shiftMonth, type IsoMonth } from '../domain/months.js';
@@ -122,18 +123,20 @@ export class ExportDataService {
       buildCards(await loadAccounts(), await loadInvoices(), todayDate),
     );
     const installmentsInfo = once(async () =>
-      (await loadPlanning()).cardInstallments.map((item): CardInstallmentInfo => ({
-        description: item.description,
-        cardName: item.cardName,
-        amount: item.amount,
-        paid: item.installments.paid,
-        total: item.installments.total,
-        current: Math.min(item.installments.paid + 1, item.installments.total),
-        remaining: item.installments.total - item.installments.paid,
-        remainingAmount: (item.installments.total - item.installments.paid) * item.amount,
-        nextDueDate: item.nextDueDate,
-        endsOn: item.endsOn,
-      })),
+      (await loadPlanning()).cardInstallments.map(
+        (item): CardInstallmentInfo => ({
+          description: item.description,
+          cardName: item.cardName,
+          amount: item.amount,
+          paid: item.installments.paid,
+          total: item.installments.total,
+          current: Math.min(item.installments.paid + 1, item.installments.total),
+          remaining: item.installments.total - item.installments.paid,
+          remainingAmount: (item.installments.total - item.installments.paid) * item.amount,
+          nextDueDate: item.nextDueDate,
+          endsOn: item.endsOn,
+        }),
+      ),
     );
     const flowInfo = once(async () => cashFlow(await loadPeriod(), months, period.from, period.to));
 
@@ -153,14 +156,15 @@ export class ExportDataService {
         const installments = await installmentsInfo();
         const cash = accountRows.filter((account) => account.type !== 'CREDIT_CARD');
         const cards = accountRows.filter((account) => account.type === 'CREDIT_CARD');
+        const activeCards = cards.filter((account) => !account.blocked);
         const loansWithBalance = loans.filter((loan) => loan.outstandingBalance !== null);
         const current = monthOf(todayDate);
         return {
           totals: {
             cashBalance: sum(cash.map((account) => account.balance)),
             cardDebt: sum(cards.map((account) => account.balance)),
-            cardLimit: sum(cards.map((account) => account.creditLimit)),
-            cardAvailable: sum(cards.map((account) => account.availableCredit)),
+            cardLimit: sum(activeCards.map((account) => account.creditLimit)),
+            cardAvailable: sum(activeCards.map((account) => account.availableCredit)),
             openInstallmentsRemaining: sum(installments.map((item) => item.remainingAmount)),
             loansOutstanding:
               loansWithBalance.length === 0
@@ -189,30 +193,40 @@ export class ExportDataService {
             status: connection.status,
             lastRefreshedAt: connection.lastRefreshedAt?.toISOString() ?? null,
           })),
-          warnings: freshnessWarnings({
-            connections: connectionRows,
-            accounts: accountRows,
-            lastSync,
-            periodTo: period.to,
-            now,
-            timezone,
-          }),
+          warnings: [
+            ...freshnessWarnings({
+              connections: connectionRows,
+              accounts: accountRows,
+              lastSync,
+              periodTo: period.to,
+              now,
+              timezone,
+            }),
+            ...cards
+              .filter((card) => card.blocked)
+              .map(
+                (card) =>
+                  `${card.institutionName} — ${card.name}: cartão sem limite disponível e sem dívida (bloqueado ou substituído?); o limite dele ficou fora dos totais.`,
+              ),
+          ],
         };
       },
 
       contas: async () =>
-        (await loadAccounts()).map((account): AccountInfo => ({
-          institutionName: account.institutionName,
-          type: account.type,
-          name: account.name,
-          number: account.number,
-          currency: account.currency,
-          balance: account.balance,
-          creditLimit: account.creditLimit,
-          availableCredit: account.availableCredit,
-          transactionsSyncedThrough: account.transactionsSyncedThrough,
-          connectionStatus: account.connectionStatus,
-        })),
+        (await loadAccounts()).map(
+          (account): AccountInfo => ({
+            institutionName: account.institutionName,
+            type: account.type,
+            name: account.name,
+            number: account.number,
+            currency: account.currency,
+            balance: account.balance,
+            creditLimit: account.creditLimit,
+            availableCredit: account.availableCredit,
+            transactionsSyncedThrough: account.transactionsSyncedThrough,
+            connectionStatus: account.connectionStatus,
+          }),
+        ),
 
       cartoes: cardsInfo,
 
@@ -231,6 +245,7 @@ export class ExportDataService {
               total: invoice.total,
               minimumPayment: invoice.minimumPayment,
               upcoming: invoice.dueDate >= todayDate,
+              estimated: invoice.estimated,
             };
           })
           .sort(
@@ -579,10 +594,7 @@ function buildCards(accountRows: AccountRow[], invoiceRows: InvoiceRow[], todayD
   return accountRows
     .filter((account) => account.type === 'CREDIT_CARD')
     .map((card): CardInfo => {
-      const used =
-        card.creditLimit !== null && card.availableCredit !== null
-          ? card.creditLimit - card.availableCredit
-          : card.balance;
+      const used = cardUsed(card);
       const open = invoiceRows
         .filter((invoice) => invoice.accountId === card.id && invoice.dueDate >= todayDate)
         .sort((a, b) => a.dueDate.localeCompare(b.dueDate))[0];
@@ -593,9 +605,15 @@ function buildCards(accountRows: AccountRow[], invoiceRows: InvoiceRow[], todayD
         limit: card.creditLimit,
         used,
         available: card.availableCredit,
-        usage: card.creditLimit ? used / card.creditLimit : null,
+        usage: card.creditLimit && !card.blocked ? used / card.creditLimit : null,
+        blocked: card.blocked,
         openInvoice: open
-          ? { total: open.total, closingDate: open.closingDate, dueDate: open.dueDate }
+          ? {
+              total: open.total,
+              closingDate: open.closingDate,
+              dueDate: open.dueDate,
+              estimated: open.estimated,
+            }
           : null,
       };
     });
